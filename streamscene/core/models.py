@@ -14,8 +14,9 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    JSON,
 )
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship, Mapped
 
 from .database import Base
@@ -184,7 +185,7 @@ class Device(Base):
     rotation_enabled: Mapped[bool] = Column(Boolean, default=False, nullable=False)
     rotation_interval: Mapped[int] = Column(Integer, default=60, nullable=False)  # Seconds, minimum 60
     registered_at: Mapped[datetime] = Column(DateTime(timezone=True), nullable=True)
-    config: Mapped[dict] = Column(JSONB, default=dict, nullable=False)  # Additional device configuration
+    config: Mapped[dict] = Column(JSON, default=dict, nullable=False)  # Additional device configuration
 
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="devices")

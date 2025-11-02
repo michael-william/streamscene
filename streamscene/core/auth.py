@@ -97,9 +97,12 @@ def hash_api_key(api_key: str) -> str:
     Returns:
         str: The hashed API key
     """
+    # Bcrypt has a 72-byte limit, so truncate if necessary
+    key_bytes = api_key.encode('utf-8')[:72]
+
     # Generate salt and hash
     salt = bcrypt.gensalt()
-    hashed = bcrypt.hashpw(api_key.encode('utf-8'), salt)
+    hashed = bcrypt.hashpw(key_bytes, salt)
     return hashed.decode('utf-8')
 
 
@@ -115,8 +118,10 @@ def verify_api_key(api_key: str, hashed_key: str) -> bool:
         bool: True if the API key matches, False otherwise
     """
     try:
+        # Truncate to match what was hashed (bcrypt 72-byte limit)
+        key_bytes = api_key.encode('utf-8')[:72]
         return bcrypt.checkpw(
-            api_key.encode('utf-8'),
+            key_bytes,
             hashed_key.encode('utf-8')
         )
     except Exception:
