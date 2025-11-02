@@ -1,0 +1,483 @@
+"""Business logic for streams, posts, and subscriptions."""
+
+from datetime import datetime, timezone
+from typing import List, Optional
+from uuid import UUID
+
+from sqlalchemy.orm import Session
+from sqlalchemy import and_, or_, desc
+
+from .models import Stream, Post, StreamSubscription, User
+
+
+def utc_now():
+    """Return current UTC datetime."""
+    return datetime.now(timezone.utc)
+
+
+# ============================================================================
+# STREAM OPERATIONS
+# ============================================================================
+
+
+def create_stream(
+    session: Session,
+    owner_id: UUID,
+    name: str,
+    description: str = "",
+    is_public: bool = False,
+    allow_text: bool = True,
+    allow_images: bool = False,  # MVP: text-only
+) -> Stream:
+    """
+    Create a new stream.
+
+    Args:
+        session: Database session
+        owner_id: UUID of the stream owner
+        name: Stream name
+        description: Optional stream description
+        is_public: Whether the stream is publicly visible
+        allow_text: Whether text posts are allowed
+        allow_images: Whether image posts are allowed (MVP: False)
+
+    Returns:
+        Stream: The created stream instance
+    """
+    stream = Stream(
+        owner_id=owner_id,
+        name=name,
+        description=description,
+        is_public=is_public,
+        allow_text=allow_text,
+        allow_images=allow_images,
+    )
+    session.add(stream)
+    session.flush()  # Get the ID without committing
+    return stream
+
+
+def get_stream_by_id(session: Session, stream_id: UUID) -> Optional[Stream]:
+    """
+    Get a stream by its ID.
+
+    Args:
+        session: Database session
+        stream_id: Stream UUID
+
+    Returns:
+        Optional[Stream]: Stream instance or None if not found
+    """
+    return session.query(Stream).filter(Stream.id == stream_id).first()
+
+
+def get_user_streams(session: Session, user_id: UUID) -> List[Stream]:
+    """
+    Get all streams owned by a user.
+
+    Args:
+        session: Database session
+        user_id: User UUID
+
+    Returns:
+        List[Stream]: List of streams owned by the user
+    """
+    return (
+        session.query(Stream)
+        .filter(Stream.owner_id == user_id)
+        .order_by(desc(Stream.created_at))
+        .all()
+    )
+
+
+def get_subscribed_streams(session: Session, user_id: UUID) -> List[Stream]:
+    """
+    Get all streams a user is subscribed to.
+
+    Args:
+        session: Database session
+        user_id: User UUID
+
+    Returns:
+        List[Stream]: List of subscribed streams
+    """
+    return (
+        session.query(Stream)
+        .join(StreamSubscription)
+        .filter(
+            and_(
+                StreamSubscription.user_id == user_id,
+                StreamSubscription.is_approved == True,
+            )
+        )
+        .order_by(desc(Stream.created_at))
+        .all()
+    )
+
+
+def update_stream(
+    session: Session,
+    stream_id: UUID,
+    **kwargs
+) -> Optional[Stream]:
+    """
+    Update stream properties.
+
+    Args:
+        session: Database session
+        stream_id: Stream UUID
+        **kwargs: Fields to update (name, description, is_public, etc.)
+
+    Returns:
+        Optional[Stream]: Updated stream or None if not found
+    """
+    stream = get_stream_by_id(session, stream_id)
+    if not stream:
+        return None
+
+    for key, value in kwargs.items():
+        if hasattr(stream, key):
+            setattr(stream, key, value)
+
+    stream.updated_at = utc_now()
+    session.flush()
+    return stream
+
+
+def delete_stream(session: Session, stream_id: UUID) -> bool:
+    """
+    Delete a stream and all associated data (posts, subscriptions).
+
+    Args:
+        session: Database session
+        stream_id: Stream UUID
+
+    Returns:
+        bool: True if deleted, False if not found
+    """
+    stream = get_stream_by_id(session, stream_id)
+    if not stream:
+        return False
+
+    session.delete(stream)
+    session.flush()
+    return True
+
+
+# ============================================================================
+# POST OPERATIONS
+# ============================================================================
+
+
+def create_post(
+    session: Session,
+    stream_id: UUID,
+    author_id: UUID,
+    text_content: str,
+    content_type: str = "text",
+) -> Post:
+    """
+    Create a new text post in a stream.
+
+    Args:
+        session: Database session
+        stream_id: Stream UUID
+        author_id: Author's user UUID
+        text_content: The text content of the post
+        content_type: Type of content (default: "text")
+
+    Returns:
+        Post: The created post instance
+    """
+    post = Post(
+        stream_id=stream_id,
+        author_id=author_id,
+        text_content=text_content,
+        content_type=content_type,
+    )
+    session.add(post)
+    session.flush()
+    return post
+
+
+def get_post_by_id(session: Session, post_id: UUID) -> Optional[Post]:
+    """
+    Get a post by its ID.
+
+    Args:
+        session: Database session
+        post_id: Post UUID
+
+    Returns:
+        Optional[Post]: Post instance or None if not found
+    """
+    return session.query(Post).filter(Post.id == post_id).first()
+
+
+def get_stream_posts(
+    session: Session,
+    stream_id: UUID,
+    limit: int = 50,
+    offset: int = 0,
+) -> List[Post]:
+    """
+    Get posts from a stream, ordered by creation time (newest first).
+
+    Args:
+        session: Database session
+        stream_id: Stream UUID
+        limit: Maximum number of posts to return
+        offset: Number of posts to skip
+
+    Returns:
+        List[Post]: List of posts
+    """
+    return (
+        session.query(Post)
+        .filter(Post.stream_id == stream_id)
+        .order_by(desc(Post.created_at))
+        .limit(limit)
+        .offset(offset)
+        .all()
+    )
+
+
+def get_latest_stream_post(session: Session, stream_id: UUID) -> Optional[Post]:
+    """
+    Get the most recent post from a stream.
+
+    Args:
+        session: Database session
+        stream_id: Stream UUID
+
+    Returns:
+        Optional[Post]: Latest post or None if stream has no posts
+    """
+    return (
+        session.query(Post)
+        .filter(Post.stream_id == stream_id)
+        .order_by(desc(Post.created_at))
+        .first()
+    )
+
+
+def delete_post(session: Session, post_id: UUID) -> bool:
+    """
+    Delete a post.
+
+    Args:
+        session: Database session
+        post_id: Post UUID
+
+    Returns:
+        bool: True if deleted, False if not found
+    """
+    post = get_post_by_id(session, post_id)
+    if not post:
+        return False
+
+    session.delete(post)
+    session.flush()
+    return True
+
+
+# ============================================================================
+# SUBSCRIPTION OPERATIONS
+# ============================================================================
+
+
+def subscribe_to_stream(
+    session: Session,
+    user_id: UUID,
+    stream_id: UUID,
+    is_approved: bool = True,
+) -> StreamSubscription:
+    """
+    Subscribe a user to a stream.
+
+    Args:
+        session: Database session
+        user_id: User UUID
+        stream_id: Stream UUID
+        is_approved: Whether subscription is approved (False for private streams)
+
+    Returns:
+        StreamSubscription: The created subscription
+
+    Raises:
+        Exception: If subscription already exists
+    """
+    # Check if subscription already exists
+    existing = get_subscription(session, user_id, stream_id)
+    if existing:
+        raise ValueError("User is already subscribed to this stream")
+
+    subscription = StreamSubscription(
+        user_id=user_id,
+        stream_id=stream_id,
+        is_approved=is_approved,
+    )
+    session.add(subscription)
+    session.flush()
+    return subscription
+
+
+def get_subscription(
+    session: Session,
+    user_id: UUID,
+    stream_id: UUID,
+) -> Optional[StreamSubscription]:
+    """
+    Get a subscription record.
+
+    Args:
+        session: Database session
+        user_id: User UUID
+        stream_id: Stream UUID
+
+    Returns:
+        Optional[StreamSubscription]: Subscription or None if not found
+    """
+    return (
+        session.query(StreamSubscription)
+        .filter(
+            and_(
+                StreamSubscription.user_id == user_id,
+                StreamSubscription.stream_id == stream_id,
+            )
+        )
+        .first()
+    )
+
+
+def unsubscribe_from_stream(
+    session: Session,
+    user_id: UUID,
+    stream_id: UUID,
+) -> bool:
+    """
+    Unsubscribe a user from a stream.
+
+    Args:
+        session: Database session
+        user_id: User UUID
+        stream_id: Stream UUID
+
+    Returns:
+        bool: True if unsubscribed, False if subscription not found
+    """
+    subscription = get_subscription(session, user_id, stream_id)
+    if not subscription:
+        return False
+
+    session.delete(subscription)
+    session.flush()
+    return True
+
+
+def approve_subscription(
+    session: Session,
+    user_id: UUID,
+    stream_id: UUID,
+) -> Optional[StreamSubscription]:
+    """
+    Approve a pending subscription (for private streams).
+
+    Args:
+        session: Database session
+        user_id: User UUID
+        stream_id: Stream UUID
+
+    Returns:
+        Optional[StreamSubscription]: Updated subscription or None if not found
+    """
+    subscription = get_subscription(session, user_id, stream_id)
+    if not subscription:
+        return None
+
+    subscription.is_approved = True
+    session.flush()
+    return subscription
+
+
+def get_stream_subscribers(session: Session, stream_id: UUID) -> List[User]:
+    """
+    Get all approved subscribers of a stream.
+
+    Args:
+        session: Database session
+        stream_id: Stream UUID
+
+    Returns:
+        List[User]: List of subscribed users
+    """
+    return (
+        session.query(User)
+        .join(StreamSubscription)
+        .filter(
+            and_(
+                StreamSubscription.stream_id == stream_id,
+                StreamSubscription.is_approved == True,
+            )
+        )
+        .all()
+    )
+
+
+# ============================================================================
+# PERMISSION HELPERS
+# ============================================================================
+
+
+def can_user_view_stream(session: Session, user_id: UUID, stream_id: UUID) -> bool:
+    """
+    Check if a user can view a stream.
+
+    Args:
+        session: Database session
+        user_id: User UUID
+        stream_id: Stream UUID
+
+    Returns:
+        bool: True if user can view the stream
+    """
+    stream = get_stream_by_id(session, stream_id)
+    if not stream:
+        return False
+
+    # Owner can always view
+    if stream.owner_id == user_id:
+        return True
+
+    # Public streams can be viewed by anyone
+    if stream.is_public:
+        return True
+
+    # Check if user has approved subscription
+    subscription = get_subscription(session, user_id, stream_id)
+    return subscription is not None and subscription.is_approved
+
+
+def can_user_post_to_stream(session: Session, user_id: UUID, stream_id: UUID) -> bool:
+    """
+    Check if a user can post to a stream.
+
+    Args:
+        session: Database session
+        user_id: User UUID
+        stream_id: Stream UUID
+
+    Returns:
+        bool: True if user can post to the stream
+    """
+    stream = get_stream_by_id(session, stream_id)
+    if not stream:
+        return False
+
+    # Owner can always post
+    if stream.owner_id == user_id:
+        return True
+
+    # Check if user has approved subscription
+    subscription = get_subscription(session, user_id, stream_id)
+    return subscription is not None and subscription.is_approved
