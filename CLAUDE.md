@@ -149,18 +149,40 @@ streamscene/
 
 ## API Endpoints
 
-### Device Endpoints (Key for device client)
-- `POST /api/devices/register` - Register device with UUID from QR code
-- `GET /api/devices/{id}/config` - Get device configuration
-- `GET /api/devices/{id}/content` - Get current content to display
-- `POST /api/devices/{id}/heartbeat` - Device health check (every 30s)
-- `WS /api/devices/{id}/stream` - WebSocket for real-time content updates
+### Core Endpoints
+- `GET /api/health` - Health check (returns service status)
+- `GET /docs` - FastAPI automatic API documentation (Swagger UI)
+- `GET /redoc` - FastAPI automatic API documentation (ReDoc)
 
-### User Endpoints
-- `GET/POST/PUT/DELETE /api/streams` - Stream CRUD operations
-- `POST /api/streams/{id}/posts` - Create post in stream
-- `GET /api/streams/{id}/posts` - List posts (paginated)
-- `POST /api/streams/{id}/subscribe` - Subscribe to stream
+### Device Endpoints (For E Ink Devices)
+**Authentication:** All device endpoints require `X-Device-Api-Key` header (except registration)
+
+- `POST /api/devices/register` - Register device with UUID (returns API key - shown once!)
+  - Request body: `{"device_uuid": "UUID", "nickname": "optional"}`
+  - Returns: Device ID and API key
+
+- `GET /api/devices/{id}/content` - Get current content to display
+  - Returns: Latest post from device's assigned stream
+  - Includes: content_type, text_content, image_url, stream_name, posted_at
+
+- `POST /api/devices/{id}/heartbeat` - Update device last_seen timestamp
+  - Devices should call this every 5-10 minutes
+
+- `GET /api/devices/{id}/config` - Get device configuration
+  - Returns: nickname, current_stream_id, rotation settings, version
+
+### User Endpoints (Web UI)
+Currently implemented through Reflex pages:
+- `/` - Landing page
+- `/login` - OAuth login (redirects to Authentik)
+- `/callback` - OAuth callback handler
+- `/streams` - Stream management UI (create streams, post messages, manage devices)
+
+**Core business logic** in `streamscene/core/streams.py`:
+- Stream CRUD: create_stream, get_stream_by_id, update_stream, delete_stream
+- Post operations: create_post, get_stream_posts, get_latest_stream_post
+- Subscriptions: subscribe_to_stream, unsubscribe_from_stream
+- Device operations: register_device, get_device_content, update_device_heartbeat
 
 ## Environment Configuration
 

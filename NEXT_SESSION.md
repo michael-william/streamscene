@@ -2,238 +2,323 @@
 
 **Last Updated:** November 2, 2025
 **Project:** StreamScene - Family E Ink Message Board
+**Current Phase:** Phase 1 ✅ COMPLETE
 
 ---
 
-## ✅ Phase 0: COMPLETED - Environment Setup
+## ✅ Phase 1: COMPLETED - Core Backend & Device API
 
 ### **What We've Accomplished**
-1. ✅ System dependencies installed (PostgreSQL 15, Redis 7, Python 3.11, build tools)
-2. ✅ PostgreSQL database created and configured
-3. ✅ Redis server running and tested
-4. ✅ Python virtual environment created (`venv/`)
-5. ✅ Reflex 0.8.17 project initialized
-6. ✅ All Python dependencies installed (SQLAlchemy, Celery, etc.)
-7. ✅ `.env` file created with all configuration
-8. ✅ `CREDENTIALS.md` created with all passwords
-9. ✅ Storage directories created (`/var/lib/streamscene/*`)
-10. ✅ `.gitignore` updated to protect secrets
-11. ✅ `requirements.txt` populated
-12. ✅ `CLAUDE.md` created for future sessions
 
-### **Infrastructure Status**
+#### 1. Database Foundation
+- ✅ SQLAlchemy ORM models (6 tables):
+  - User (minimal, Authentik is source of truth)
+  - Stream (message channels)
+  - Post (text-only for MVP)
+  - StreamSubscription (many-to-many user-stream relationships)
+  - Device (E Ink devices)
+  - DeviceStreamSettings (device rotation configuration)
+- ✅ Alembic migrations initialized and applied
+- ✅ 7 database tables created in PostgreSQL
 
-#### PostgreSQL
-- **Status:** ✅ Running and tested
-- **Database:** streamscene
-- **User:** streamscene
-- **Password:** Documented in `CREDENTIALS.md`
-- **Connection String:** In `.env` file
+#### 2. Core Business Logic
+- ✅ `core/streams.py` (471 lines):
+  - Stream CRUD operations
+  - Post creation and retrieval
+  - Subscription management
+  - Permission helpers (can_user_view_stream, can_user_post_to_stream)
+  - Device operations (register, get_content, heartbeat)
+- ✅ `core/auth.py`:
+  - User management (get_or_create_user)
+  - API key generation (cryptographically secure)
+  - API key hashing and verification (bcrypt)
+  - Permission checks (is_stream_owner, is_post_author)
 
-#### Redis
-- **Status:** ✅ Running and tested
-- **URL:** redis://localhost:6379/0
-- **Test:** `redis-cli ping` returns PONG
+#### 3. FastAPI Device REST API
+- ✅ Complete API implementation:
+  - `api/__init__.py` - FastAPI app with CORS
+  - `api/dependencies.py` - Database sessions and API key auth
+  - `api/schemas.py` - Pydantic models for requests/responses
+  - `api/routes/devices.py` - Device endpoints
+- ✅ Integrated with Reflex using `api_transformer` parameter
+- ✅ All endpoints tested and working:
+  - `GET /api/health` - Health check
+  - `POST /api/devices/register` - Register device, get API key
+  - `GET /api/devices/{id}/content` - Get latest post to display
+  - `POST /api/devices/{id}/heartbeat` - Update last_seen
+  - `GET /api/devices/{id}/config` - Get device configuration
+- ✅ API key authentication working (bcrypt hashed keys)
+- ✅ Full data flow tested (user creates stream/post → device fetches content)
 
-#### Python Environment
-- **Virtual Environment:** `/root/streamscene/venv`
-- **Python Version:** 3.11.2
-- **Pip Version:** 25.3
-- **Key Packages Installed:**
-  - Reflex 0.8.17
-  - SQLAlchemy 2.0.44
-  - Alembic 1.17.1
-  - Celery 5.5.3
-  - Redis 6.4.0
-  - Psycopg2-binary 2.9.11
-  - Pillow, NumPy, QRCode, etc.
+#### 4. Reflex Web UI
+- ✅ 4 pages created:
+  - `pages/index.py` - Landing page
+  - `pages/login.py` - OAuth login (redirects to Authentik)
+  - `pages/callback.py` - OAuth callback handler
+  - `pages/streams.py` - Stream management UI (list, create, post)
+- ✅ OAuth 2.0 / OIDC flow implemented
+- ✅ User session management
+- ✅ Stream and post CRUD through UI
 
-#### Project Structure
-```
-/root/streamscene/
-├── streamscene/           # Reflex app directory
-│   ├── __init__.py
-│   └── streamscene.py     # Main app file (blank template)
-├── assets/                # Static assets
-├── venv/                  # Python virtual environment
-├── .env                   # Environment configuration ✅
-├── .gitignore            # Updated with secrets ✅
-├── requirements.txt      # All dependencies ✅
-├── rxconfig.py           # Reflex configuration ✅
-├── CREDENTIALS.md        # Password documentation ✅
-├── CLAUDE.md             # Claude Code guide ✅
-├── Architecture_Decisions.md
-├── StreamScene_Technical_Spec.md
-└── StreamScene Overview.md
-```
+#### 5. Testing
+- ✅ 54 unit tests written (89% coverage):
+  - `tests/test_models.py` - 10 tests (model creation, relationships)
+  - `tests/test_auth.py` - 12 tests (user management, API keys)
+  - `tests/test_streams.py` - 32 tests (CRUD operations, permissions)
+- ✅ All tests passing
+- ✅ Device API tested with curl (see `API_TESTING.md`)
 
----
+### **Test Results**
+See `API_TESTING.md` for comprehensive curl test documentation.
 
-## 🚧 NEXT: Immediate Tasks
-
-### **1. Configure Authentik OAuth (IN PROGRESS)**
-- [ ] Login to Authentik at http://192.168.1.108:9000
-- [ ] Create OAuth2/OIDC Provider
-- [ ] Create Application "StreamScene"
-- [ ] Update `.env` with Client ID and Secret
-- [ ] Document credentials in `CREDENTIALS.md`
-
-### **2. Generate OTA Signing Key**
-```bash
-openssl genrsa -out /etc/streamscene/signing.key 4096
-chmod 600 /etc/streamscene/signing.key
-```
-
-### **3. Configure Nginx Proxy Manager**
-- [ ] Login to NPM at http://192.168.1.104:81
-- [ ] Add proxy host for streamscene.dataandstories.com
-- [ ] Point to this LXC container IP
-- [ ] Enable WebSocket support
-- [ ] Setup SSL certificate (Let's Encrypt)
+Key findings:
+- ✅ All 5 device API endpoints working
+- ✅ API key authentication secure
+- ✅ Content delivery functional
+- ✅ bcrypt key hashing working (truncated to 72 bytes)
+- ✅ Invalid/missing keys properly rejected
 
 ---
 
-## 📋 Week 1 Checklist
+## 🚧 NEXT: Phase 2 - Device Client & Advanced Features
 
-**Day 1-2: Environment Setup** ✅ COMPLETED
-- [x] Install all system dependencies
-- [x] Setup PostgreSQL database
-- [x] Setup Redis
-- [x] Create Python virtual environment
-- [x] Initialize Reflex project
-- [ ] Configure Authentik OAuth application (IN PROGRESS)
-- [ ] Configure Nginx Proxy Manager
+### **Immediate Next Steps**
 
-**Day 3-4: Database & Core** (NEXT)
-- [ ] Create project directory structure (core/, api/, ui/)
-- [ ] Create SQLAlchemy models (users, devices, streams, posts)
-- [ ] Setup Alembic migrations
-- [ ] Create initial migration and apply to database
-- [ ] Write core business logic functions
-- [ ] Test Authentik integration with simple login
+#### 1. Add Device Management UI (Optional for MVP)
+Currently device registration is tested via API only. Could add to `/streams` page:
+- List user's devices
+- Register new device form
+- Display API key once
+- Assign stream to device
 
-**Day 5: Device API Proof of Concept** ⚠️ CRITICAL
-- [ ] Create one device API endpoint in Reflex
-- [ ] Test with curl/Postman
-- [ ] Verify WebSocket capability
-- [ ] **DECISION POINT:** Does Reflex work for device API?
-  - If YES → Continue with Reflex
-  - If NO → Plan migration to FastAPI
+#### 2. Raspberry Pi E Ink Client
+Create Python client for Pi Zero 2 WH:
+- Fetch content from `/api/devices/{id}/content`
+- Render text to 800x480 E Ink display
+- Handle 6-color palette
+- Poll every 60 seconds minimum
+- Send heartbeat every 5 minutes
+- Handle network errors gracefully
 
----
+#### 3. Celery Background Tasks
+Set up asynchronous job processing:
+- Image processing pipeline (resize, dither to 6 colors)
+- Content rotation for devices
+- Scheduled cleanup tasks
 
-## 🔑 Key Information
+#### 4. Image Support (Phase 5 deferred feature)
+Once MVP is stable:
+- Add image upload to posts
+- Implement image processing (Pillow)
+- 6-color dithering (Floyd-Steinberg)
+- Cache processed images
 
-### **LXC Container**
-- **IP Address:** TBD (need to check)
-- **OS:** Debian 12 (Bookworm)
-- **Resources:** Check allocation
-- **Services Running:**
-  - PostgreSQL (port 5432)
-  - Redis (port 6379)
-
-### **Homelab Resources**
-- **Proxmox:** http://192.168.1.30
-- **Authentik:** http://192.168.1.108:9000
-- **Nginx Proxy Manager:** http://192.168.1.104:81
-- **Domain:** dataandstories.com
-
-### **Security Keys** (See CREDENTIALS.md)
-- PostgreSQL password: Generated and documented ✅
-- SECRET_KEY: Generated and documented ✅
-- API_KEY_SALT: Generated and documented ✅
-- Authentik credentials: Pending configuration
+#### 5. Web UI Enhancements
+- Better error handling in OAuth flow
+- Device management interface
+- Stream subscription approval workflow
+- User profile page
 
 ---
 
-## 📝 Answers to Previous Questions
+## 📊 Architecture Validation
 
-1. **LXC container IP address?** - Need to determine and document
-2. **Separate subdomain for device API?** - Not initially; can use same domain with /api path
-3. **Docker Compose instead?** - No, using direct LXC installation
-4. **Git repository?** - Local git initialized; remote TBD
-5. **PostgreSQL password strategy?** - Generated random token, stored in .env and CREDENTIALS.md ✅
+### **Key Decisions Confirmed**
 
----
+✅ **Reflex + FastAPI works perfectly**
+- Reflex handles web UI beautifully
+- FastAPI (via `api_transformer`) provides REST API for devices
+- Best of both worlds: Python-only development
 
-## 🎯 Critical Architectural Decisions Made
+✅ **Defensive architecture successful**
+- All business logic in `core/` modules
+- Framework-agnostic design
+- Can swap frameworks if needed (but Reflex is working well)
 
-### **Web Application**
-- **Framework:** Pure Reflex (with defensive code structure)
-- **Database:** PostgreSQL ✅ Installed
-- **Cache/Broker:** Redis ✅ Installed
-- **Background Tasks:** Celery ✅ Installed
-- **Authentication:** Authentik (OAuth2) - Needs configuration
-- **Communication:** WebSockets (fallback to polling if needed)
-
-### **MVP Scope**
-- Text-only posts (defer images to Phase 5)
-- Full Bluetooth setup flow
-- Device registration via QR code
-- OTA update system
-- Web UI for stream management
-- Timeline: 7 weeks to first production device
-
-### **Important Constraints**
-- E Ink refresh time: ~30 seconds
-- Minimum rotation interval: 60 seconds
-- Pi Zero 2 WH: 512MB RAM (limited resources)
-- Family project scale: 10-30 devices max
+✅ **bcrypt API keys secure**
+- Keys are 86 characters (base64 from 64 bytes entropy)
+- Properly hashed with bcrypt (truncated to 72 bytes)
+- Verification working correctly
 
 ---
 
-## 🚨 Potential Blockers to Watch
+## 🔑 Key Files Reference
 
-1. **Reflex Device API** - Week 1 Day 5 decision point
-2. **WebSocket Stability** - Need >90% connection success
-3. **Authentik Integration** - May need custom OAuth code for Reflex
-4. **Bluetooth Setup** - Web Bluetooth API has limited browser support
+### Configuration
+- `.env` - All environment variables (DATABASE_URL, REDIS_URL, OAuth credentials)
+- `CREDENTIALS.md` - All passwords and secrets (NOT in git)
+- `requirements.txt` - Python dependencies
+
+### Core Business Logic (Framework-agnostic)
+- `streamscene/core/models.py` - SQLAlchemy ORM models
+- `streamscene/core/database.py` - Database session management
+- `streamscene/core/auth.py` - User management, API keys
+- `streamscene/core/streams.py` - Stream/post/device operations
+
+### API Layer
+- `streamscene/api/__init__.py` - FastAPI app initialization
+- `streamscene/api/dependencies.py` - Auth and database dependencies
+- `streamscene/api/schemas.py` - Pydantic models
+- `streamscene/api/routes/devices.py` - Device endpoints
+
+### Web UI
+- `streamscene/streamscene.py` - Main app (integrates FastAPI)
+- `streamscene/pages/index.py` - Landing page
+- `streamscene/pages/login.py` - OAuth login
+- `streamscene/pages/callback.py` - OAuth callback
+- `streamscene/pages/streams.py` - Stream management
+
+### Testing
+- `tests/conftest.py` - Pytest fixtures
+- `tests/test_models.py` - Model tests
+- `tests/test_auth.py` - Auth tests
+- `tests/test_streams.py` - Stream operation tests
+- `API_TESTING.md` - Device API curl test documentation
+
+### Documentation
+- `CLAUDE.md` - Guide for Claude Code sessions
+- `API_TESTING.md` - API test results and examples
+- `NEXT_SESSION.md` - This file
 
 ---
 
 ## 💡 Quick Start Commands
 
-### Activate Environment
+### Run Development Server
 ```bash
 cd /root/streamscene
 source venv/bin/activate
-```
-
-### Run Development Server
-```bash
-source venv/bin/activate
 reflex run
 ```
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:8000
+- API Docs: http://localhost:8000/docs
 
-### Database Connection
+### Run Tests
 ```bash
-# See CREDENTIALS.md for password
-PGPASSWORD='<see-credentials>' psql -U streamscene -d streamscene -h localhost
+source venv/bin/activate
+pytest                                    # Run all tests
+pytest --cov=streamscene                  # With coverage
+pytest tests/test_streams.py              # Specific file
 ```
 
-### Redis Connection
+### Database Operations
 ```bash
-redis-cli ping
+# Connect to PostgreSQL
+psql -U streamscene -d streamscene -h localhost
+
+# Run migration
+alembic upgrade head
+
+# Create new migration
+alembic revision --autogenerate -m "description"
 ```
+
+### Test Device API
+```bash
+# Health check
+curl http://localhost:8000/api/health
+
+# Register device
+curl -X POST http://localhost:8000/api/devices/register \
+  -H "Content-Type: application/json" \
+  -d '{"device_uuid": "YOUR-UUID-HERE", "nickname": "My Frame"}'
+
+# Get content (with API key from registration)
+curl http://localhost:8000/api/devices/{device_id}/content \
+  -H "X-Device-Api-Key: YOUR-API-KEY"
+```
+
+See `API_TESTING.md` for complete examples.
+
+---
+
+## 🎯 Phase 2 Priorities
+
+### Week 2 Focus: Device Client Development
+
+**Critical Path:**
+1. **Raspberry Pi Client** (2-3 days)
+   - Fetch content from API
+   - Display on E Ink (use Waveshare examples)
+   - Poll every 60+ seconds
+   - Heartbeat every 5 minutes
+
+2. **Error Handling** (1 day)
+   - Network failures (retry with backoff)
+   - API errors (graceful degradation)
+   - Display "Offline" message if needed
+
+3. **Testing** (1 day)
+   - Test on actual Pi Zero 2 WH
+   - Test with actual 7.3" E Ink display
+   - Measure power consumption
+   - Verify 60-second minimum refresh works
+
+4. **Celery Setup** (Optional, 1 day)
+   - Background task runner
+   - Image processing (deferred to Phase 5)
+   - Scheduled jobs
+
+---
+
+## 📈 Project Metrics
+
+### Code Statistics
+- **Total Lines:** ~2,800 (excluding tests)
+- **Test Lines:** ~860
+- **Test Coverage:** 89%
+- **Files Created:** 25+
+- **Git Commits:** 5
+
+### Database
+- **Tables:** 7 (6 models + alembic_version)
+- **Migrations:** 1 (initial schema)
+- **Test Users:** 1 (test-user-123)
+- **Test Streams:** 1 (Family Updates)
+
+### API
+- **Endpoints:** 5 device endpoints + 1 health check
+- **Authentication:** API key (bcrypt hashed)
+- **Documentation:** Auto-generated (Swagger/ReDoc)
 
 ---
 
 ## 🔗 Important Links
 
 - **Reflex Documentation:** https://reflex.dev/docs
-- **Authentik OAuth Setup:** https://docs.goauthentik.io/docs/providers/oauth2
+- **FastAPI Documentation:** https://fastapi.tiangolo.com
+- **Authentik OAuth:** http://192.168.1.108:9000
+- **Waveshare E-Paper:** https://www.waveshare.com/wiki/7.3inch_e-Paper_HAT
 - **SQLAlchemy ORM:** https://docs.sqlalchemy.org/en/20/
 - **Alembic Migrations:** https://alembic.sqlalchemy.org/
-- **Waveshare E-Paper:** https://www.waveshare.com/wiki/7.3inch_e-Paper_HAT
 
 ---
 
-## 📊 Project Status: Phase 0 Complete ✅
+## 🚨 Known Issues / TODOs
+
+1. **OAuth Registration Flow:** Device registration endpoint currently uses first user in database as workaround. Need to add user authentication to registration endpoint.
+
+2. **Reflex Deprecation Warnings:** State auto-setters deprecated in 0.8.9. Need to define setters explicitly or set `state_auto_setters=False`.
+
+3. **Icon Warning:** Invalid icon tag `alert_triangle` in streams.py - using fallback.
+
+4. **Device Management UI:** Not yet implemented in web interface (devices can be registered via API only).
+
+5. **WebSocket Support:** Not yet implemented (polling works, WebSockets can be added later for real-time updates).
+
+---
+
+## 📊 Project Status: Phase 1 Complete ✅
 
 **Next Major Milestone:**
-- Complete Authentik OAuth configuration
-- Build database models and migrations
-- Create basic Reflex UI with authentication
-- Test device API capability (Day 5 decision point)
+- Build Raspberry Pi E Ink client
+- Test on actual hardware
+- Set up Celery for background tasks
+- Add device management UI (optional)
 
-**Ready for Phase 1: Backend Core Development** 🚀
+**Ready for Phase 2: Device Client Development** 🚀
+
+---
+
+**🎉 Phase 1 Achievement: Fully functional backend, REST API, and web UI in 1 session!**
