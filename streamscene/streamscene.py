@@ -7,11 +7,14 @@ from streamscene.pages.login import login
 from streamscene.pages.callback import callback
 from streamscene.pages.streams import streams
 
+# Import FastAPI app for device API
+from streamscene.api import api
 
-# Create the app
-app = rx.App()
 
-# Register pages
+# Create the app with API transformer
+app = rx.App(api_transformer=api)
+
+# Register Reflex pages
 app.add_page(index, route="/")
 app.add_page(login, route="/login")
 app.add_page(callback, route="/callback")

@@ -7,7 +7,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, desc
 
-from .models import Stream, Post, StreamSubscription, User
+from .models import Stream, Post, StreamSubscription, User, Device
 
 
 def utc_now():
@@ -481,3 +481,195 @@ def can_user_post_to_stream(session: Session, user_id: UUID, stream_id: UUID) ->
     # Check if user has approved subscription
     subscription = get_subscription(session, user_id, stream_id)
     return subscription is not None and subscription.is_approved
+
+
+# ============================================================================
+# DEVICE OPERATIONS
+# ============================================================================
+
+
+def register_device(
+    session: Session,
+    device_uuid: UUID,
+    user_id: UUID,
+    nickname: Optional[str] = None,
+) -> tuple[Device, str]:
+    """
+    Register a device and generate an API key.
+
+    Args:
+        session: Database session
+        device_uuid: Pre-configured device UUID from SD card
+        user_id: User ID who is registering the device
+        nickname: Optional nickname for the device
+
+    Returns:
+        tuple: (Device instance, plaintext API key)
+
+    Raises:
+        ValueError: If device_uuid is already registered
+    """
+    from .auth import generate_api_key, hash_api_key
+
+    # Check if device already exists
+    existing_device = session.query(Device).filter(
+        Device.device_uuid == device_uuid
+    ).first()
+
+    if existing_device and existing_device.user_id is not None:
+        raise ValueError("Device is already registered")
+
+    # Generate API key
+    api_key = generate_api_key()
+    api_key_hash = hash_api_key(api_key)
+
+    if existing_device:
+        # Update existing unregistered device
+        existing_device.user_id = user_id
+        existing_device.api_key_hash = api_key_hash
+        existing_device.nickname = nickname or "My StreamScene Frame"
+        existing_device.registered_at = utc_now()
+        device = existing_device
+    else:
+        # Create new device
+        device = Device(
+            device_uuid=device_uuid,
+            user_id=user_id,
+            api_key_hash=api_key_hash,
+            nickname=nickname or "My StreamScene Frame",
+            registered_at=utc_now(),
+        )
+        session.add(device)
+
+    session.flush()
+    return device, api_key
+
+
+def get_device_content(session: Session, device_id: UUID) -> Optional[dict]:
+    """
+    Get the latest content for a device to display.
+
+    Args:
+        session: Database session
+        device_id: Device UUID
+
+    Returns:
+        Optional[dict]: Content dictionary or None if no content available
+    """
+    device = session.query(Device).filter(Device.id == device_id).first()
+    if not device:
+        return None
+
+    # If no stream is configured, return empty
+    if not device.current_stream_id:
+        return {
+            "has_content": False,
+            "content_type": "text",
+            "text_content": "No stream configured. Please configure via web app.",
+            "stream_name": "System",
+            "posted_at": utc_now(),
+        }
+
+    # Get the stream
+    stream = get_stream_by_id(session, device.current_stream_id)
+    if not stream:
+        return {
+            "has_content": False,
+            "content_type": "text",
+            "text_content": "Configured stream not found.",
+            "stream_name": "System",
+            "posted_at": utc_now(),
+        }
+
+    # Get the latest post from the stream
+    latest_post = get_latest_stream_post(session, device.current_stream_id)
+    if not latest_post:
+        return {
+            "has_content": False,
+            "content_type": "text",
+            "text_content": "No posts yet in this stream.",
+            "stream_name": stream.name,
+            "posted_at": utc_now(),
+        }
+
+    return {
+        "has_content": True,
+        "content_type": latest_post.content_type,
+        "text_content": latest_post.text_content,
+        "image_url": latest_post.processed_image_path,
+        "stream_name": stream.name,
+        "posted_at": latest_post.created_at,
+    }
+
+
+def update_device_heartbeat(session: Session, device_id: UUID) -> bool:
+    """
+    Update device's last_seen timestamp.
+
+    Args:
+        session: Database session
+        device_id: Device UUID
+
+    Returns:
+        bool: True if device was found and updated, False otherwise
+    """
+    device = session.query(Device).filter(Device.id == device_id).first()
+    if not device:
+        return False
+
+    device.last_seen = utc_now()
+    session.flush()
+    return True
+
+
+def get_user_devices(session: Session, user_id: UUID) -> List[Device]:
+    """
+    Get all devices owned by a user.
+
+    Args:
+        session: Database session
+        user_id: User UUID
+
+    Returns:
+        List[Device]: List of device instances
+    """
+    return session.query(Device).filter(Device.user_id == user_id).all()
+
+
+def get_device_by_id(session: Session, device_id: UUID) -> Optional[Device]:
+    """
+    Get a device by ID.
+
+    Args:
+        session: Database session
+        device_id: Device UUID
+
+    Returns:
+        Optional[Device]: Device instance or None
+    """
+    return session.query(Device).filter(Device.id == device_id).first()
+
+
+def update_device_stream(
+    session: Session,
+    device_id: UUID,
+    stream_id: Optional[UUID],
+) -> Optional[Device]:
+    """
+    Update the current stream for a device.
+
+    Args:
+        session: Database session
+        device_id: Device UUID
+        stream_id: Stream UUID to set (or None to clear)
+
+    Returns:
+        Optional[Device]: Updated device or None if not found
+    """
+    device = get_device_by_id(session, device_id)
+    if not device:
+        return None
+
+    device.current_stream_id = stream_id
+    session.flush()
+    return device
