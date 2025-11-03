@@ -20,14 +20,10 @@ class StreamsState(BaseState):
     owned_streams: List[dict] = []
     subscribed_streams: List[dict] = []
 
-    current_stream_id: str = ""
-    current_stream_posts: List[dict] = []
-
     # Form fields
     new_stream_name: str = ""
     new_stream_description: str = ""
     new_stream_is_public: bool = False
-    new_post_content: str = ""
 
     # Search functionality
     search_query: str = ""
@@ -81,6 +77,7 @@ class StreamsState(BaseState):
                     {
                         "id": str(stream.id),
                         "name": stream.name,
+                        "slug": stream.slug,
                         "description": stream.description,
                         "is_public": stream.is_public,
                     }
@@ -127,6 +124,7 @@ class StreamsState(BaseState):
                     {
                         "id": str(stream.id),
                         "name": stream.name,
+                        "slug": stream.slug,
                         "description": stream.description,
                         "is_public": stream.is_public,
                         "owner_name": "Owner",  # TODO: Get actual owner name
@@ -227,6 +225,7 @@ class StreamsState(BaseState):
                 self.owned_streams.append({
                     "id": str(stream.id),
                     "name": stream.name,
+                    "slug": stream.slug,
                     "description": stream.description,
                     "is_public": stream.is_public,
                 })
@@ -236,71 +235,6 @@ class StreamsState(BaseState):
                 yield  # Force UI update
         except Exception as e:
             self.error_message = f"Error creating stream: {str(e)}"
-
-    def select_stream(self, stream_id: str):
-        """Select a stream to view its posts."""
-        self.current_stream_id = stream_id
-        self.load_posts()
-
-    def load_posts(self):
-        """Load posts for the currently selected stream."""
-        if not self.current_stream_id:
-            return
-
-        try:
-            with get_db_session() as session:
-                posts = stream_ops.get_stream_posts(
-                    session, UUID(self.current_stream_id), limit=20
-                )
-
-                self.current_stream_posts = [
-                    {
-                        "id": str(post.id),
-                        "text_content": post.text_content,
-                        "created_at": post.created_at.strftime("%Y-%m-%d %H:%M:%S"),
-                    }
-                    for post in posts
-                ]
-        except Exception as e:
-            self.error_message = f"Error loading posts: {str(e)}"
-
-    def create_post(self):
-        """Create a new post in the current stream."""
-        if not self.current_stream_id:
-            self.error_message = "No stream selected"
-            return
-
-        if not self.new_post_content.strip():
-            self.error_message = "Post content is required"
-            return
-
-        # Validate user_id before attempting UUID conversion
-        if not self.user_id:
-            self.error_message = "You must be logged in to create a post"
-            return rx.redirect("/")
-
-        try:
-            author_uuid = UUID(self.user_id)
-        except ValueError:
-            # Invalid UUID format - user needs to log in again
-            self.error_message = "Invalid session. Please log in again."
-            return rx.redirect("/")
-
-        try:
-            with get_db_session() as session:
-                stream_ops.create_post(
-                    session,
-                    stream_id=UUID(self.current_stream_id),
-                    author_id=author_uuid,
-                    text_content=self.new_post_content,
-                )
-                session.commit()
-
-                self.success_message = "Post created!"
-                self.new_post_content = ""
-                self.load_posts()
-        except Exception as e:
-            self.error_message = f"Error creating post: {str(e)}"
 
     # logout() method inherited from BaseState
 
@@ -331,10 +265,11 @@ def search_and_add_bar() -> rx.Component:
 def owned_streams_table() -> rx.Component:
     """Table showing streams owned by the user."""
     return rx.vstack(
-        rx.heading("Streams I Own", size="6"),
+        rx.heading("Streams I Own", size="6", margin_bottom="3"),
         rx.cond(
             StreamsState.filtered_owned_streams.length() > 0,
-            rx.table.root(
+            rx.card(
+                rx.table.root(
                 rx.table.header(
                     rx.table.row(
                         rx.table.column_header_cell("Name"),
@@ -360,19 +295,23 @@ def owned_streams_table() -> rx.Component:
                                 )
                             ),
                             rx.table.cell(
-                                rx.button(
-                                    "View Posts",
-                                    on_click=lambda sid=stream["id"]: StreamsState.select_stream(sid),
-                                    size="2",
-                                    variant="soft",
+                                rx.link(
+                                    rx.button(
+                                        "View Posts",
+                                        size="2",
+                                        variant="soft",
+                                    ),
+                                    href=f"/streams/{stream['slug']}",
                                 )
                             ),
                         ),
                     ),
                 ),
-                variant="surface",
-                size="3",
-                width="100%",
+                    variant="surface",
+                    size="3",
+                    width="100%",
+                ),
+                size="2",
             ),
             rx.text(
                 "No streams yet. Click 'Add Stream' to create your first stream!",
@@ -389,10 +328,11 @@ def owned_streams_table() -> rx.Component:
 def subscribed_streams_table() -> rx.Component:
     """Table showing streams user is subscribed to."""
     return rx.vstack(
-        rx.heading("Streams I'm Subscribed To", size="6"),
+        rx.heading("Streams I'm Subscribed To", size="6", margin_bottom="3"),
         rx.cond(
             StreamsState.filtered_subscribed_streams.length() > 0,
-            rx.table.root(
+            rx.card(
+                rx.table.root(
                 rx.table.header(
                     rx.table.row(
                         rx.table.column_header_cell("Name"),
@@ -416,11 +356,13 @@ def subscribed_streams_table() -> rx.Component:
                             ),
                             rx.table.cell(
                                 rx.hstack(
-                                    rx.button(
-                                        "View Posts",
-                                        on_click=lambda sid=stream["id"]: StreamsState.select_stream(sid),
-                                        size="2",
-                                        variant="soft",
+                                    rx.link(
+                                        rx.button(
+                                            "View Posts",
+                                            size="2",
+                                            variant="soft",
+                                        ),
+                                        href=f"/streams/{stream['slug']}",
                                     ),
                                     rx.button(
                                         "Unsubscribe",
@@ -435,9 +377,11 @@ def subscribed_streams_table() -> rx.Component:
                         ),
                     ),
                 ),
-                variant="surface",
-                size="3",
-                width="100%",
+                    variant="surface",
+                    size="3",
+                    width="100%",
+                ),
+                size="2",
             ),
             rx.text(
                 "You haven't subscribed to any streams yet.",
@@ -519,53 +463,6 @@ def create_stream_modal() -> rx.Component:
     )
 
 
-def post_view() -> rx.Component:
-    """View posts in the selected stream."""
-    return rx.cond(
-        StreamsState.current_stream_id,
-        rx.vstack(
-            rx.heading("Stream Posts", size="6"),
-            # Post creation form
-            rx.card(
-                rx.vstack(
-                    rx.text_area(
-                        placeholder="Write your message...",
-                        value=StreamsState.new_post_content,
-                        on_change=StreamsState.set_new_post_content,
-                    ),
-                    rx.button(
-                        "Post",
-                        on_click=StreamsState.create_post,
-                        color_scheme="blue",
-                        size="2",
-                    ),
-                    spacing="2",
-                    width="100%",
-                ),
-            ),
-            # List of posts
-            rx.foreach(
-                StreamsState.current_stream_posts,
-                lambda post: rx.card(
-                    rx.vstack(
-                        rx.text(post["text_content"]),
-                        rx.text(
-                            post["created_at"],
-                            size="1",
-                            color="gray",
-                        ),
-                        spacing="1",
-                        align="start",
-                    ),
-                ),
-            ),
-            spacing="4",
-            width="100%",
-        ),
-        rx.box(),  # Empty box when no stream selected
-    )
-
-
 def streams() -> rx.Component:
     """Main streams management page."""
     content = rx.container(
@@ -588,23 +485,14 @@ def streams() -> rx.Component:
                 ),
             ),
 
-            # Main content in two columns
-            rx.grid(
-                # Left column: Streams section
-                rx.vstack(
-                    search_and_add_bar(),
-                    owned_streams_table(),
-                    subscribed_streams_table(),
-                    spacing="6",
-                    width="100%",
-                ),
-
-                # Right column: Post view (unchanged)
-                post_view(),
-
-                columns="2",
+            # Main content - streams section (full width)
+            rx.vstack(
+                search_and_add_bar(),
+                owned_streams_table(),
+                subscribed_streams_table(),
                 spacing="6",
                 width="100%",
+                align="start",
             ),
 
             # Modal (rendered at root level)
@@ -614,7 +502,8 @@ def streams() -> rx.Component:
             padding="4",
             width="100%",
         ),
-        max_width="1400px",  # Wider for tables
+        max_width="1200px",  # Good width for single-column table view
+        padding_x=["4", "6", "8"],  # Responsive horizontal padding
         on_mount=StreamsState.on_mount,  # Connect lifecycle handler
     )
 

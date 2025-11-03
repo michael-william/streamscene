@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, desc
 
 from .models import Stream, Post, StreamSubscription, User, Device
+from .utils import generate_slug, ensure_unique_slug
 
 
 def utc_now():
@@ -55,9 +56,14 @@ def create_stream(
     if existing:
         raise ValueError(f"You already have a stream named '{name}'")
 
+    # Generate a unique slug from the stream name
+    base_slug = generate_slug(name)
+    unique_slug = ensure_unique_slug(session, Stream, base_slug)
+
     stream = Stream(
         owner_id=owner_id,
         name=name,
+        slug=unique_slug,
         description=description,
         is_public=is_public,
         allow_text=allow_text,
@@ -80,6 +86,20 @@ def get_stream_by_id(session: Session, stream_id: UUID) -> Optional[Stream]:
         Optional[Stream]: Stream instance or None if not found
     """
     return session.query(Stream).filter(Stream.id == stream_id).first()
+
+
+def get_stream_by_slug(session: Session, slug: str) -> Optional[Stream]:
+    """
+    Get a stream by its slug.
+
+    Args:
+        session: Database session
+        slug: Stream slug (URL-safe identifier)
+
+    Returns:
+        Optional[Stream]: Stream instance or None if not found
+    """
+    return session.query(Stream).filter(Stream.slug == slug).first()
 
 
 def get_user_streams(session: Session, user_id: UUID) -> List[Stream]:

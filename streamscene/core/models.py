@@ -68,6 +68,7 @@ class Stream(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     name: Mapped[str] = Column(String(100), nullable=False)
+    slug: Mapped[str] = Column(String(150), nullable=False, unique=True, index=True)
     description: Mapped[str] = Column(Text, default="", nullable=False)
     is_public: Mapped[bool] = Column(Boolean, default=False, nullable=False)
     allow_text: Mapped[bool] = Column(Boolean, default=True, nullable=False)
