@@ -25,7 +25,7 @@ class DashboardState(BaseState):
         if redirect := self.require_auth():
             return redirect
 
-        self.load_dashboard_stats()
+        yield from self.load_dashboard_stats()
 
     def load_dashboard_stats(self):
         """Load statistics for the dashboard."""
@@ -65,6 +65,8 @@ class DashboardState(BaseState):
                     }
                     for stream in user_streams[:5]
                 ]
+
+                yield  # Force UI update
 
         except Exception as e:
             self.error_message = f"Error loading dashboard: {str(e)}"
@@ -234,6 +236,7 @@ def dashboard() -> rx.Component:
             width="100%",
         ),
         max_width="900px",
+        on_mount=DashboardState.on_mount,  # Connect lifecycle handler
     )
 
     return authenticated_layout(content, current_page="dashboard")

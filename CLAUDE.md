@@ -427,6 +427,11 @@ config = rx.Config(
 9. **No intermediate login page:** Link directly to OAuth URL to avoid WebSocket initialization issues
 10. **Nginx cross-container routing:** Use container IP (192.168.1.118), not 127.0.0.1 for proxy targets
 11. **Port conflicts on restart:** Use `./restart-reflex.sh` to cleanly kill processes by port before restarting
+12. **Reflex on_mount must be connected AND use yield from:** Lifecycle methods like `on_mount()` must:
+    - Be passed to component: `rx.container(..., on_mount=StateName.on_mount)`
+    - Use `yield from` when calling generator methods: `yield from self.load_data()`
+    - Methods that update state must `yield` to trigger UI updates
+    - Without both, methods never execute or state updates don't render
 
 ## Testing Strategy
 
