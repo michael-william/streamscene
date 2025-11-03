@@ -43,7 +43,18 @@ def create_stream(
 
     Returns:
         Stream: The created stream instance
+
+    Raises:
+        ValueError: If a stream with the same name already exists for this owner
     """
+    # Check for duplicate stream name for this owner
+    existing = session.query(Stream).filter(
+        and_(Stream.owner_id == owner_id, Stream.name == name)
+    ).first()
+
+    if existing:
+        raise ValueError(f"You already have a stream named '{name}'")
+
     stream = Stream(
         owner_id=owner_id,
         name=name,

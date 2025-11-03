@@ -29,12 +29,22 @@ class DashboardState(BaseState):
 
     def load_dashboard_stats(self):
         """Load statistics for the dashboard."""
+        # Validate user_id before proceeding
+        if not self.user_id:
+            self.error_message = "Not authenticated - please log in"
+            return
+
+        # Convert user_id to UUID with error handling
+        try:
+            user_uuid = UUID(self.user_id)
+        except (ValueError, AttributeError) as e:
+            self.error_message = f"Invalid user session: {str(e)}"
+            return
+
         try:
             with get_db_session() as session:
                 # Get stream count
-                user_streams = stream_ops.get_user_streams(
-                    session, UUID(self.user_id)
-                )
+                user_streams = stream_ops.get_user_streams(session, user_uuid)
                 self.stream_count = len(user_streams)
 
                 # Count recent posts across all streams

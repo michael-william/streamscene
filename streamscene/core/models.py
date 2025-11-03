@@ -79,6 +79,11 @@ class Stream(Base):
         DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
     )
 
+    # Constraints
+    __table_args__ = (
+        UniqueConstraint('owner_id', 'name', name='uq_owner_stream_name'),
+    )
+
     # Relationships
     owner: Mapped["User"] = relationship("User", back_populates="owned_streams")
     posts: Mapped[List["Post"]] = relationship("Post", back_populates="stream", cascade="all, delete-orphan")
