@@ -7,12 +7,14 @@ import reflex as rx
 
 from streamscene.core.database import get_db_session
 from streamscene.core import streams as stream_ops
+from streamscene.components.layout import authenticated_layout
+from .base_state import BaseState
 
 
-class StreamsState(rx.State):
+class StreamsState(BaseState):
     """State for stream management."""
 
-    user_id: str = ""
+    # user_id inherited from BaseState
     streams: List[dict] = []
     current_stream_id: str = ""
     current_stream_posts: List[dict] = []
@@ -28,20 +30,28 @@ class StreamsState(rx.State):
 
     def on_mount(self):
         """Load user's streams when page loads."""
-        # Check if user is authenticated
-        user_id = self.router.session.get("user_id")
-        if not user_id:
-            return rx.redirect("/login")
+        # Check if user is authenticated (cookie auto-loaded)
+        if not self.user_id:
+            return rx.redirect("/")
 
-        self.user_id = user_id
         self.load_streams()
 
     def load_streams(self):
         """Load all streams owned by the user."""
+        # Validate user_id before attempting UUID conversion
+        if not self.user_id:
+            return rx.redirect("/")
+
+        try:
+            user_uuid = UUID(self.user_id)
+        except ValueError:
+            # Invalid UUID format - user needs to log in again
+            return rx.redirect("/")
+
         try:
             with get_db_session() as session:
                 user_streams = stream_ops.get_user_streams(
-                    session, UUID(self.user_id)
+                    session, user_uuid
                 )
 
                 self.streams = [
@@ -62,11 +72,23 @@ class StreamsState(rx.State):
             self.error_message = "Stream name is required"
             return
 
+        # Validate user_id before attempting UUID conversion
+        if not self.user_id:
+            self.error_message = "You must be logged in to create a stream"
+            return rx.redirect("/")
+
+        try:
+            owner_uuid = UUID(self.user_id)
+        except ValueError:
+            # Invalid UUID format - user needs to log in again
+            self.error_message = "Invalid session. Please log in again."
+            return rx.redirect("/")
+
         try:
             with get_db_session() as session:
                 stream = stream_ops.create_stream(
                     session,
-                    owner_id=UUID(self.user_id),
+                    owner_id=owner_uuid,
                     name=self.new_stream_name,
                     description=self.new_stream_description,
                     is_public=self.new_stream_is_public,
@@ -118,12 +140,24 @@ class StreamsState(rx.State):
             self.error_message = "Post content is required"
             return
 
+        # Validate user_id before attempting UUID conversion
+        if not self.user_id:
+            self.error_message = "You must be logged in to create a post"
+            return rx.redirect("/")
+
+        try:
+            author_uuid = UUID(self.user_id)
+        except ValueError:
+            # Invalid UUID format - user needs to log in again
+            self.error_message = "Invalid session. Please log in again."
+            return rx.redirect("/")
+
         try:
             with get_db_session() as session:
                 stream_ops.create_post(
                     session,
                     stream_id=UUID(self.current_stream_id),
-                    author_id=UUID(self.user_id),
+                    author_id=author_uuid,
                     text_content=self.new_post_content,
                 )
                 session.commit()
@@ -134,10 +168,7 @@ class StreamsState(rx.State):
         except Exception as e:
             self.error_message = f"Error creating post: {str(e)}"
 
-    def logout(self):
-        """Log out the user."""
-        self.router.session.clear()
-        return rx.redirect("/")
+    # logout() method inherited from BaseState
 
 
 def stream_list() -> rx.Component:
@@ -249,27 +280,14 @@ def post_view() -> rx.Component:
 
 def streams() -> rx.Component:
     """Main streams management page."""
-    return rx.container(
+    content = rx.container(
         rx.vstack(
-            # Header
-            rx.hstack(
-                rx.heading("StreamScene", size="8"),
-                rx.spacer(),
-                rx.button(
-                    "Logout",
-                    on_click=StreamsState.logout,
-                    variant="soft",
-                    size="2",
-                ),
-                width="100%",
-                align="center",
-            ),
             # Messages
             rx.cond(
                 StreamsState.error_message,
                 rx.callout(
                     StreamsState.error_message,
-                    icon="alert_triangle",
+                    icon="triangle_alert",
                     color_scheme="red",
                 ),
             ),
@@ -300,3 +318,5 @@ def streams() -> rx.Component:
         ),
         max_width="1200px",
     )
+
+    return authenticated_layout(content, current_page="streams")

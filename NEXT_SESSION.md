@@ -1,8 +1,8 @@
 # StreamScene - Current Status
 
-**Last Updated:** November 2, 2025
+**Last Updated:** November 2, 2025 (Updated after authentication implementation session)
 **Project:** StreamScene - Family E Ink Message Board
-**Current Phase:** Phase 1 ✅ COMPLETE
+**Current Phase:** Phase 1.5 ✅ COMPLETE - Web Auth + Production Deployment
 
 ---
 
@@ -50,15 +50,17 @@
 - ✅ API key authentication working (bcrypt hashed keys)
 - ✅ Full data flow tested (user creates stream/post → device fetches content)
 
-#### 4. Reflex Web UI
-- ✅ 4 pages created:
-  - `pages/index.py` - Landing page
-  - `pages/login.py` - OAuth login (redirects to Authentik)
-  - `pages/callback.py` - OAuth callback handler
+#### 4. Reflex Web UI + Production Authentication
+- ✅ 3 pages (login page removed for direct OAuth):
+  - `pages/index.py` - Landing page with direct OAuth link
+  - `pages/callback.py` - OAuth callback handler (processes code, sets cookie)
   - `pages/streams.py` - Stream management UI (list, create, post)
-- ✅ OAuth 2.0 / OIDC flow implemented
-- ✅ User session management
+- ✅ OAuth 2.0 / OIDC flow fully functional
+- ✅ Cookie-based session management (`rx.Cookie()` State variables)
 - ✅ Stream and post CRUD through UI
+- ✅ **Production deployment working:** https://streamscene.dataandstories.com
+- ✅ **Nginx Proxy Manager configured** for cross-container routing
+- ✅ **WebSocket proxy working** for Reflex state management
 
 #### 5. Testing
 - ✅ 54 unit tests written (89% coverage):
@@ -77,6 +79,58 @@ Key findings:
 - ✅ Content delivery functional
 - ✅ bcrypt key hashing working (truncated to 72 bytes)
 - ✅ Invalid/missing keys properly rejected
+
+---
+
+## ✅ Phase 1.5: COMPLETED - Production Authentication & Deployment
+
+### **What We Fixed (November 2, 2025 Session)**
+
+#### Authentication Implementation
+- ✅ **Direct OAuth Link:** Removed intermediate `/login` page, index links directly to Authentik
+  - Fixes: WebSocket connection errors from premature page redirects
+  - Implementation: OAuth URL built server-side in `index.py`, linked with `is_external=True`
+
+- ✅ **Cookie-Based Sessions:** Switched from router.session to `rx.Cookie()` State variables
+  - Problem: `router.session` is read-only in newer Reflex versions
+  - Solution: `user_id: str = rx.Cookie("")` automatically syncs with browser
+  - Usage: Direct assignment `self.user_id = "..."` sets cookie, read directly from State
+
+- ✅ **OAuth Flow:** Complete authentication working end-to-end
+  - Index → Authentik → Callback (code exchange) → Streams page
+  - User created/fetched from database
+  - Cookie persists across page loads
+
+#### Production Deployment Configuration
+- ✅ **Nginx Proxy Manager Setup:**
+  - Main proxy: Forward to `192.168.1.118:3000` (frontend)
+  - Advanced config: Route `/_event/` WebSocket to `:8000` backend
+  - Advanced config: Route `/api/*` requests to `:8000` backend
+  - **Critical Fix:** Use container IP (192.168.1.118), not 127.0.0.1
+
+- ✅ **Reflex Configuration (`rxconfig.py`):**
+  - Added `api_url` and `deploy_url` for production
+  - Backend binds to 0.0.0.0:8000, frontend to 0.0.0.0:3000
+
+- ✅ **Reliable Restart Script:** Created `restart-reflex.sh`
+  - Finds processes by port (avoids "Address in use" errors)
+  - Cleans up gracefully before restart
+  - Clears Python cache
+
+#### Files Modified
+- `streamscene/pages/index.py` - Direct OAuth link generation
+- `streamscene/pages/callback.py` - Cookie-based user_id storage
+- `streamscene/pages/streams.py` - Cookie-based authentication check
+- `streamscene/pages/login.py` - (Effectively deprecated, but kept for reference)
+- `rxconfig.py` - Added production URLs
+- `restart-reflex.sh` - New reliable restart script
+- `CLAUDE.md` - Updated with authentication & deployment docs
+
+#### Known Issues Resolved
+- ❌ ~~Session assignment errors~~ → ✅ Fixed with `rx.Cookie()`
+- ❌ ~~WebSocket 502 errors~~ → ✅ Fixed with correct container IP in Nginx
+- ❌ ~~Port conflict on restart~~ → ✅ Fixed with restart script
+- ❌ ~~Extra login button click~~ → ✅ Fixed with direct OAuth link
 
 ---
 

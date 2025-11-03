@@ -33,12 +33,22 @@ reflex run
 # Production mode
 reflex run --env prod
 
+# Reliable restart (handles port conflicts)
+./restart-reflex.sh
+
 # Background tasks (Celery worker)
 celery -A streamscene.core.tasks worker --loglevel=info
 
 # Celery beat (scheduled tasks)
 celery -A streamscene.core.tasks beat --loglevel=info
 ```
+
+**Restart Script:** Use `./restart-reflex.sh` to cleanly stop and restart Reflex. This script:
+- Finds processes by port (3000 and 8000)
+- Kills them gracefully
+- Verifies ports are free
+- Clears Python cache
+- Starts fresh instance
 
 ### Testing
 ```bash
@@ -173,10 +183,11 @@ streamscene/
 
 ### User Endpoints (Web UI)
 Currently implemented through Reflex pages:
-- `/` - Landing page
-- `/login` - OAuth login (redirects to Authentik)
-- `/callback` - OAuth callback handler
+- `/` - Landing page (with direct OAuth link to Authentik)
+- `/callback` - OAuth callback handler (processes code, creates user, sets cookie)
 - `/streams` - Stream management UI (create streams, post messages, manage devices)
+
+**Note:** `/login` page removed - index page links directly to Authentik OAuth URL to avoid WebSocket issues.
 
 **Core business logic** in `streamscene/core/streams.py`:
 - Stream CRUD: create_stream, get_stream_by_id, update_stream, delete_stream
@@ -188,15 +199,37 @@ Currently implemented through Reflex pages:
 
 Required `.env` variables:
 ```bash
+# Database
 DATABASE_URL=postgresql://streamscene:password@localhost/streamscene
 REDIS_URL=redis://localhost:6379/0
+
+# Security
 SECRET_KEY=your-secret-key-here
+API_KEY_SALT=your-api-key-salt-here
+
+# Authentik OAuth (old format - for reference)
 AUTHENTIK_URL=http://192.168.1.108:9000
 AUTHENTIK_CLIENT_ID=streamscene
 AUTHENTIK_CLIENT_SECRET=your-client-secret
+
+# OAuth Configuration (used by Reflex pages)
+OAUTH_CLIENT_ID=streamscene
+OAUTH_CLIENT_SECRET=your-client-secret
+OAUTH_AUTHORIZATION_URL=https://auth.dataandstories.com/application/o/authorize/
+OAUTH_TOKEN_URL=https://auth.dataandstories.com/application/o/token/
+OAUTH_USERINFO_URL=https://auth.dataandstories.com/application/o/userinfo/
+OAUTH_REDIRECT_URI=https://streamscene.dataandstories.com/callback
+
+# Application
 DOMAIN=streamscene.dataandstories.com
+FRONTEND_URL=https://streamscene.dataandstories.com
+BACKEND_URL=https://streamscene.dataandstories.com
+ENVIRONMENT=production
+
+# Storage
 UPLOAD_PATH=/var/lib/streamscene/uploads
 PROCESSED_PATH=/var/lib/streamscene/processed
+CACHE_PATH=/var/lib/streamscene/cache
 ```
 
 ## E Ink Display Constraints
@@ -216,11 +249,24 @@ PROCESSED_PATH=/var/lib/streamscene/processed
 
 ## Authentication Flow
 
-### Web Users
-1. User visits Reflex web app
-2. Redirected to Authentik OAuth2 flow (http://192.168.1.108:9000)
-3. After auth, Reflex creates session with user reference
-4. Query Authentik API for user details (cached in Redis for 15min)
+### Web Users (OAuth2 + Cookie-Based Sessions)
+1. User visits index page (`/`)
+2. Clicks "Sign In" → Direct link to Authentik OAuth authorization URL (no intermediate page)
+3. User authenticates at Authentik (https://auth.dataandstories.com)
+4. Authentik redirects to `/callback?code=...`
+5. Callback page:
+   - Exchanges code for access token
+   - Fetches user info from Authentik
+   - Creates/gets user in local database
+   - Stores user_id in `rx.Cookie()` State variable (auto-synced to browser)
+6. Redirects to `/streams` page
+7. Streams page reads user_id from cookie (auto-loaded into State)
+
+**Implementation Details:**
+- **Cookie Storage:** `rx.Cookie("")` State variables automatically sync with browser cookies
+- **No Session Assignment:** Reflex router.session is read-only; use Cookie State vars instead
+- **Authentication Check:** `if not self.user_id: return rx.redirect("/")`
+- **Logout:** Set cookie to empty string: `self.user_id = ""`
 
 ### Device Authentication
 1. Device boots with pre-configured UUID
@@ -290,17 +336,75 @@ The device client code lives in a separate `streamscene-client/` repository:
 
 **Homelab Resources:**
 - **Proxmox:** http://192.168.1.30
-- **LXC Container:** StreamScene app (Debian 12, 4 cores, 4GB RAM, 50GB storage)
-- **Authentik:** http://192.168.1.108:9000 (OAuth provider)
-- **Nginx Proxy Manager:** http://192.168.1.104:81 (reverse proxy + SSL)
+- **LXC Container (StreamScene):** 192.168.1.118 (Debian 12, 4 cores, 4GB RAM, 50GB storage)
+- **LXC Container (Authentik):** 192.168.1.108:9000 (OAuth provider)
+- **LXC Container (Nginx Proxy Manager):** 192.168.1.104:81 (reverse proxy + SSL)
 - **Domain:** dataandstories.com
 
 **System Services:**
 - PostgreSQL 15
 - Redis Server
-- Reflex web server (systemd service)
-- Celery worker (systemd service)
-- Celery beat scheduler (systemd service)
+- Reflex web server (production: frontend on :3000, backend on :8000)
+- Celery worker (systemd service - not yet configured)
+- Celery beat scheduler (systemd service - not yet configured)
+
+## Deployment & Nginx Configuration
+
+**Reflex Production Setup:**
+- Frontend (React SPA): Port 3000
+- Backend (FastAPI): Port 8000
+- Running on LXC container at 192.168.1.118
+
+**Nginx Proxy Manager Configuration:**
+
+Main Proxy Host Settings (Details tab):
+- Scheme: `http`
+- Forward Hostname/IP: `192.168.1.118` (StreamScene container IP)
+- Forward Port: `3000` (frontend)
+- Enable: WebSockets Support, Cache Assets, Block Common Exploits
+
+Advanced Configuration (Advanced tab):
+```nginx
+# WebSocket support for Reflex
+location /_event/ {
+    proxy_pass http://192.168.1.118:8000;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 86400;
+}
+
+# API routes to backend
+location /api/ {
+    proxy_pass http://192.168.1.118:8000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+**Important:**
+- Main proxy forwards ALL traffic to frontend (:3000) by default
+- Advanced config routes `/_event/` (WebSocket) and `/api/` to backend (:8000)
+- Use container IP (192.168.1.118), not 127.0.0.1 (Nginx is in different container)
+
+**Reflex Configuration (`rxconfig.py`):**
+```python
+config = rx.Config(
+    app_name="streamscene",
+    backend_host="0.0.0.0",
+    backend_port=8000,
+    frontend_port=3000,
+    api_url="https://streamscene.dataandstories.com",
+    deploy_url="https://streamscene.dataandstories.com",
+    plugins=[...]
+)
+```
 
 ## Critical Decision Points
 
@@ -319,6 +423,10 @@ The device client code lives in a separate `streamscene-client/` repository:
 5. **Cache Authentik user data:** Reduce OAuth API calls with Redis caching
 6. **Use UUIDs everywhere:** All primary keys are UUIDs, not integers
 7. **WebSocket heartbeat required:** Devices must ping every 30 seconds or connection times out
+8. **Reflex session is read-only:** Use `rx.Cookie()` State variables for authentication, not `router.session`
+9. **No intermediate login page:** Link directly to OAuth URL to avoid WebSocket initialization issues
+10. **Nginx cross-container routing:** Use container IP (192.168.1.118), not 127.0.0.1 for proxy targets
+11. **Port conflicts on restart:** Use `./restart-reflex.sh` to cleanly kill processes by port before restarting
 
 ## Testing Strategy
 

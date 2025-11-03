@@ -7,13 +7,34 @@ import reflex as rx
 
 from streamscene.core.database import get_db_session
 from streamscene.core.auth import get_or_create_user
+from .base_state import BaseState
 
 
-class CallbackState(rx.State):
+class CallbackState(BaseState):
     """State for OAuth callback handling."""
 
     error_message: str = ""
     is_loading: bool = True
+    # user_id inherited from BaseState
+
+    def on_load(self):
+        """Called when the page loads - extract code from URL and process."""
+        # Get the authorization code from URL query parameters
+        code = self.router.page.params.get("code", "") if hasattr(self.router.page, "params") else ""
+
+        # Fallback to checking query params from URL
+        if not code:
+            query_params = self.router.session.client_query_params
+            code = query_params.get("code", [""])[0] if query_params else ""
+
+        print(f"DEBUG: Callback page loaded")
+        print(f"DEBUG: Authorization code: {code[:20] if code else 'NONE'}...")
+
+        if code:
+            return self.handle_callback(code)
+        else:
+            self.error_message = "No authorization code received from OAuth provider"
+            self.is_loading = False
 
     def handle_callback(self, code: str):
         """
@@ -78,11 +99,11 @@ class CallbackState(rx.State):
                 user = get_or_create_user(session, authentik_user_id)
                 session.commit()
 
-                # Store user ID in session
-                self.router.session.setdefault("user_id", str(user.id))
+                # Store user ID in cookie (automatically synced to browser)
+                self.user_id = str(user.id)
 
-            # Redirect to streams page
-            return rx.redirect("/streams")
+            # Redirect to dashboard (authenticated home page)
+            return rx.redirect("/dashboard")
 
         except Exception as e:
             self.error_message = f"Authentication error: {str(e)}"
@@ -117,4 +138,5 @@ def callback() -> rx.Component:
                 min_height="85vh",
             ),
         ),
+        on_mount=CallbackState.on_load,
     )
