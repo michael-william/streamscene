@@ -432,6 +432,35 @@ config = rx.Config(
     - Use `yield from` when calling generator methods: `yield from self.load_data()`
     - Methods that update state must `yield` to trigger UI updates
     - Without both, methods never execute or state updates don't render
+13. **Use on_load (page-level) for router params, not on_mount (component-level):**
+    - `on_mount()` fires before router.page.params is populated → empty query params
+    - Use method named `on_load()` to access router params reliably
+    - Pattern: Define `def on_load(self):` method, trigger with `on_mount=StateName.on_load`
+    - Example from callback.py shows the correct pattern
+    - See DEBUGGING_HISTORY.md for full explanation of timing issues
+14. **Query params vs dynamic routes for UUID lookups:**
+    - Query params (`/page?id={uuid}`) more reliable than dynamic routes (`/page/[id]`)
+    - Dynamic routes have timing issues and auto-creation conflicts in Reflex
+    - For user-clicked navigation (not typed URLs), query params are simpler
+    - Access via: `self.router.page.params.get("id", "")`
+15. **Use fallback pattern for router params (from callback.py):**
+    ```python
+    # Primary method
+    param = self.router.page.params.get("key", "") if hasattr(self.router.page, "params") else ""
+    # Fallback for edge cases
+    if not param:
+        query_params = self.router.session.client_query_params
+        param = query_params.get("key", [""])[0] if query_params else ""
+    ```
+16. **Component event trigger limitations:**
+    - Not all components support all events (e.g., `rx.container` doesn't support `on_load` event)
+    - Always trigger lifecycle via `on_mount` parameter, even if method is named `on_load`
+    - Error: "The Container does not take in an `on_load` event trigger"
+17. **Document complex debugging in DEBUGGING_HISTORY.md:**
+    - For issues requiring multiple attempts, create debugging documentation
+    - Track: what was tried, why it failed, server logs, lessons learned
+    - Prevents repeating failed approaches in future sessions
+    - Pattern: DEBUGGING_HISTORY.md with chronological attempt log
 
 ## Testing Strategy
 
