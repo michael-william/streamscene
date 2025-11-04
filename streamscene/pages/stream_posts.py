@@ -14,8 +14,7 @@ from .base_state import BaseState
 class StreamPostsState(BaseState):
     """State for viewing posts in a stream.
 
-    Note: The dynamic route parameter 'slug' from /streams/[slug] is automatically
-    available as self.slug - we don't need to define it here.
+    Stream ID is passed via query parameter: /stream-posts?id={uuid}
     """
 
     # Stream info
@@ -33,33 +32,61 @@ class StreamPostsState(BaseState):
     error_message: str = ""
     success_message: str = ""
 
-    def on_mount(self):
-        """Load stream and posts when page mounts."""
+    def on_load(self):
+        """Load stream and posts when page loads.
+
+        Using on_load (page-level) instead of on_mount (component-level)
+        to ensure router.page.params is populated. See DEBUGGING_HISTORY.md.
+        """
         # Check authentication first
         if redirect := self.require_auth():
             return redirect
 
-        # Load stream data using the slug from the URL
-        yield from self.load_stream_and_posts(self.slug)
+        # Clear any previous error messages
+        self.error_message = ""
 
-    def load_stream_and_posts(self, slug: str):
-        """Load stream info and its posts by slug."""
-        print(f"[STREAM_POSTS] Loading stream with slug: {slug}")
+        # Method 1: Get stream ID from router.page.params
+        stream_id = self.router.page.params.get("id", "") if hasattr(self.router.page, "params") else ""
+
+        print(f"[STREAM_POSTS] on_load called (page-level lifecycle)")
+        print(f"[STREAM_POSTS] Method 1 (router.page.params): '{stream_id}'")
+
+        # Method 2: Fallback to client_query_params (proven pattern from callback.py)
+        if not stream_id:
+            query_params = self.router.session.client_query_params
+            stream_id = query_params.get("id", [""])[0] if query_params else ""
+            print(f"[STREAM_POSTS] Method 2 (client_query_params): '{stream_id}'")
+
+        print(f"[STREAM_POSTS] Final stream_id: '{stream_id}'")
+        print(f"[STREAM_POSTS] User ID: {self.user_id}")
+
+        if not stream_id:
+            self.error_message = "No stream specified"
+            print(f"[STREAM_POSTS] ERROR: No stream_id found via any method")
+            return
+
+        # Load stream data using the UUID from the query parameter
+        yield from self.load_stream_and_posts(stream_id)
+
+    def load_stream_and_posts(self, stream_id: str):
+        """Load stream info and its posts by UUID."""
+        print(f"[STREAM_POSTS] Loading stream with ID: {stream_id}")
         print(f"[STREAM_POSTS] User ID: {self.user_id}")
 
         try:
             user_uuid = UUID(self.user_id)
+            stream_uuid = UUID(stream_id)
         except ValueError as e:
-            print(f"[STREAM_POSTS] Invalid user UUID: {e}")
-            self.error_message = "Invalid session. Please log in again."
+            print(f"[STREAM_POSTS] Invalid UUID: {e}")
+            self.error_message = "Invalid stream ID or session. Please log in again."
             return
 
         try:
             with get_db_session() as session:
-                # Get stream by slug
-                stream = stream_ops.get_stream_by_slug(session, slug)
+                # Get stream by ID
+                stream = stream_ops.get_stream_by_id(session, stream_uuid)
                 if not stream:
-                    self.error_message = f"Stream not found: {slug}"
+                    self.error_message = f"Stream not found: {stream_id}"
                     return
 
                 # Store the stream UUID for later use (e.g., in create_post)
@@ -127,8 +154,9 @@ class StreamPostsState(BaseState):
                 self.success_message = "Post created!"
                 self.new_post_content = ""
 
-                # Reload posts
-                yield from self.load_stream_and_posts(self.stream_id)
+                # Reload posts using the current stream_id
+                if self.stream_id:
+                    yield from self.load_stream_and_posts(self.stream_id)
 
         except Exception as e:
             self.error_message = f"Error creating post: {str(e)}"
@@ -256,7 +284,7 @@ def stream_posts_page() -> rx.Component:
             width="100%",
         ),
         max_width="900px",
-        on_mount=StreamPostsState.on_mount,
+        on_mount=StreamPostsState.on_load,  # Method named on_load, triggered by on_mount
     )
 
     return authenticated_layout(content, current_page="streams")

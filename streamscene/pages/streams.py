@@ -301,7 +301,7 @@ def owned_streams_table() -> rx.Component:
                                         size="2",
                                         variant="soft",
                                     ),
-                                    href=f"/streams/{stream['slug']}",
+                                    href=f"/stream-posts?id={stream['id']}",
                                 )
                             ),
                         ),
@@ -362,7 +362,7 @@ def subscribed_streams_table() -> rx.Component:
                                             size="2",
                                             variant="soft",
                                         ),
-                                        href=f"/streams/{stream['slug']}",
+                                        href=f"/stream-posts?id={stream['id']}",
                                     ),
                                     rx.button(
                                         "Unsubscribe",
