@@ -1,49 +1,54 @@
 # StreamScene - Current Status
 
-**Last Updated:** November 4, 2025 (Testing on_load() lifecycle fix)
+**Last Updated:** November 4, 2025 (After router params timing fix)
 **Project:** StreamScene - Family E Ink Message Board
-**Current Phase:** Phase 2 🚧 IN PROGRESS - Fixing Router Params Timing Issue
+**Current Phase:** Phase 2 ✅ COMPLETE - Stream Posts Page Working
 
 ---
 
-## 🚨 CURRENT ISSUE - Testing Solution
+## ✅ RECENTLY FIXED - Router Params Timing Issue
 
-**"No stream specified" error when navigating to stream posts**
+**"No stream specified" error - RESOLVED**
 
-### Current Status: 🔄 TESTING on_load() Solution
+### Final Status: ✅ FIXED & COMMITTED (Commits: 830bf5d, d3b9ed1)
 
 **Route:** `/stream-posts?id={uuid}` (switched from dynamic routes to query params)
 
-**Problem:**
-- Router query parameters empty during component lifecycle
-- Users see "No stream specified" error
-- Posts can still be created (stream loads eventually)
+**What Was Fixed:**
+- ✅ Router query parameters now populated correctly
+- ✅ No more "No stream specified" error
+- ✅ Stream posts load on navigation
+- ✅ Post creation works correctly
 
-**Root Cause:**
+**Root Cause Identified:**
 - Using `on_mount()` (component-level) instead of `on_load()` (page-level)
 - Router params not populated when `on_mount()` fires
 - Timing issue between component mount and router initialization
 
-**Solution Attempt #3:**
+**Solution Implemented:**
 - ✅ Changed `on_mount()` → `on_load()` in `stream_posts.py`
 - ✅ Added fallback to `router.session.client_query_params` (from callback.py pattern)
-- ✅ Added extensive debug logging
+- ✅ Switched from dynamic routes to query params for simplicity
+- ✅ Added extensive debug logging for future troubleshooting
 - ✅ Clear error messages before checking params
-- 🔄 Testing in progress...
 
-**Files Changed:**
-- `streamscene/pages/stream_posts.py` - Lines 35-69 (on_load method)
-- `streamscene/pages/stream_posts.py` - Line 287 (component lifecycle hook)
+**Files Changed & Committed:**
+- `streamscene/streamscene.py` - Route definition
+- `streamscene/pages/stream_posts.py` - Lifecycle method and param access
+- `streamscene/pages/streams.py` - View Posts button links
+- `DEBUGGING_HISTORY.md` - New debugging documentation
+- `NEXT_SESSION.md` - Status updates
+- `CLAUDE.md` - Added 5 new gotchas (#13-17)
 
-**Documentation:**
-- See `DEBUGGING_HISTORY.md` for full debugging journey
-- Tracks all 3 attempts: dynamic routes, on_mount, on_load
+**Documentation Created:**
+- `DEBUGGING_HISTORY.md` - Complete debugging journey with all 3 attempts
+- `CLAUDE.md` updated - 5 new gotchas about Reflex router params and lifecycle
 
 **Test URL:** https://streamscene.dataandstories.com/stream-posts?id=4ffed4d7-d1df-4bf9-bd57-0a5df5f52874
 
 ---
 
-## 🔍 Debugging Journey (November 4, 2025)
+## 🔍 Debugging Journey Completed (November 4, 2025)
 
 ### Attempt #1: Dynamic Routes with Slugs ❌
 - Route: `/streams/[slug]`
@@ -55,11 +60,11 @@
 - Failed: `router.page.params` empty during on_mount
 - Issue: Component-level lifecycle too early
 
-### Attempt #3: Query Params with on_load() 🔄
+### Attempt #3: Query Params with on_load() ✅ SUCCESS
 - Route: `/stream-posts?id={uuid}`
 - Change: Component → Page lifecycle method
 - Pattern: Copied from working callback.py
-- Status: **CURRENTLY TESTING**
+- Result: **WORKING - Committed to master**
 
 ---
 
@@ -312,11 +317,36 @@ alembic revision --autogenerate -m "description"
 
 ## 🎯 Next Session Priorities
 
-1. **FIX SLUG LOOKUP BUG** - Get `/streams/first` working
-2. Test full flow: create stream → view posts → create post
-3. Add loading states and better error handling
-4. Consider adding stream editing/deletion features
-5. Polish UI: Better spacing, colors, responsive design
+### Current Focus: UI Polish & Feature Enhancement
+
+1. **Test Full User Flow** - Verify end-to-end experience:
+   - ✅ Create stream (working)
+   - ✅ View posts (working)
+   - ✅ Create post (working)
+   - Test: Edit stream settings, delete streams, manage subscriptions
+
+2. **UI Enhancements:**
+   - Add loading states to stream posts page
+   - Improve error messaging and user feedback
+   - Add success confirmations with auto-dismiss
+   - Better spacing, colors, and responsive design
+   - Consider adding stream description display
+
+3. **Stream Management Features:**
+   - Implement stream editing (name, description, visibility)
+   - Add stream deletion with confirmation
+   - Enable stream subscription workflow
+   - Implement "Unsubscribe" button functionality
+
+4. **Remove Unused Slug Infrastructure** (Optional Cleanup):
+   - Slug field still in database but unused (query params use UUIDs)
+   - Consider removing slug migration and utilities if not needed
+   - Or: Keep for future SEO-friendly URLs on public streams
+
+5. **Device Integration Preparation:**
+   - Test device API endpoints with curl
+   - Prepare for Raspberry Pi client development
+   - Verify content delivery works with current post structure
 
 ---
 
