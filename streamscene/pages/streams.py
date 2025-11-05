@@ -30,6 +30,24 @@ class StreamsState(BaseState):
 
     # Modal control
     is_create_modal_open: bool = False
+    is_edit_modal_open: bool = False
+    is_delete_dialog_open: bool = False
+
+    # Edit stream fields
+    edit_stream_id: str = ""
+    edit_stream_name: str = ""
+    edit_stream_description: str = ""
+    edit_stream_is_public: bool = False
+
+    # Delete stream field
+    delete_stream_id: str = ""
+    delete_stream_name: str = ""
+
+    # Loading states
+    is_loading: bool = False
+    is_creating: bool = False
+    is_editing: bool = False
+    is_deleting: bool = False
 
     error_message: str = ""
     success_message: str = ""
@@ -192,6 +210,59 @@ class StreamsState(BaseState):
         self.new_stream_is_public = False
         self.error_message = ""
 
+    def open_edit_modal(self, stream_id: str):
+        """Open the edit stream modal with current stream data."""
+        # Find the stream in owned_streams list
+        stream = None
+        for s in self.owned_streams:
+            if s["id"] == stream_id:
+                stream = s
+                break
+
+        if not stream:
+            self.error_message = "Stream not found"
+            return
+
+        self.edit_stream_id = stream_id
+        self.edit_stream_name = stream["name"]
+        self.edit_stream_description = stream["description"]
+        self.edit_stream_is_public = stream["is_public"]
+        self.is_edit_modal_open = True
+        self.error_message = ""
+
+    def close_edit_modal(self):
+        """Close the edit stream modal and clear form."""
+        self.is_edit_modal_open = False
+        self.edit_stream_id = ""
+        self.edit_stream_name = ""
+        self.edit_stream_description = ""
+        self.edit_stream_is_public = False
+        self.error_message = ""
+
+    def open_delete_dialog(self, stream_id: str):
+        """Open the delete confirmation dialog."""
+        # Find the stream in owned_streams list
+        stream = None
+        for s in self.owned_streams:
+            if s["id"] == stream_id:
+                stream = s
+                break
+
+        if not stream:
+            self.error_message = "Stream not found"
+            return
+
+        self.delete_stream_id = stream_id
+        self.delete_stream_name = stream["name"]
+        self.is_delete_dialog_open = True
+        self.error_message = ""
+
+    def close_delete_dialog(self):
+        """Close the delete confirmation dialog."""
+        self.is_delete_dialog_open = False
+        self.delete_stream_id = ""
+        self.delete_stream_name = ""
+
     def create_stream(self):
         """Create a new stream."""
         if not self.new_stream_name.strip():
@@ -209,6 +280,10 @@ class StreamsState(BaseState):
             # Invalid UUID format - user needs to log in again
             self.error_message = "Invalid session. Please log in again."
             return rx.redirect("/")
+
+        self.is_creating = True
+        self.error_message = ""
+        yield
 
         try:
             with get_db_session() as session:
@@ -230,11 +305,133 @@ class StreamsState(BaseState):
                     "is_public": stream.is_public,
                 })
 
-                self.success_message = f"Stream '{self.new_stream_name}' created!"
+                self.success_message = f"Stream '{self.new_stream_name}' created successfully!"
                 self.close_create_modal()  # Close modal and clear form
                 yield  # Force UI update
+
+                # Auto-dismiss success message after 3 seconds
+                yield from self.auto_dismiss_success()
         except Exception as e:
             self.error_message = f"Error creating stream: {str(e)}"
+        finally:
+            self.is_creating = False
+            yield
+
+    def edit_stream(self):
+        """Edit an existing stream."""
+        if not self.edit_stream_name.strip():
+            self.error_message = "Stream name is required"
+            return
+
+        if not self.edit_stream_id:
+            self.error_message = "No stream selected for editing"
+            return
+
+        try:
+            stream_uuid = UUID(self.edit_stream_id)
+        except ValueError:
+            self.error_message = "Invalid stream ID"
+            return
+
+        self.is_editing = True
+        self.error_message = ""
+        yield
+
+        try:
+            with get_db_session() as session:
+                stream = stream_ops.update_stream(
+                    session,
+                    stream_id=stream_uuid,
+                    name=self.edit_stream_name,
+                    description=self.edit_stream_description,
+                    is_public=self.edit_stream_is_public,
+                )
+
+                if not stream:
+                    self.error_message = "Stream not found"
+                    return
+
+                session.commit()
+
+                # Update the stream in owned_streams list for instant UI update
+                for i, s in enumerate(self.owned_streams):
+                    if s["id"] == self.edit_stream_id:
+                        self.owned_streams[i] = {
+                            "id": str(stream.id),
+                            "name": stream.name,
+                            "slug": stream.slug,
+                            "description": stream.description,
+                            "is_public": stream.is_public,
+                        }
+                        break
+
+                self.success_message = f"Stream '{self.edit_stream_name}' updated successfully!"
+                self.close_edit_modal()
+                yield
+
+                # Auto-dismiss success message after 3 seconds
+                yield from self.auto_dismiss_success()
+        except Exception as e:
+            self.error_message = f"Error updating stream: {str(e)}"
+        finally:
+            self.is_editing = False
+            yield
+
+    def delete_stream(self):
+        """Delete a stream."""
+        if not self.delete_stream_id:
+            self.error_message = "No stream selected for deletion"
+            return
+
+        try:
+            stream_uuid = UUID(self.delete_stream_id)
+        except ValueError:
+            self.error_message = "Invalid stream ID"
+            return
+
+        self.is_deleting = True
+        self.error_message = ""
+        yield
+
+        try:
+            with get_db_session() as session:
+                success = stream_ops.delete_stream(session, stream_uuid)
+
+                if not success:
+                    self.error_message = "Stream not found"
+                    return
+
+                session.commit()
+
+                # Remove from owned_streams list for instant UI update
+                self.owned_streams = [
+                    s for s in self.owned_streams if s["id"] != self.delete_stream_id
+                ]
+
+                stream_name = self.delete_stream_name
+                self.success_message = f"Stream '{stream_name}' deleted successfully!"
+                self.close_delete_dialog()
+                yield
+
+                # Auto-dismiss success message after 3 seconds
+                yield from self.auto_dismiss_success()
+        except Exception as e:
+            self.error_message = f"Error deleting stream: {str(e)}"
+        finally:
+            self.is_deleting = False
+            yield
+
+    def auto_dismiss_success(self):
+        """Auto-dismiss success message after 3 seconds."""
+        import asyncio
+        import time
+
+        # Wait 3 seconds
+        time.sleep(3)
+
+        # Clear success message
+        self.success_message = ""
+        yield
 
     # logout() method inherited from BaseState
 
@@ -295,13 +492,30 @@ def owned_streams_table() -> rx.Component:
                                 )
                             ),
                             rx.table.cell(
-                                rx.link(
+                                rx.hstack(
+                                    rx.link(
+                                        rx.button(
+                                            "View Posts",
+                                            size="2",
+                                            variant="soft",
+                                        ),
+                                        href=f"/stream-posts?id={stream['id']}",
+                                    ),
                                     rx.button(
-                                        "View Posts",
+                                        "Edit",
                                         size="2",
                                         variant="soft",
+                                        color_scheme="blue",
+                                        on_click=StreamsState.open_edit_modal(stream["id"]),
                                     ),
-                                    href=f"/stream-posts?id={stream['id']}",
+                                    rx.button(
+                                        "Delete",
+                                        size="2",
+                                        variant="soft",
+                                        color_scheme="red",
+                                        on_click=StreamsState.open_delete_dialog(stream["id"]),
+                                    ),
+                                    spacing="2",
                                 )
                             ),
                         ),
@@ -313,10 +527,26 @@ def owned_streams_table() -> rx.Component:
                 ),
                 size="2",
             ),
-            rx.text(
-                "No streams yet. Click 'Add Stream' to create your first stream!",
-                color="gray",
-                size="3",
+            rx.card(
+                rx.vstack(
+                    rx.text(
+                        "No streams yet",
+                        size="4",
+                        weight="medium",
+                        color="gray",
+                    ),
+                    rx.text(
+                        "Click 'Add Stream' above to create your first stream and start sharing messages!",
+                        size="2",
+                        color="gray",
+                        text_align="center",
+                    ),
+                    spacing="2",
+                    align="center",
+                    padding="6",
+                ),
+                size="2",
+                width="100%",
             ),
         ),
         spacing="3",
@@ -383,10 +613,26 @@ def subscribed_streams_table() -> rx.Component:
                 ),
                 size="2",
             ),
-            rx.text(
-                "You haven't subscribed to any streams yet.",
-                color="gray",
-                size="3",
+            rx.card(
+                rx.vstack(
+                    rx.text(
+                        "No subscriptions yet",
+                        size="4",
+                        weight="medium",
+                        color="gray",
+                    ),
+                    rx.text(
+                        "You can subscribe to streams shared by others to see their posts.",
+                        size="2",
+                        color="gray",
+                        text_align="center",
+                    ),
+                    spacing="2",
+                    align="center",
+                    padding="6",
+                ),
+                size="2",
+                width="100%",
             ),
         ),
         spacing="3",
@@ -440,13 +686,19 @@ def create_stream_modal() -> rx.Component:
                             color_scheme="gray",
                             size="3",
                             on_click=StreamsState.close_create_modal,
+                            disabled=StreamsState.is_creating,
                         )
                     ),
                     rx.button(
-                        "Create Stream",
+                        rx.cond(
+                            StreamsState.is_creating,
+                            rx.spinner(size="3"),
+                            "Create Stream",
+                        ),
                         on_click=StreamsState.create_stream,
                         color_scheme="blue",
                         size="3",
+                        disabled=StreamsState.is_creating,
                     ),
                     spacing="3",
                     justify="end",
@@ -463,10 +715,150 @@ def create_stream_modal() -> rx.Component:
     )
 
 
+def edit_stream_modal() -> rx.Component:
+    """Modal dialog for editing a stream."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.vstack(
+                rx.dialog.title("Edit Stream"),
+                rx.dialog.description(
+                    "Update your stream's name, description, or visibility."
+                ),
+                rx.input(
+                    placeholder="Stream name",
+                    value=StreamsState.edit_stream_name,
+                    on_change=StreamsState.set_edit_stream_name,
+                    size="3",
+                ),
+                rx.text_area(
+                    placeholder="Description (optional)",
+                    value=StreamsState.edit_stream_description,
+                    on_change=StreamsState.set_edit_stream_description,
+                    size="3",
+                    rows="3",
+                ),
+                rx.checkbox(
+                    "Make this stream public",
+                    checked=StreamsState.edit_stream_is_public,
+                    on_change=StreamsState.set_edit_stream_is_public,
+                    size="3",
+                ),
+                rx.cond(
+                    StreamsState.error_message,
+                    rx.callout(
+                        StreamsState.error_message,
+                        icon="triangle_alert",
+                        color_scheme="red",
+                        size="1",
+                    ),
+                ),
+                rx.hstack(
+                    rx.dialog.close(
+                        rx.button(
+                            "Cancel",
+                            variant="soft",
+                            color_scheme="gray",
+                            size="3",
+                            on_click=StreamsState.close_edit_modal,
+                            disabled=StreamsState.is_editing,
+                        )
+                    ),
+                    rx.button(
+                        rx.cond(
+                            StreamsState.is_editing,
+                            rx.spinner(size="3"),
+                            "Save Changes",
+                        ),
+                        on_click=StreamsState.edit_stream,
+                        color_scheme="blue",
+                        size="3",
+                        disabled=StreamsState.is_editing,
+                    ),
+                    spacing="3",
+                    justify="end",
+                    width="100%",
+                ),
+                spacing="4",
+                width="100%",
+            ),
+            size="3",
+            max_width="500px",
+        ),
+        open=StreamsState.is_edit_modal_open,
+        on_open_change=StreamsState.set_is_edit_modal_open,
+    )
+
+
+def delete_confirmation_dialog() -> rx.Component:
+    """Dialog for confirming stream deletion."""
+    return rx.alert_dialog.root(
+        rx.alert_dialog.content(
+            rx.alert_dialog.title("Delete Stream"),
+            rx.alert_dialog.description(
+                rx.vstack(
+                    rx.text(
+                        f"Are you sure you want to delete this stream?",
+                        size="3",
+                    ),
+                    rx.text(
+                        rx.text.strong(StreamsState.delete_stream_name),
+                        size="3",
+                    ),
+                    rx.text(
+                        "This action cannot be undone. All posts in this stream will be permanently deleted.",
+                        size="2",
+                        color="red",
+                    ),
+                    spacing="2",
+                    align="start",
+                ),
+            ),
+            rx.hstack(
+                rx.alert_dialog.cancel(
+                    rx.button(
+                        "Cancel",
+                        variant="soft",
+                        color_scheme="gray",
+                        size="3",
+                        disabled=StreamsState.is_deleting,
+                    )
+                ),
+                rx.alert_dialog.action(
+                    rx.button(
+                        rx.cond(
+                            StreamsState.is_deleting,
+                            rx.spinner(size="3"),
+                            "Delete Stream",
+                        ),
+                        on_click=StreamsState.delete_stream,
+                        color_scheme="red",
+                        size="3",
+                        disabled=StreamsState.is_deleting,
+                    )
+                ),
+                spacing="3",
+                justify="end",
+                width="100%",
+            ),
+        ),
+        open=StreamsState.is_delete_dialog_open,
+        on_open_change=StreamsState.set_is_delete_dialog_open,
+    )
+
+
 def streams() -> rx.Component:
     """Main streams management page."""
     content = rx.container(
         rx.vstack(
+            # Page header
+            rx.heading("My Streams", size="8", margin_bottom="2"),
+            rx.text(
+                "Manage your streams and view subscriptions",
+                size="3",
+                color="gray",
+                margin_bottom="4",
+            ),
+
             # Messages
             rx.cond(
                 StreamsState.error_message,
@@ -474,6 +866,8 @@ def streams() -> rx.Component:
                     StreamsState.error_message,
                     icon="triangle_alert",
                     color_scheme="red",
+                    size="2",
+                    margin_bottom="4",
                 ),
             ),
             rx.cond(
@@ -482,6 +876,8 @@ def streams() -> rx.Component:
                     StreamsState.success_message,
                     icon="check",
                     color_scheme="green",
+                    size="2",
+                    margin_bottom="4",
                 ),
             ),
 
@@ -490,13 +886,15 @@ def streams() -> rx.Component:
                 search_and_add_bar(),
                 owned_streams_table(),
                 subscribed_streams_table(),
-                spacing="6",
+                spacing="8",
                 width="100%",
                 align="start",
             ),
 
-            # Modal (rendered at root level)
+            # Modals and dialogs (rendered at root level)
             create_stream_modal(),
+            edit_stream_modal(),
+            delete_confirmation_dialog(),
 
             spacing="6",
             padding="4",

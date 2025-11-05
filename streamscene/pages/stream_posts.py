@@ -28,6 +28,10 @@ class StreamPostsState(BaseState):
     # Form fields
     new_post_content: str = ""
 
+    # Loading states
+    is_loading: bool = False
+    is_posting: bool = False
+
     # Messages
     error_message: str = ""
     success_message: str = ""
@@ -141,6 +145,10 @@ class StreamPostsState(BaseState):
             self.error_message = "Invalid session. Please refresh the page."
             return
 
+        self.is_posting = True
+        self.error_message = ""
+        yield
+
         try:
             with get_db_session() as session:
                 stream_ops.create_post(
@@ -151,15 +159,32 @@ class StreamPostsState(BaseState):
                 )
                 session.commit()
 
-                self.success_message = "Post created!"
+                self.success_message = "Post created successfully!"
                 self.new_post_content = ""
 
                 # Reload posts using the current stream_id
                 if self.stream_id:
                     yield from self.load_stream_and_posts(self.stream_id)
 
+                # Auto-dismiss success message after 3 seconds
+                yield from self.auto_dismiss_success()
+
         except Exception as e:
             self.error_message = f"Error creating post: {str(e)}"
+        finally:
+            self.is_posting = False
+            yield
+
+    def auto_dismiss_success(self):
+        """Auto-dismiss success message after 3 seconds."""
+        import time
+
+        # Wait 3 seconds
+        time.sleep(3)
+
+        # Clear success message
+        self.success_message = ""
+        yield
 
 
 def stream_posts_page() -> rx.Component:
@@ -176,6 +201,7 @@ def stream_posts_page() -> rx.Component:
                     size="2",
                 ),
                 href="/streams",
+                margin_bottom="4",
             ),
 
             # Messages
@@ -185,6 +211,8 @@ def stream_posts_page() -> rx.Component:
                     StreamPostsState.error_message,
                     icon="triangle_alert",
                     color_scheme="red",
+                    size="2",
+                    margin_bottom="4",
                 ),
             ),
             rx.cond(
@@ -193,6 +221,8 @@ def stream_posts_page() -> rx.Component:
                     StreamPostsState.success_message,
                     icon="check",
                     color_scheme="green",
+                    size="2",
+                    margin_bottom="4",
                 ),
             ),
 
@@ -227,10 +257,15 @@ def stream_posts_page() -> rx.Component:
                         rows="4",
                     ),
                     rx.button(
-                        "Post Message",
+                        rx.cond(
+                            StreamPostsState.is_posting,
+                            rx.spinner(size="3"),
+                            "Post Message",
+                        ),
                         on_click=StreamPostsState.create_post,
                         color_scheme="blue",
                         size="3",
+                        disabled=StreamPostsState.is_posting,
                     ),
                     spacing="3",
                     width="100%",
@@ -243,43 +278,58 @@ def stream_posts_page() -> rx.Component:
             rx.cond(
                 StreamPostsState.posts.length() > 0,
                 rx.vstack(
-                    rx.heading("Posts", size="6", margin_bottom="3"),
+                    rx.heading("Recent Posts", size="6", margin_bottom="4"),
                     rx.foreach(
                         StreamPostsState.posts,
                         lambda post: rx.card(
                             rx.vstack(
-                                rx.text(post["text_content"], size="3"),
+                                rx.text(
+                                    post["text_content"],
+                                    size="3",
+                                    line_height="1.6",
+                                ),
+                                rx.divider(margin_y="2"),
                                 rx.text(
                                     post["created_at"],
                                     size="2",
                                     color="gray",
+                                    weight="medium",
                                 ),
                                 spacing="2",
                                 align="start",
                             ),
                             size="2",
+                            width="100%",
                         ),
                     ),
-                    spacing="3",
+                    spacing="4",
                     width="100%",
                 ),
                 rx.card(
                     rx.vstack(
                         rx.text(
-                            "No posts yet. Be the first to post!",
+                            "No posts yet",
+                            size="4",
+                            weight="medium",
                             color="gray",
-                            size="3",
+                        ),
+                        rx.text(
+                            "Be the first to share a message in this stream!",
+                            size="2",
+                            color="gray",
                             text_align="center",
                         ),
+                        spacing="2",
                         padding="8",
                         justify="center",
                         align="center",
                     ),
                     size="2",
+                    width="100%",
                 ),
             ),
 
-            spacing="6",
+            spacing="8",
             padding="4",
             width="100%",
         ),
