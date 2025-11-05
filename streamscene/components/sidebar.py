@@ -76,6 +76,21 @@ def sidebar_content(current_page: str = "") -> rx.Component:
         # User section
         rx.divider(),
         rx.vstack(
+            # Theme toggle
+            rx.hstack(
+                rx.icon("palette", size=18),
+                rx.text("Theme", size="3"),
+                rx.spacer(),
+                rx.color_mode.button(
+                    size="2",
+                ),
+                spacing="2",
+                align="center",
+                width="100%",
+                padding_x="4",
+                padding_y="2",
+            ),
+            # Logout button
             rx.button(
                 rx.hstack(
                     rx.icon("log_out", size=18),
@@ -89,6 +104,7 @@ def sidebar_content(current_page: str = "") -> rx.Component:
             ),
             padding="3",
             width="100%",
+            spacing="2",
         ),
         height="100vh",
         width="250px",

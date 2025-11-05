@@ -27,6 +27,7 @@ def authenticated_layout(content: rx.Component, current_page: str = "") -> rx.Co
             # Responsive padding-top for mobile header
             padding_top=["60px", "60px", "0"],  # Account for sticky mobile header
             min_height="100vh",
-            width="100%",
+            # Responsive width to prevent horizontal scroll on desktop
+            width=["100%", "100%", "calc(100% - 250px)"],  # Account for sidebar on desktop
         ),
     )

@@ -1,0 +1,195 @@
+/* Custom Theme Colors for StreamScene */
+
+/* Light Mode */
+:root, .light, .light-theme {
+  /* Primary Purple */
+  --accent-1: #f9f5ff;
+  --accent-2: #f3ebff;
+  --accent-3: #e9d5ff;
+  --accent-4: #d8b4fe;
+  --accent-5: #c084fc;
+  --accent-6: #a855f7;
+  --accent-7: #9333ea;
+  --accent-8: #7e22ce;
+  --accent-9: #BB86FC;  /* Primary accent - 200 */
+  --accent-10: #6b21a8;
+  --accent-11: #581c87;
+  --accent-12: #3b0764;
+
+  /* Secondary Teal (for special accents like FAB) */
+  --teal-1: #f0fdfa;
+  --teal-2: #ccfbf1;
+  --teal-3: #99f6e4;
+  --teal-4: #5eead4;
+  --teal-5: #2dd4bf;
+  --teal-6: #14b8a6;
+  --teal-7: #0d9488;
+  --teal-8: #0f766e;
+  --teal-9: #03DAC5;  /* Secondary accent - 200 */
+  --teal-10: #115e59;
+  --teal-11: #134e4a;
+  --teal-12: #042f2e;
+
+  /* Light theme backgrounds */
+  --gray-1: #ffffff;
+  --gray-2: #f8fafc;
+  --gray-3: #f1f5f9;
+  --gray-4: #e2e8f0;
+  --gray-5: #cbd5e1;
+  --gray-6: #94a3b8;
+  --gray-7: #64748b;
+  --gray-8: #475569;
+  --gray-9: #334155;
+  --gray-10: #1e293b;
+  --gray-11: #0f172a;
+  --gray-12: #020617;
+}
+
+/* Dark Mode */
+.dark, .dark-theme {
+  /* Primary Purple for dark mode */
+  --accent-1: #1a0a2e;
+  --accent-2: #240f3d;
+  --accent-3: #2e154c;
+  --accent-4: #3d1f5f;
+  --accent-5: #4c2a72;
+  --accent-6: #5f3687;
+  --accent-7: #73439d;
+  --accent-8: #8b56b3;
+  --accent-9: #BB86FC;  /* Primary accent - 200 */
+  --accent-10: #d4a4ff;
+  --accent-11: #e4c5ff;
+  --accent-12: #f4e6ff;
+
+  /* Secondary Teal for dark mode */
+  --teal-1: #042f2e;
+  --teal-2: #083f3e;
+  --teal-3: #0c504e;
+  --teal-4: #10635f;
+  --teal-5: #147771;
+  --teal-6: #188d85;
+  --teal-7: #1ca499;
+  --teal-8: #20bbad;
+  --teal-9: #03DAC5;  /* Secondary accent - 200 */
+  --teal-10: #4ae4d0;
+  --teal-11: #8eedde;
+  --teal-12: #d1f7f0;
+
+  /* Dark theme backgrounds */
+  --gray-1: #121212;  /* Very dark background */
+  --gray-2: #1e1e1e;  /* Slightly lighter */
+  --gray-3: #2d2d2d;  /* Card background */
+  --gray-4: #3a3a3a;
+  --gray-5: #484848;
+  --gray-6: #5a5a5a;
+  --gray-7: #6e6e6e;
+  --gray-8: #828282;
+  --gray-9: #9a9a9a;
+  --gray-10: #b4b4b4;
+  --gray-11: #d0d0d0;
+  --gray-12: #ececec;
+
+  /* Override Reflex dark mode background */
+  --color-background: #121212;
+  --color-panel: #1e1e1e;
+  --color-panel-solid: #2d2d2d;
+}
+
+/* Apply purple accent to buttons */
+.rt-Button[data-accent-color="purple"] {
+  --accent-9: var(--accent-9);
+}
+
+/* Map blue accent color to teal */
+:root, .light, .light-theme {
+  /* Override blue with teal colors */
+  --blue-1: var(--teal-1);
+  --blue-2: var(--teal-2);
+  --blue-3: var(--teal-3);
+  --blue-4: var(--teal-4);
+  --blue-5: var(--teal-5);
+  --blue-6: var(--teal-6);
+  --blue-7: var(--teal-7);
+  --blue-8: var(--teal-8);
+  --blue-9: var(--teal-9);
+  --blue-10: var(--teal-10);
+  --blue-11: var(--teal-11);
+  --blue-12: var(--teal-12);
+}
+
+.dark, .dark-theme {
+  /* Override blue with teal colors in dark mode */
+  --blue-1: var(--teal-1);
+  --blue-2: var(--teal-2);
+  --blue-3: var(--teal-3);
+  --blue-4: var(--teal-4);
+  --blue-5: var(--teal-5);
+  --blue-6: var(--teal-6);
+  --blue-7: var(--teal-7);
+  --blue-8: var(--teal-8);
+  --blue-9: var(--teal-9);
+  --blue-10: var(--teal-10);
+  --blue-11: var(--teal-11);
+  --blue-12: var(--teal-12);
+}
+
+/* Override text color for blue/teal buttons based on variant */
+/* Solid buttons: dark text on bright teal background */
+.rt-Button[data-accent-color="blue"].rt-variant-solid,
+.rt-Button[data-accent-color="blue"].rt-variant-classic {
+  color: #121212 !important;
+}
+
+.rt-Button[data-accent-color="blue"].rt-variant-solid:hover,
+.rt-Button[data-accent-color="blue"].rt-variant-classic:hover {
+  color: #121212 !important;
+}
+
+/* Soft buttons: use darker teal for better contrast on light background */
+.rt-Button[data-accent-color="blue"].rt-variant-soft {
+  color: #0d9488 !important; /* Darker teal for readability */
+}
+
+.rt-Button[data-accent-color="blue"].rt-variant-soft:hover {
+  color: #0f766e !important; /* Even darker on hover */
+}
+
+/* Badge text color for blue accent */
+.rt-Badge[data-accent-color="blue"] {
+  color: #121212 !important;
+}
+
+/* Apply teal to specific elements (like FAB) */
+.teal-accent {
+  background-color: var(--teal-9) !important;
+  color: #121212 !important;
+}
+
+.teal-accent:hover {
+  background-color: var(--teal-8) !important;
+  color: #121212 !important;
+}
+
+/* Dark mode specific overrides */
+.dark {
+  background-color: var(--gray-1);
+  color: var(--gray-12);
+}
+
+.dark .rt-Card {
+  background-color: var(--gray-3);
+  border-color: var(--gray-4);
+}
+
+.dark .rt-Table {
+  background-color: var(--gray-3);
+}
+
+/* Ensure text is readable in dark mode */
+.dark .rt-Text {
+  color: var(--gray-12);
+}
+
+.dark .rt-Heading {
+  color: var(--gray-12);
+}
