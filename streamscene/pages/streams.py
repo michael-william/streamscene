@@ -444,13 +444,14 @@ def search_and_add_bar() -> rx.Component:
             value=StreamsState.search_query,
             on_change=StreamsState.set_search_query,
             size="3",
-            width="100%",
+            flex="1",  # Takes all available space in flex container
         ),
         rx.button(
             "+ Add Stream",
             on_click=StreamsState.open_create_modal,
             color_scheme="blue",
             size="3",
+            flex_shrink="0",  # Prevents button from shrinking
         ),
         spacing="4",
         width="100%",
@@ -526,6 +527,7 @@ def owned_streams_table() -> rx.Component:
                     width="100%",
                 ),
                 size="2",
+                width="100%",  # Force card to constrain to parent width
             ),
             rx.card(
                 rx.vstack(
@@ -612,6 +614,7 @@ def subscribed_streams_table() -> rx.Component:
                     width="100%",
                 ),
                 size="2",
+                width="100%",  # Force card to constrain to parent width
             ),
             rx.card(
                 rx.vstack(
