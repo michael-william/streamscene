@@ -193,3 +193,8 @@
 .dark .rt-Heading {
   color: var(--gray-12);
 }
+
+/* Hide Reflex attribution footer */
+a[href="https://reflex.dev"] {
+  display: none !important;
+}

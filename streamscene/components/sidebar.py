@@ -58,7 +58,7 @@ def sidebar_content(current_page: str = "") -> rx.Component:
     """Sidebar navigation content (used in both desktop and mobile)."""
     return rx.vstack(
         # Logo/Brand
-        rx.heading("StreamScene", size="7", padding_x="4", padding_y="4"),
+        rx.heading("StreamScene", size="7", padding_bottom="4"),
         rx.divider(),
         # Navigation Links
         rx.vstack(
@@ -68,8 +68,6 @@ def sidebar_content(current_page: str = "") -> rx.Component:
             # nav_link("Devices", "/devices", current_page, "tablet"),
             # nav_link("Settings", "/settings", current_page, "settings"),
             spacing="1",
-            padding_x="3",
-            padding_y="4",
             width="100%",
         ),
         rx.spacer(),
@@ -88,7 +86,7 @@ def sidebar_content(current_page: str = "") -> rx.Component:
                 align="center",
                 width="100%",
                 padding_x="4",
-                padding_y="2",
+                padding_y="3",
             ),
             # Logout button
             rx.button(
@@ -102,15 +100,15 @@ def sidebar_content(current_page: str = "") -> rx.Component:
                 width="100%",
                 justify="start",
             ),
-            padding="3",
-            width="100%",
             spacing="2",
+            width="100%",
         ),
         height="100vh",
         width="250px",
+        class_name="rt-r-p-2",
         bg="var(--gray-2)",
         border_right="1px solid var(--gray-5)",
-        spacing="0",
+        spacing="4",
     )
 
 
