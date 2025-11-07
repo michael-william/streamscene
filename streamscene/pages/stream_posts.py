@@ -112,9 +112,10 @@ class StreamPostsState(BaseState):
                         "text_content": post.text_content,
                         "created_at": post.created_at.strftime("%Y-%m-%d %H:%M:%S"),
                         "author_name": (
-                            post.author.email or
-                            post.author.username or
+                            post.author.display_name or
                             post.author.name or
+                            post.author.username or
+                            post.author.email or
                             "Unknown"
                         ) if post.author else "Unknown",
                     }

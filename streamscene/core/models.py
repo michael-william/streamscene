@@ -44,6 +44,7 @@ class User(Base):
     email: Mapped[str] = Column(String(255), nullable=True, index=True)
     username: Mapped[str] = Column(String(255), nullable=True)
     name: Mapped[str] = Column(String(255), nullable=True)
+    display_name: Mapped[str] = Column(String(255), nullable=True)  # User-set custom display name
     profile_picture: Mapped[str] = Column(String(500), nullable=True)  # Relative path to profile image
 
     created_at: Mapped[datetime] = Column(DateTime(timezone=True), default=utc_now, nullable=False)

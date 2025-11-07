@@ -17,6 +17,7 @@ class ProfileState(BaseState):
     email: str = ""
     username: str = ""
     name: str = ""
+    display_name: str = ""
     profile_picture: str = ""
 
     # Form state
@@ -31,6 +32,8 @@ class ProfileState(BaseState):
     @rx.var
     def avatar_initial(self) -> str:
         """Get first letter for avatar fallback."""
+        if self.display_name:
+            return self.display_name[0].upper()
         if self.name:
             return self.name[0].upper()
         if self.username:
@@ -67,10 +70,12 @@ class ProfileState(BaseState):
                 self.email = user.email or "No email"
                 self.username = user.username or ""
                 self.name = user.name or ""
+                self.display_name = user.display_name or ""
                 self.profile_picture = user.profile_picture or ""
 
                 # Initialize edit field (username is read-only, managed by Authentik)
-                self.edit_name = self.name
+                # Prefer display_name, fallback to name from Authentik
+                self.edit_name = self.display_name or self.name
 
                 yield
 
@@ -99,11 +104,11 @@ class ProfileState(BaseState):
                     return
 
                 # Update display name only (username is managed by Authentik)
-                user.name = self.edit_name if self.edit_name else None
+                user.display_name = self.edit_name if self.edit_name else None
                 session.commit()
 
                 # Update state
-                self.name = self.edit_name
+                self.display_name = self.edit_name
                 self.success_message = "Profile updated successfully!"
                 yield
 
