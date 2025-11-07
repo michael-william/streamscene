@@ -1,6 +1,5 @@
-"""User profile page with picture upload and settings."""
+"""User profile page with settings."""
 
-import os
 from uuid import UUID
 
 import reflex as rx
@@ -8,7 +7,6 @@ import reflex as rx
 from ..components.layout import authenticated_layout
 from ..core.auth import get_user_by_id
 from ..core.database import get_db_session
-from ..core.uploads import save_profile_picture
 from .base_state import BaseState
 
 
@@ -29,6 +27,17 @@ class ProfileState(BaseState):
     error_message: str = ""
     success_message: str = ""
     upload_progress: int = 0
+
+    @rx.var
+    def avatar_initial(self) -> str:
+        """Get first letter for avatar fallback."""
+        if self.name:
+            return self.name[0].upper()
+        if self.username:
+            return self.username[0].upper()
+        if self.email:
+            return self.email[0].upper()
+        return "U"
 
     def on_mount(self):
         """Load user profile data when page mounts."""
@@ -69,73 +78,6 @@ class ProfileState(BaseState):
             self.error_message = f"Error loading profile: {str(e)}"
             yield
 
-    async def handle_upload(self, files: list[rx.UploadFile]):
-        """Handle profile picture upload."""
-        self.error_message = ""
-        self.success_message = ""
-        self.is_loading = True
-        yield
-
-        if not files:
-            self.error_message = "No file selected"
-            self.is_loading = False
-            yield
-            return
-
-        file = files[0]
-
-        # Validate file type
-        allowed_types = ["image/jpeg", "image/jpg", "image/png", "image/webp"]
-        if file.content_type not in allowed_types:
-            self.error_message = "Please upload a JPG, PNG, or WEBP image"
-            self.is_loading = False
-            yield
-            return
-
-        # Validate file size (5MB max)
-        max_size = 5 * 1024 * 1024
-        if file.size > max_size:
-            self.error_message = f"File too large. Maximum size is 5MB"
-            self.is_loading = False
-            yield
-            return
-
-        try:
-            user_uuid = UUID(self.user_id)
-
-            # Upload the file to temporary location
-            upload_data = await file.read()
-            temp_path = f"/tmp/profile_upload_{user_uuid}.jpg"
-
-            with open(temp_path, "wb") as f:
-                f.write(upload_data)
-
-            # Process and save profile picture
-            relative_path = save_profile_picture(user_uuid, temp_path)
-
-            # Clean up temp file
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-
-            # Update database
-            with get_db_session() as session:
-                user = get_user_by_id(session, user_uuid)
-                if user:
-                    user.profile_picture = relative_path
-                    session.commit()
-
-                    # Update state
-                    self.profile_picture = relative_path
-                    self.success_message = "Profile picture updated successfully!"
-
-        except ValueError as e:
-            self.error_message = str(e)
-        except Exception as e:
-            self.error_message = f"Upload failed: {str(e)}"
-        finally:
-            self.is_loading = False
-            yield
-
     def save_profile(self):
         """Save profile changes (display name only)."""
         self.error_message = ""
@@ -171,40 +113,16 @@ class ProfileState(BaseState):
 
 
 def profile_picture_section() -> rx.Component:
-    """Profile picture upload section."""
+    """Profile avatar section."""
     return rx.vstack(
-        # Profile Picture Display
-        rx.cond(
-            ProfileState.profile_picture != "",
-            rx.avatar(
-                src=f"/uploads/{ProfileState.profile_picture}",
-                size="7",
-                radius="full",
-                fallback="U",
-            ),
-            rx.avatar(
-                size="7",
-                radius="full",
-                fallback="U",
-            ),
-        ),
-        # Upload Button
-        rx.upload(
-            rx.button(
-                rx.icon("upload", size=16),
-                "Upload Photo",
-                size="1",
-                color_scheme="blue",
-                variant="soft",
-                disabled=ProfileState.is_loading,
-            ),
-            id="profile_picture_upload",
-            accept={"image/png": [".png"], "image/jpeg": [".jpg", ".jpeg"], "image/webp": [".webp"]},
-            max_files=1,
-            on_drop=ProfileState.handle_upload(rx.upload_files(upload_id="profile_picture_upload")),
+        # Avatar with dynamic initial
+        rx.avatar(
+            size="7",
+            radius="full",
+            fallback=ProfileState.avatar_initial,
         ),
         rx.text(
-            "JPG, PNG or WEBP. Max 5MB.",
+            "Your avatar shows the first letter of your display name",
             size="1",
             color="gray",
         ),

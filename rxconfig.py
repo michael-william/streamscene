@@ -7,6 +7,8 @@ config = rx.Config(
     frontend_port=3000,
     api_url="https://streamscene.dataandstories.com",
     deploy_url="https://streamscene.dataandstories.com",
+    # Serve uploaded files from the uploads directory
+    uploaded_files_dir="/var/lib/streamscene/uploads",
     plugins=[
         rx.plugins.SitemapPlugin(),
         rx.plugins.TailwindV4Plugin(),
