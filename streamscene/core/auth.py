@@ -10,16 +10,25 @@ from sqlalchemy.orm import Session
 from .models import User
 
 
-def get_or_create_user(session: Session, authentik_user_id: str) -> User:
+def get_or_create_user(
+    session: Session,
+    authentik_user_id: str,
+    email: Optional[str] = None,
+    username: Optional[str] = None,
+    name: Optional[str] = None,
+) -> User:
     """
     Get an existing user by Authentik ID or create a new one.
 
     Authentik is the single source of truth for user data.
-    We only store a reference to the Authentik user ID.
+    We cache display information (email, username, name) locally for performance.
 
     Args:
         session: Database session
         authentik_user_id: The unique identifier from Authentik
+        email: User's email address (from OIDC claims)
+        username: User's username (from OIDC preferred_username claim)
+        name: User's display name (from OIDC name claim)
 
     Returns:
         User: The user instance (existing or newly created)
@@ -30,10 +39,20 @@ def get_or_create_user(session: Session, authentik_user_id: str) -> User:
     ).first()
 
     if user:
+        # Update display information on each login (keep cache fresh)
+        user.email = email
+        user.username = username
+        user.name = name
+        session.flush()
         return user
 
     # Create new user if not found
-    user = User(authentik_user_id=authentik_user_id)
+    user = User(
+        authentik_user_id=authentik_user_id,
+        email=email,
+        username=username,
+        name=name,
+    )
     session.add(user)
     session.flush()
     return user

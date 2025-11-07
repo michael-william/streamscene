@@ -39,6 +39,12 @@ class User(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     authentik_user_id: Mapped[str] = Column(String(255), unique=True, nullable=False, index=True)
+
+    # Display information (cached from Authentik for performance)
+    email: Mapped[str] = Column(String(255), nullable=True, index=True)
+    username: Mapped[str] = Column(String(255), nullable=True)
+    name: Mapped[str] = Column(String(255), nullable=True)
+
     created_at: Mapped[datetime] = Column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = Column(
         DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
@@ -53,7 +59,8 @@ class User(Base):
     devices: Mapped[List["Device"]] = relationship("Device", back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self):
-        return f"<User(id={self.id}, authentik_id={self.authentik_user_id})>"
+        display = self.email or self.username or self.authentik_user_id
+        return f"<User(id={self.id}, display={display})>"
 
 
 class Stream(Base):

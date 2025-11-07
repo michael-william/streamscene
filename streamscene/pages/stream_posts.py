@@ -111,6 +111,12 @@ class StreamPostsState(BaseState):
                         "id": str(post.id),
                         "text_content": post.text_content,
                         "created_at": post.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+                        "author_name": (
+                            post.author.email or
+                            post.author.username or
+                            post.author.name or
+                            "Unknown"
+                        ) if post.author else "Unknown",
                     }
                     for post in posts
                 ]
@@ -289,11 +295,20 @@ def stream_posts_page() -> rx.Component:
                                     line_height="1.6",
                                 ),
                                 rx.divider(margin_y="2"),
-                                rx.text(
-                                    post["created_at"],
-                                    size="2",
-                                    color="gray",
-                                    weight="medium",
+                                rx.hstack(
+                                    rx.text(
+                                        post["created_at"],
+                                        size="2",
+                                        color="gray",
+                                        weight="medium",
+                                    ),
+                                    rx.text(
+                                        post["author_name"],
+                                        size="2",
+                                        color="gray",
+                                    ),
+                                    justify="between",
+                                    width="100%",
                                 ),
                                 spacing="2",
                                 align="start",

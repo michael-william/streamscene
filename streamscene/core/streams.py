@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 from uuid import UUID
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_, or_, desc
 
 from .models import Stream, Post, StreamSubscription, User, Device
@@ -254,6 +254,8 @@ def get_stream_posts(
     """
     Get posts from a stream, ordered by creation time (newest first).
 
+    Eagerly loads author information to avoid N+1 queries.
+
     Args:
         session: Database session
         stream_id: Stream UUID
@@ -261,10 +263,11 @@ def get_stream_posts(
         offset: Number of posts to skip
 
     Returns:
-        List[Post]: List of posts
+        List[Post]: List of posts with author information loaded
     """
     return (
         session.query(Post)
+        .options(joinedload(Post.author))  # Eager-load author data
         .filter(Post.stream_id == stream_id)
         .order_by(desc(Post.created_at))
         .limit(limit)

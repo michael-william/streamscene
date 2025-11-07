@@ -94,9 +94,20 @@ class CallbackState(BaseState):
                 self.is_loading = False
                 return
 
+            # Extract display information from OIDC claims
+            email = user_info.get("email")
+            username = user_info.get("preferred_username")
+            name = user_info.get("name")
+
             # Create or get user in our database
             with get_db_session() as session:
-                user = get_or_create_user(session, authentik_user_id)
+                user = get_or_create_user(
+                    session,
+                    authentik_user_id,
+                    email=email,
+                    username=username,
+                    name=name,
+                )
                 session.commit()
 
                 # Store user ID in cookie (automatically synced to browser)
