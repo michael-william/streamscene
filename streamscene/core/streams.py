@@ -295,6 +295,32 @@ def get_latest_stream_post(session: Session, stream_id: UUID) -> Optional[Post]:
     )
 
 
+def update_post(
+    session: Session,
+    post_id: UUID,
+    text_content: str,
+) -> Optional[Post]:
+    """
+    Update a post's text content.
+
+    Args:
+        session: Database session
+        post_id: Post UUID
+        text_content: New text content
+
+    Returns:
+        Optional[Post]: Updated post or None if not found
+    """
+    post = get_post_by_id(session, post_id)
+    if not post:
+        return None
+
+    post.text_content = text_content
+    post.updated_at = utc_now()
+    session.flush()
+    return post
+
+
 def delete_post(session: Session, post_id: UUID) -> bool:
     """
     Delete a post.
@@ -515,6 +541,58 @@ def can_user_post_to_stream(session: Session, user_id: UUID, stream_id: UUID) ->
     # Check if user has approved subscription
     subscription = get_subscription(session, user_id, stream_id)
     return subscription is not None and subscription.is_approved
+
+
+def can_user_edit_post(session: Session, user_id: UUID, post_id: UUID) -> bool:
+    """
+    Check if a user can edit a post.
+
+    Only the post author can edit their own posts.
+
+    Args:
+        session: Database session
+        user_id: User UUID
+        post_id: Post UUID
+
+    Returns:
+        bool: True if user can edit the post
+    """
+    from .auth import is_post_author
+
+    return is_post_author(session, user_id, post_id)
+
+
+def can_user_delete_post(session: Session, user_id: UUID, post_id: UUID) -> bool:
+    """
+    Check if a user can delete a post.
+
+    Post authors can delete their own posts.
+    Stream owners can delete any post in their streams.
+
+    Args:
+        session: Database session
+        user_id: User UUID
+        post_id: Post UUID
+
+    Returns:
+        bool: True if user can delete the post
+    """
+    from .auth import is_post_author
+
+    post = get_post_by_id(session, post_id)
+    if not post:
+        return False
+
+    # Post author can always delete
+    if is_post_author(session, user_id, post_id):
+        return True
+
+    # Stream owner can delete any post in their stream
+    stream = get_stream_by_id(session, post.stream_id)
+    if stream and stream.owner_id == user_id:
+        return True
+
+    return False
 
 
 # ============================================================================

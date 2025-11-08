@@ -28,9 +28,20 @@ class StreamPostsState(BaseState):
     # Form fields
     new_post_content: str = ""
 
+    # Edit state
+    editing_post_id: str = ""
+    edit_post_content: str = ""
+    is_edit_modal_open: bool = False
+
+    # Delete state
+    deleting_post_id: str = ""
+    is_delete_confirm_open: bool = False
+
     # Loading states
     is_loading: bool = False
     is_posting: bool = False
+    is_saving_edit: bool = False
+    is_deleting: bool = False
 
     # Messages
     error_message: str = ""
@@ -110,6 +121,7 @@ class StreamPostsState(BaseState):
                     {
                         "id": str(post.id),
                         "text_content": post.text_content,
+                        "author_id": str(post.author_id),
                         "created_at": post.created_at.strftime("%Y-%m-%d %H:%M:%S"),
                         "author_name": (
                             post.author.display_name or
@@ -118,6 +130,7 @@ class StreamPostsState(BaseState):
                             post.author.email or
                             "Unknown"
                         ) if post.author else "Unknown",
+                        "is_edited": post.updated_at > post.created_at,
                     }
                     for post in posts
                 ]
@@ -192,6 +205,214 @@ class StreamPostsState(BaseState):
         # Clear success message
         self.success_message = ""
         yield
+
+    def open_edit_modal(self, post_data: dict):
+        """Open edit modal with post content."""
+        self.editing_post_id = post_data["id"]
+        self.edit_post_content = post_data["text_content"]
+        self.is_edit_modal_open = True
+        self.error_message = ""
+
+    def cancel_edit(self):
+        """Close edit modal and clear state."""
+        self.is_edit_modal_open = False
+        self.editing_post_id = ""
+        self.edit_post_content = ""
+        self.error_message = ""
+
+    def save_edit(self):
+        """Save edited post content."""
+        if not self.edit_post_content.strip():
+            self.error_message = "Post content cannot be empty"
+            return
+
+        if not self.user_id or not self.editing_post_id:
+            self.error_message = "Invalid session. Please refresh the page."
+            return
+
+        try:
+            user_uuid = UUID(self.user_id)
+            post_uuid = UUID(self.editing_post_id)
+        except ValueError:
+            self.error_message = "Invalid session. Please refresh the page."
+            return
+
+        self.is_saving_edit = True
+        self.error_message = ""
+        yield
+
+        try:
+            with get_db_session() as session:
+                # Check permission
+                if not stream_ops.can_user_edit_post(session, user_uuid, post_uuid):
+                    self.error_message = "You don't have permission to edit this post"
+                    self.is_saving_edit = False
+                    return
+
+                # Update post
+                updated_post = stream_ops.update_post(
+                    session,
+                    post_id=post_uuid,
+                    text_content=self.edit_post_content,
+                )
+
+                if not updated_post:
+                    self.error_message = "Post not found"
+                    self.is_saving_edit = False
+                    return
+
+                session.commit()
+
+                self.success_message = "Post updated successfully!"
+                self.cancel_edit()  # Close modal
+
+                # Reload posts
+                if self.stream_id:
+                    yield from self.load_stream_and_posts(self.stream_id)
+
+                # Auto-dismiss success message
+                yield from self.auto_dismiss_success()
+
+        except Exception as e:
+            self.error_message = f"Error updating post: {str(e)}"
+        finally:
+            self.is_saving_edit = False
+            yield
+
+    def open_delete_dialog(self, post_data: dict):
+        """Open delete confirmation dialog."""
+        self.deleting_post_id = post_data["id"]
+        self.is_delete_confirm_open = True
+        self.error_message = ""
+
+    def cancel_delete(self):
+        """Close delete confirmation dialog."""
+        self.is_delete_confirm_open = False
+        self.deleting_post_id = ""
+        self.error_message = ""
+
+    def confirm_delete(self):
+        """Delete the post after confirmation."""
+        if not self.user_id or not self.deleting_post_id:
+            self.error_message = "Invalid session. Please refresh the page."
+            return
+
+        try:
+            user_uuid = UUID(self.user_id)
+            post_uuid = UUID(self.deleting_post_id)
+        except ValueError:
+            self.error_message = "Invalid session. Please refresh the page."
+            return
+
+        self.is_deleting = True
+        self.error_message = ""
+        yield
+
+        try:
+            with get_db_session() as session:
+                # Check permission
+                if not stream_ops.can_user_delete_post(session, user_uuid, post_uuid):
+                    self.error_message = "You don't have permission to delete this post"
+                    self.is_deleting = False
+                    return
+
+                # Delete post
+                deleted = stream_ops.delete_post(session, post_uuid)
+
+                if not deleted:
+                    self.error_message = "Post not found"
+                    self.is_deleting = False
+                    return
+
+                session.commit()
+
+                self.success_message = "Post deleted successfully!"
+                self.cancel_delete()  # Close dialog
+
+                # Reload posts
+                if self.stream_id:
+                    yield from self.load_stream_and_posts(self.stream_id)
+
+                # Auto-dismiss success message
+                yield from self.auto_dismiss_success()
+
+        except Exception as e:
+            self.error_message = f"Error deleting post: {str(e)}"
+        finally:
+            self.is_deleting = False
+            yield
+
+
+def post_card(post: dict) -> rx.Component:
+    """Render a single post card with edit/delete buttons."""
+    return rx.card(
+        rx.vstack(
+            # Post content
+            rx.text(
+                post["text_content"],
+                size="3",
+                line_height="1.6",
+            ),
+            rx.divider(margin_y="2"),
+            # Footer with author, timestamp, and actions
+            rx.hstack(
+                # Left side: author and timestamp
+                rx.hstack(
+                    rx.text(
+                        post["created_at"],
+                        size="2",
+                        color="gray",
+                        weight="medium",
+                    ),
+                    rx.text(
+                        post["author_name"],
+                        size="2",
+                        color="gray",
+                    ),
+                    # Show "edited" badge if post was edited
+                    rx.cond(
+                        post["is_edited"],
+                        rx.badge(
+                            "edited",
+                            size="1",
+                            color_scheme="gray",
+                            variant="soft",
+                        ),
+                    ),
+                    spacing="3",
+                    align="center",
+                ),
+                # Right side: Edit and Delete buttons (only for post author)
+                rx.cond(
+                    post["author_id"] == StreamPostsState.user_id,
+                    rx.hstack(
+                        rx.button(
+                            "Edit",
+                            on_click=StreamPostsState.open_edit_modal(post),
+                            size="1",
+                            variant="soft",
+                            color_scheme="blue",
+                        ),
+                        rx.button(
+                            "Delete",
+                            on_click=StreamPostsState.open_delete_dialog(post),
+                            size="1",
+                            variant="soft",
+                            color_scheme="red",
+                        ),
+                        spacing="2",
+                    ),
+                ),
+                justify="between",
+                width="100%",
+                align="center",
+            ),
+            spacing="2",
+            align="start",
+        ),
+        size="2",
+        width="100%",
+    )
 
 
 def stream_posts_page() -> rx.Component:
@@ -288,35 +509,7 @@ def stream_posts_page() -> rx.Component:
                     rx.heading("Recent Posts", size="6", margin_bottom="4"),
                     rx.foreach(
                         StreamPostsState.posts,
-                        lambda post: rx.card(
-                            rx.vstack(
-                                rx.text(
-                                    post["text_content"],
-                                    size="3",
-                                    line_height="1.6",
-                                ),
-                                rx.divider(margin_y="2"),
-                                rx.hstack(
-                                    rx.text(
-                                        post["created_at"],
-                                        size="2",
-                                        color="gray",
-                                        weight="medium",
-                                    ),
-                                    rx.text(
-                                        post["author_name"],
-                                        size="2",
-                                        color="gray",
-                                    ),
-                                    justify="between",
-                                    width="100%",
-                                ),
-                                spacing="2",
-                                align="start",
-                            ),
-                            size="2",
-                            width="100%",
-                        ),
+                        post_card,
                     ),
                     spacing="4",
                     width="100%",
@@ -343,6 +536,119 @@ def stream_posts_page() -> rx.Component:
                     size="2",
                     width="100%",
                 ),
+            ),
+
+            # Edit Modal
+            rx.dialog.root(
+                rx.dialog.content(
+                    rx.vstack(
+                        rx.dialog.title("Edit Post"),
+                        rx.dialog.description(
+                            "Update your post content below."
+                        ),
+                        rx.text_area(
+                            placeholder="Edit your message...",
+                            value=StreamPostsState.edit_post_content,
+                            on_change=StreamPostsState.set_edit_post_content,
+                            size="3",
+                            rows="6",
+                        ),
+                        rx.cond(
+                            StreamPostsState.error_message,
+                            rx.callout(
+                                StreamPostsState.error_message,
+                                icon="triangle_alert",
+                                color_scheme="red",
+                                size="1",
+                            ),
+                        ),
+                        rx.hstack(
+                            rx.dialog.close(
+                                rx.button(
+                                    "Cancel",
+                                    variant="soft",
+                                    color_scheme="gray",
+                                    size="3",
+                                    on_click=StreamPostsState.cancel_edit,
+                                )
+                            ),
+                            rx.button(
+                                rx.cond(
+                                    StreamPostsState.is_saving_edit,
+                                    rx.spinner(size="3"),
+                                    "Save Changes",
+                                ),
+                                on_click=StreamPostsState.save_edit,
+                                color_scheme="blue",
+                                size="3",
+                                disabled=StreamPostsState.is_saving_edit,
+                            ),
+                            spacing="3",
+                            justify="end",
+                            width="100%",
+                        ),
+                        spacing="4",
+                        width="100%",
+                    ),
+                    size="3",
+                    max_width="500px",
+                ),
+                open=StreamPostsState.is_edit_modal_open,
+                on_open_change=StreamPostsState.set_is_edit_modal_open,
+            ),
+
+            # Delete Confirmation Dialog
+            rx.alert_dialog.root(
+                rx.alert_dialog.content(
+                    rx.vstack(
+                        rx.alert_dialog.title("Delete Post"),
+                        rx.alert_dialog.description(
+                            "Are you sure you want to delete this post? This action cannot be undone."
+                        ),
+                        rx.cond(
+                            StreamPostsState.error_message,
+                            rx.callout(
+                                StreamPostsState.error_message,
+                                icon="triangle_alert",
+                                color_scheme="red",
+                                size="1",
+                            ),
+                        ),
+                        rx.hstack(
+                            rx.alert_dialog.cancel(
+                                rx.button(
+                                    "Cancel",
+                                    variant="soft",
+                                    color_scheme="gray",
+                                    size="3",
+                                    on_click=StreamPostsState.cancel_delete,
+                                )
+                            ),
+                            rx.alert_dialog.action(
+                                rx.button(
+                                    rx.cond(
+                                        StreamPostsState.is_deleting,
+                                        rx.spinner(size="3"),
+                                        "Delete",
+                                    ),
+                                    on_click=StreamPostsState.confirm_delete,
+                                    color_scheme="red",
+                                    size="3",
+                                    disabled=StreamPostsState.is_deleting,
+                                )
+                            ),
+                            spacing="3",
+                            justify="end",
+                            width="100%",
+                        ),
+                        spacing="4",
+                        width="100%",
+                    ),
+                    size="3",
+                    max_width="450px",
+                ),
+                open=StreamPostsState.is_delete_confirm_open,
+                on_open_change=StreamPostsState.set_is_delete_confirm_open,
             ),
 
             spacing="8",
