@@ -8,6 +8,7 @@ import reflex as rx
 from streamscene.core.database import get_db_session
 from streamscene.core import streams as stream_ops
 from streamscene.components.layout import authenticated_layout
+from streamscene.components.eink import eink_preview, get_text_warnings
 from .base_state import BaseState
 
 
@@ -46,6 +47,21 @@ class StreamPostsState(BaseState):
     # Messages
     error_message: str = ""
     success_message: str = ""
+
+    # E Ink preview
+    show_preview: bool = False
+
+    @rx.var
+    def preview_warnings(self) -> List[str]:
+        """Get warning messages for preview."""
+        if not self.new_post_content:
+            return []
+        return get_text_warnings(self.new_post_content, 48)  # Use default font size for warning calc
+
+    @rx.var
+    def char_count(self) -> int:
+        """Get character count of new post content."""
+        return len(self.new_post_content)
 
     def on_load(self):
         """Load stream and posts when page loads.
@@ -476,7 +492,24 @@ def stream_posts_page() -> rx.Component:
             # Post creation form
             rx.card(
                 rx.vstack(
-                    rx.text("Create a new post", weight="medium", size="4", margin_bottom="2"),
+                    # Header with title and character count
+                    rx.hstack(
+                        rx.text("Create a new post", weight="medium", size="4"),
+                        rx.spacer(),
+                        rx.text(
+                            f"{StreamPostsState.char_count} characters",
+                            size="2",
+                            color=rx.cond(
+                                StreamPostsState.char_count > 400,
+                                "red",
+                                "gray"
+                            ),
+                        ),
+                        width="100%",
+                        align="center",
+                    ),
+
+                    # Text area
                     rx.text_area(
                         placeholder="Write your message...",
                         value=StreamPostsState.new_post_content,
@@ -484,6 +517,74 @@ def stream_posts_page() -> rx.Component:
                         size="3",
                         rows="4",
                     ),
+
+                    # Preview toggle
+                    rx.hstack(
+                        rx.switch(
+                            checked=StreamPostsState.show_preview,
+                            on_change=StreamPostsState.set_show_preview,
+                        ),
+                        rx.text(
+                            "Show E Ink preview",
+                            size="2",
+                            color="gray",
+                        ),
+                        spacing="2",
+                        align="center",
+                    ),
+
+                    # E Ink Preview (conditional)
+                    rx.cond(
+                        StreamPostsState.show_preview,
+                        rx.vstack(
+                            rx.text(
+                                "Preview (800×480px, scaled to fit)",
+                                size="2",
+                                color="gray",
+                                margin_bottom="2",
+                            ),
+                            rx.box(
+                                eink_preview(
+                                    text_content=StreamPostsState.new_post_content,
+                                    stream_name=StreamPostsState.stream_name,
+                                    author_name="You",
+                                    theme_name="classic",
+                                ),
+                                # Scale down to 70% for desktop, 50% for mobile
+                                transform="scale(0.7)",
+                                transform_origin="top left",
+                                # Mobile scaling override
+                                style={
+                                    "@media (max-width: 768px)": {
+                                        "transform": "scale(0.5)",
+                                    }
+                                },
+                            ),
+                            spacing="2",
+                            width="100%",
+                            align="start",
+                        ),
+                    ),
+
+                    # Warning messages (conditional)
+                    rx.cond(
+                        StreamPostsState.preview_warnings.length() > 0,
+                        rx.vstack(
+                            rx.foreach(
+                                StreamPostsState.preview_warnings,
+                                lambda warning: rx.callout(
+                                    warning,
+                                    icon="triangle_alert",
+                                    color_scheme="yellow",
+                                    size="2",
+                                ),
+                            ),
+                            spacing="2",
+                            width="100%",
+                        ),
+                    ),
+
+                    # Post button
                     rx.button(
                         rx.cond(
                             StreamPostsState.is_posting,
@@ -495,6 +596,7 @@ def stream_posts_page() -> rx.Component:
                         size="3",
                         disabled=StreamPostsState.is_posting,
                     ),
+
                     spacing="3",
                     width="100%",
                 ),
