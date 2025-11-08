@@ -15,18 +15,20 @@ def text_content_renderer(
     text: str,
     theme: EInkTheme,
     max_width: int = 680,
-    max_height: int = 280
+    max_height: int = 280,
+    font_size: int = None
 ) -> rx.Component:
     """Render text content with dynamic sizing.
 
-    This is a pure function that takes text and theme,
-    returns a rendered component with optimal font sizing.
+    This function can work with both plain strings and Reflex Vars.
+    When called with a Var, font_size should be provided explicitly.
 
     Args:
-        text: Text content to render
+        text: Text content to render (can be str or Var)
         theme: EInkTheme object for styling
         max_width: Maximum width in pixels (default: 680)
         max_height: Maximum height in pixels (default: 280)
+        font_size: Font size in pixels (if None, calculated from text length)
 
     Returns:
         Reflex component for the text content
@@ -38,32 +40,43 @@ def text_content_renderer(
         ...     theme=CLASSIC_THEME
         ... )
     """
-    # Handle empty text
-    if not text.strip():
-        return rx.text(
-            "No content",
+    # If font_size not provided, try to calculate it
+    # (only works with plain strings, not Vars)
+    if font_size is None:
+        if isinstance(text, str):
+            font_size = calculate_font_size(text)
+        else:
+            # For Vars, use a medium default size
+            font_size = 36
+
+    line_height = calculate_line_height(font_size)
+
+    # Use rx.cond to handle empty text case
+    # This works with both strings and Vars
+    return rx.cond(
+        text,  # If text is truthy
+        rx.text(
+            text,
+            font_size=f"{font_size}px",
+            line_height=str(line_height),
+            text_align="center",
+            color=theme.text_color,
+            font_family=theme.font_family,
+            white_space="pre-wrap",
+            word_wrap="break-word",
+            overflow="hidden",
+            max_height=f"{max_height}px",
+            width="100%",
+            padding="10px",
+        ),
+        # Empty text fallback
+        rx.text(
+            "Type a message to see preview...",
             font_size="24px",
             color="gray",
             font_style="italic",
-        )
-
-    # Calculate optimal font size based on text length
-    font_size = calculate_font_size(text)
-    line_height = calculate_line_height(font_size)
-
-    return rx.text(
-        text,
-        font_size=f"{font_size}px",
-        line_height=str(line_height),
-        text_align="center",
-        color=theme.text_color,
-        font_family=theme.font_family,
-        white_space="pre-wrap",
-        word_wrap="break-word",
-        overflow="hidden",
-        max_height=f"{max_height}px",
-        width="100%",
-        padding="10px",
+            text_align="center",
+        ),
     )
 
 
