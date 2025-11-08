@@ -8,6 +8,7 @@ import reflex as rx
 from streamscene.core.database import get_db_session
 from streamscene.core import streams as stream_ops
 from streamscene.components.layout import authenticated_layout
+from streamscene.components.theme_picker import theme_picker
 from .base_state import BaseState
 
 
@@ -24,6 +25,7 @@ class StreamsState(BaseState):
     new_stream_name: str = ""
     new_stream_description: str = ""
     new_stream_is_public: bool = False
+    new_stream_theme: str = "classic"
 
     # Search functionality
     search_query: str = ""
@@ -38,6 +40,7 @@ class StreamsState(BaseState):
     edit_stream_name: str = ""
     edit_stream_description: str = ""
     edit_stream_is_public: bool = False
+    edit_stream_theme: str = "classic"
 
     # Delete stream field
     delete_stream_id: str = ""
@@ -98,6 +101,7 @@ class StreamsState(BaseState):
                         "slug": stream.slug,
                         "description": stream.description,
                         "is_public": stream.is_public,
+                        "theme_name": stream.theme_name,
                     }
                     for stream in user_streams
                 ]
@@ -208,6 +212,7 @@ class StreamsState(BaseState):
         self.new_stream_name = ""
         self.new_stream_description = ""
         self.new_stream_is_public = False
+        self.new_stream_theme = "classic"
         self.error_message = ""
 
     def open_edit_modal(self, stream_id: str):
@@ -227,6 +232,7 @@ class StreamsState(BaseState):
         self.edit_stream_name = stream["name"]
         self.edit_stream_description = stream["description"]
         self.edit_stream_is_public = stream["is_public"]
+        self.edit_stream_theme = stream.get("theme_name", "classic")
         self.is_edit_modal_open = True
         self.error_message = ""
 
@@ -237,6 +243,7 @@ class StreamsState(BaseState):
         self.edit_stream_name = ""
         self.edit_stream_description = ""
         self.edit_stream_is_public = False
+        self.edit_stream_theme = "classic"
         self.error_message = ""
 
     def open_delete_dialog(self, stream_id: str):
@@ -293,6 +300,7 @@ class StreamsState(BaseState):
                     name=self.new_stream_name,
                     description=self.new_stream_description,
                     is_public=self.new_stream_is_public,
+                    theme_name=self.new_stream_theme,
                 )
                 session.commit()
 
@@ -303,6 +311,7 @@ class StreamsState(BaseState):
                     "slug": stream.slug,
                     "description": stream.description,
                     "is_public": stream.is_public,
+                    "theme_name": stream.theme_name,
                 })
 
                 self.success_message = f"Stream '{self.new_stream_name}' created successfully!"
@@ -345,6 +354,7 @@ class StreamsState(BaseState):
                     name=self.edit_stream_name,
                     description=self.edit_stream_description,
                     is_public=self.edit_stream_is_public,
+                    theme_name=self.edit_stream_theme,
                 )
 
                 if not stream:
@@ -362,6 +372,7 @@ class StreamsState(BaseState):
                             "slug": stream.slug,
                             "description": stream.description,
                             "is_public": stream.is_public,
+                            "theme_name": stream.theme_name,
                         }
                         break
 
@@ -672,6 +683,10 @@ def create_stream_modal() -> rx.Component:
                     on_change=StreamsState.set_new_stream_is_public,
                     size="3",
                 ),
+                theme_picker(
+                    selected_theme_var=StreamsState.new_stream_theme,
+                    on_select_handler=StreamsState.set_new_stream_theme,
+                ),
                 rx.cond(
                     StreamsState.error_message,
                     rx.callout(
@@ -745,6 +760,10 @@ def edit_stream_modal() -> rx.Component:
                     checked=StreamsState.edit_stream_is_public,
                     on_change=StreamsState.set_edit_stream_is_public,
                     size="3",
+                ),
+                theme_picker(
+                    selected_theme_var=StreamsState.edit_stream_theme,
+                    on_select_handler=StreamsState.set_edit_stream_theme,
                 ),
                 rx.cond(
                     StreamsState.error_message,

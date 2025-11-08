@@ -22,6 +22,7 @@ class StreamPostsState(BaseState):
     stream_id: str = ""
     stream_name: str = ""
     stream_description: str = ""
+    stream_theme_name: str = "classic"
 
     # Posts
     posts: List[dict] = []
@@ -62,6 +63,34 @@ class StreamPostsState(BaseState):
     def char_count(self) -> int:
         """Get character count of new post content."""
         return len(self.new_post_content)
+
+    @rx.var
+    def theme_background(self) -> str:
+        """Get background color for current stream theme."""
+        from streamscene.components.eink.theme import get_theme
+        theme = get_theme(self.stream_theme_name)
+        return theme.background_color
+
+    @rx.var
+    def theme_text_color(self) -> str:
+        """Get text color for current stream theme."""
+        from streamscene.components.eink.theme import get_theme
+        theme = get_theme(self.stream_theme_name)
+        return theme.text_color
+
+    @rx.var
+    def theme_header_color(self) -> str:
+        """Get header color for current stream theme."""
+        from streamscene.components.eink.theme import get_theme
+        theme = get_theme(self.stream_theme_name)
+        return theme.header_color
+
+    @rx.var
+    def theme_divider_color(self) -> str:
+        """Get divider color for current stream theme."""
+        from streamscene.components.eink.theme import get_theme
+        theme = get_theme(self.stream_theme_name)
+        return theme.divider_color
 
     def on_load(self):
         """Load stream and posts when page loads.
@@ -130,6 +159,9 @@ class StreamPostsState(BaseState):
 
                 self.stream_name = stream.name
                 self.stream_description = stream.description
+                self.stream_theme_name = stream.theme_name
+
+                print(f"[STREAM_POSTS] Loaded stream theme: '{self.stream_theme_name}'")
 
                 # Load posts
                 posts = stream_ops.get_stream_posts(session, stream.id, limit=50)
@@ -543,12 +575,103 @@ def stream_posts_page() -> rx.Component:
                                 color="gray",
                                 margin_bottom="2",
                             ),
+                            # Debug: Show what theme is being used
+                            rx.text(
+                                f"Active theme: {StreamPostsState.stream_theme_name}",
+                                size="1",
+                                color=StreamPostsState.theme_text_color,
+                                font_weight="bold",
+                                margin_bottom="2",
+                                padding="4px 8px",
+                                border_radius="4px",
+                                style={"background": StreamPostsState.theme_background},
+                            ),
                             rx.box(
-                                eink_preview(
-                                    text_content=StreamPostsState.new_post_content,
-                                    stream_name=StreamPostsState.stream_name,
-                                    author_name="You",
-                                    theme_name="classic",
+                                # Build preview manually with reactive Vars
+                                rx.box(
+                                    rx.vstack(
+                                        # Header
+                                        rx.hstack(
+                                            rx.text(
+                                                StreamPostsState.stream_name,
+                                                font_size="20px",
+                                                font_weight="bold",
+                                                color=StreamPostsState.theme_header_color,
+                                                font_family="monospace",
+                                            ),
+                                            rx.spacer(),
+                                            rx.text(
+                                                rx.moment(format="MMM DD, YYYY\nhh:mm A"),
+                                                font_size="18px",
+                                                color=StreamPostsState.theme_text_color,
+                                                font_family="monospace",
+                                                text_align="right",
+                                                white_space="pre-line",
+                                            ),
+                                            width="100%",
+                                            height="60px",
+                                            align="center",
+                                        ),
+                                        # Divider
+                                        rx.divider(
+                                            border_color=StreamPostsState.theme_divider_color,
+                                            margin_y="0",
+                                        ),
+                                        # Content
+                                        rx.box(
+                                            rx.cond(
+                                                StreamPostsState.new_post_content,
+                                                rx.text(
+                                                    StreamPostsState.new_post_content,
+                                                    font_size="36px",
+                                                    text_align="center",
+                                                    color=StreamPostsState.theme_text_color,
+                                                    font_family="monospace",
+                                                    white_space="pre-wrap",
+                                                    padding="10px",
+                                                ),
+                                                rx.text(
+                                                    "Type a message to see preview...",
+                                                    font_size="24px",
+                                                    color="gray",
+                                                    font_style="italic",
+                                                    text_align="center",
+                                                ),
+                                            ),
+                                            height="280px",
+                                            display="flex",
+                                            align_items="center",
+                                            justify_content="center",
+                                        ),
+                                        # Divider
+                                        rx.divider(
+                                            border_color=StreamPostsState.theme_divider_color,
+                                            margin_y="0",
+                                        ),
+                                        # Footer
+                                        rx.box(
+                                            rx.text(
+                                                "Posted by: You",
+                                                font_size="18px",
+                                                color=StreamPostsState.theme_text_color,
+                                                font_family="monospace",
+                                            ),
+                                            height="60px",
+                                            display="flex",
+                                            align_items="center",
+                                        ),
+                                        spacing="0",
+                                        width="100%",
+                                        height="100%",
+                                    ),
+                                    width="800px",
+                                    height="480px",
+                                    padding="0 60px",
+                                    border=f"4px solid {StreamPostsState.theme_text_color}",
+                                    border_radius="8px",
+                                    overflow="hidden",
+                                    box_shadow="0 4px 6px rgba(0, 0, 0, 0.1)",
+                                    style={"background": StreamPostsState.theme_background},
                                 ),
                                 # Scale down to 70% for desktop, 50% for mobile
                                 transform="scale(0.7)",

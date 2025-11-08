@@ -84,6 +84,7 @@ class Stream(Base):
     allow_images: Mapped[bool] = Column(Boolean, default=False, nullable=False)  # MVP: False
     show_history: Mapped[bool] = Column(Boolean, default=True, nullable=False)
     max_history_items: Mapped[int] = Column(Integer, default=50, nullable=False)
+    theme_name: Mapped[str] = Column(String(50), default="classic", nullable=False)  # E Ink display theme
     created_at: Mapped[datetime] = Column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = Column(
         DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False

@@ -29,6 +29,7 @@ def create_stream(
     is_public: bool = False,
     allow_text: bool = True,
     allow_images: bool = False,  # MVP: text-only
+    theme_name: str = "classic",
 ) -> Stream:
     """
     Create a new stream.
@@ -41,6 +42,7 @@ def create_stream(
         is_public: Whether the stream is publicly visible
         allow_text: Whether text posts are allowed
         allow_images: Whether image posts are allowed (MVP: False)
+        theme_name: E Ink display theme name (default: "classic")
 
     Returns:
         Stream: The created stream instance
@@ -68,6 +70,7 @@ def create_stream(
         is_public=is_public,
         allow_text=allow_text,
         allow_images=allow_images,
+        theme_name=theme_name,
     )
     session.add(stream)
     session.flush()  # Get the ID without committing
@@ -710,6 +713,7 @@ def get_device_content(session: Session, device_id: UUID) -> Optional[dict]:
         "text_content": latest_post.text_content,
         "image_url": latest_post.processed_image_path,
         "stream_name": stream.name,
+        "theme_name": stream.theme_name,
         "posted_at": latest_post.created_at,
     }
 

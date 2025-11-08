@@ -97,6 +97,12 @@ def eink_preview(
     # Get theme
     theme = custom_theme or get_theme(theme_name)
 
+    # Debug logging
+    print(f"[EINK_PREVIEW] theme_name parameter: '{theme_name}'")
+    print(f"[EINK_PREVIEW] Retrieved theme: {theme.name}")
+    print(f"[EINK_PREVIEW] Background color: {theme.background_color}")
+    print(f"[EINK_PREVIEW] Text color: {theme.text_color}")
+
     # Generate timestamp if not provided
     if timestamp is None:
         timestamp = datetime.now().strftime("%b %d, %Y\n%I:%M %p")
@@ -117,6 +123,23 @@ def eink_preview(
 
     # Build layout by composing components
     layout_components = []
+
+    # Debug banner (temporary - shows active theme)
+    layout_components.append(
+        rx.box(
+            rx.text(
+                f"Theme: {theme.name}",
+                font_size="12px",
+                color="red",
+                font_weight="bold",
+                background="yellow",
+                padding="2px 8px",
+            ),
+            width="100%",
+            display="flex",
+            justify_content="center",
+        )
+    )
 
     # Top margin
     layout_components.append(rx.box(height=f"{TOP_MARGIN}px"))
@@ -152,10 +175,12 @@ def eink_preview(
         # Container styling
         width=f"{DISPLAY_WIDTH}px",
         height=f"{DISPLAY_HEIGHT}px",
-        background=theme.background_color,
         padding=f"0 {HORIZONTAL_MARGIN}px",
         border=f"4px {theme.border_style} {theme.text_color}",
         border_radius="8px" if theme.border_style == "rounded" else "0",
         overflow="hidden",
         box_shadow="0 4px 6px rgba(0, 0, 0, 0.1)",  # Subtle shadow for depth
+        style={
+            "background": theme.background_color,  # Supports both solid colors and CSS gradients
+        },
     )
