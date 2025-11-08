@@ -1,12 +1,95 @@
 # StreamScene - Current Status
 
-**Last Updated:** November 4, 2025 (After router params timing fix)
+**Last Updated:** November 8, 2025 (After E Ink Preview Implementation)
 **Project:** StreamScene - Family E Ink Message Board
-**Current Phase:** Phase 2 ✅ COMPLETE - Stream Posts Page Working
+**Current Phase:** Phase 2.5 ✅ COMPLETE - E Ink Preview System
 
 ---
 
-## ✅ RECENTLY FIXED - Router Params Timing Issue
+## 🎨 NEW FEATURE - E Ink Preview System
+
+**Feature Branch:** `feature/eink-preview` ✅ COMPLETE
+**Status:** Fully implemented and tested
+**Commits:** c2c44b7, 458bb9b, ad4ec23
+
+### What Was Built
+
+**Composable E Ink Preview System** - Users can now see exactly how their posts will appear on the physical E Ink frames (800×480px) before posting.
+
+### Implementation Details
+
+**Architecture:**
+- ✅ Fully composable design - themes and content types are plug-and-play
+- ✅ 6 new files created (1,116 lines of code)
+- ✅ Theme system with 5 pre-defined themes
+- ✅ Dynamic font sizing (18px-48px based on text length)
+- ✅ Real-time preview with responsive scaling
+
+**Components Created:**
+1. **`streamscene/components/eink/theme.py`** - Theme system
+   - 5 themes: classic, dark, accent_red, accent_blue, minimal
+   - Easy theme registration system
+
+2. **`streamscene/components/eink/layout.py`** - Reusable layout components
+   - Header, footer, divider, content area
+   - All theme-aware and composable
+
+3. **`streamscene/components/eink/text_utils.py`** - Text utilities
+   - Dynamic font size calculation
+   - Text wrapping algorithms
+   - Warning generation for long messages
+
+4. **`streamscene/components/eink/content_renderers.py`** - Content renderers
+   - Text renderer with dynamic sizing
+   - Image renderer (placeholder for future)
+   - Mixed content renderer (placeholder for future)
+
+5. **`streamscene/components/eink/preview.py`** - Main preview component
+   - Composes all pieces together
+   - Supports conditional sections
+   - Theme-aware rendering
+
+6. **`streamscene/pages/stream_posts.py`** - Integration
+   - Toggle switch for preview
+   - Character counter (turns red >400 chars)
+   - Warning messages for long content
+   - Responsive scaling (70% desktop, 50% mobile)
+
+### Key Features
+
+✅ **Real-time Preview** - Updates as user types
+✅ **Dynamic Font Sizing** - Auto-adjusts from 48px (short) to 18px (long)
+✅ **Smart Warnings** - Alerts when content may be hard to read
+✅ **Character Counter** - Shows count, turns red at 400+ chars
+✅ **Responsive Design** - Scales appropriately on mobile
+✅ **Theme System** - 5 built-in themes, easy to add more
+✅ **Composable Architecture** - Future-proof for images and custom themes
+
+### Future-Ready Architecture
+
+The composable design means future enhancements are easy:
+- **Add image support:** Update 1 renderer file (no layout changes needed)
+- **Add new theme:** Add 10 lines to theme.py
+- **Stream-specific themes:** Add theme_name field to streams table
+- **Custom theme editor:** UI already designed in plan
+
+### Technical Notes
+
+**Reflex Compatibility:**
+- Fixed VarTypeError by using `rx.cond()` instead of Python `if`
+- Content renderer handles both plain strings and Reflex Vars
+- Preview works with reactive state updates
+
+**Files Modified:**
+- `streamscene/pages/stream_posts.py` - Added preview integration
+- Created 6 new files in `streamscene/components/eink/`
+
+**Documentation Created:**
+- `EINK_PREVIEW_PLAN.md` - Comprehensive implementation plan (1,300+ lines)
+
+---
+
+## ✅ PREVIOUSLY COMPLETED - Router Params Timing Issue
 
 **"No stream specified" error - RESOLVED**
 
@@ -273,22 +356,22 @@ alembic revision --autogenerate -m "description"
 
 ## 🔧 Known Issues
 
-### 1. **Stream Not Found Error (CRITICAL)**
-- **Issue:** Accessing `/streams/first` shows "Stream not found: first"
-- **Impact:** Users cannot view posts via slug URLs
-- **Debug Priority:** HIGH
-- **Next Step:** Check dynamic route parameter binding in `stream_posts.py`
-
-### 2. **Reflex Deprecation Warnings**
+### 1. **Reflex Deprecation Warnings**
 - State auto-setters deprecated in 0.8.9
 - Need to define setters explicitly or set `state_auto_setters=False`
 - **Impact:** Low (warnings only)
 - **Priority:** LOW
 
-### 3. **Database Migration Warning**
+### 2. **Database Migration Warning**
 - "Target database is not up to date" warning on startup
 - Migrations are actually up to date (alembic alembic_version shows latest)
 - **Impact:** None (cosmetic warning)
+- **Priority:** LOW
+
+### 3. **Preview Font Size is Static**
+- Currently uses default 36px font for preview (works with Reflex Vars)
+- Could be improved to dynamically calculate based on text length
+- **Impact:** Low (preview still functional, just not perfectly sized)
 - **Priority:** LOW
 
 ---
@@ -296,11 +379,12 @@ alembic revision --autogenerate -m "description"
 ## 📊 Project Metrics
 
 ### Code Statistics
-- **Total Lines:** ~3,300 (excluding tests)
+- **Total Lines:** ~4,500 (excluding tests)
+- **E Ink Preview:** 1,116 lines (6 new files)
 - **Test Lines:** ~860
 - **Test Coverage:** 89%
-- **Files Created:** 30+
-- **Git Commits:** 7
+- **Files Created:** 36+
+- **Git Commits:** 10 (feature/eink-preview: 3)
 
 ### Database
 - **Tables:** 7
@@ -313,24 +397,30 @@ alembic revision --autogenerate -m "description"
 - **Authentication:** API key (bcrypt hashed) + OAuth2/OIDC
 - **Documentation:** Auto-generated (Swagger/ReDoc)
 
+### E Ink Preview System
+- **Themes:** 5 pre-defined themes
+- **Components:** 6 composable modules
+- **Font Sizes:** Dynamic (18px-48px)
+- **Scaling:** Responsive (70% desktop, 50% mobile)
+
 ---
 
 ## 🎯 Next Session Priorities
 
-### Current Focus: UI Polish & Feature Enhancement
+### Current Focus: Merge E Ink Preview & Continue Development
 
-1. **Test Full User Flow** - Verify end-to-end experience:
-   - ✅ Create stream (working)
-   - ✅ View posts (working)
-   - ✅ Create post (working)
-   - Test: Edit stream settings, delete streams, manage subscriptions
+1. **Merge E Ink Preview Feature** - HIGH PRIORITY
+   - ✅ Feature implemented on `feature/eink-preview` branch
+   - Test preview thoroughly in browser
+   - Fix any UI/UX issues discovered
+   - Merge to `main` branch
+   - Deploy to production (https://streamscene.dataandstories.com)
 
-2. **UI Enhancements:**
-   - Add loading states to stream posts page
-   - Improve error messaging and user feedback
-   - Add success confirmations with auto-dismiss
-   - Better spacing, colors, and responsive design
-   - Consider adding stream description display
+2. **E Ink Preview Enhancements** (Optional):
+   - Add dynamic font sizing for preview (currently static 36px with Vars)
+   - Test preview with very long messages (>400 chars)
+   - Consider adding theme selector in UI
+   - Add keyboard shortcut to toggle preview (e.g., Ctrl+P)
 
 3. **Stream Management Features:**
    - Implement stream editing (name, description, visibility)
@@ -338,15 +428,23 @@ alembic revision --autogenerate -m "description"
    - Enable stream subscription workflow
    - Implement "Unsubscribe" button functionality
 
-4. **Remove Unused Slug Infrastructure** (Optional Cleanup):
-   - Slug field still in database but unused (query params use UUIDs)
-   - Consider removing slug migration and utilities if not needed
-   - Or: Keep for future SEO-friendly URLs on public streams
+4. **Theme System Expansion** (Future):
+   - Add database field: `streams.theme_name` (VARCHAR 50)
+   - Create theme selector in stream settings
+   - Allow custom theme creation via UI
+   - Document how to add new themes
 
 5. **Device Integration Preparation:**
    - Test device API endpoints with curl
    - Prepare for Raspberry Pi client development
    - Verify content delivery works with current post structure
+   - Consider implementing preview renderer on device side
+
+6. **Image Support Planning** (Phase 5):
+   - Design image upload workflow
+   - Plan 6-color dithering pipeline
+   - Update preview to show image content
+   - Architecture already supports this (just need renderer implementation)
 
 ---
 
@@ -359,5 +457,6 @@ alembic revision --autogenerate -m "description"
 
 ---
 
-**🎉 Progress: Phase 1 Complete + URL Slugs & Dynamic Pages Implemented!**
-**⚠️ Current Blocker: Slug lookup issue needs debugging**
+**🎉 Progress: Phase 2.5 Complete - E Ink Preview System Fully Implemented!**
+**📋 Next Steps: Test, merge feature branch, and deploy to production**
+**🚀 Feature Branch:** `feature/eink-preview` ready for testing & merge

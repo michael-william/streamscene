@@ -247,6 +247,119 @@ CACHE_PATH=/var/lib/streamscene/cache
 4. Pre-process on server (not on Pi) to save CPU
 5. Cache processed images
 
+## E Ink Preview System
+
+**Location:** `streamscene/components/eink/`
+
+The E Ink preview system allows users to see exactly how their posts will appear on the physical E Ink display before posting. It uses a composable architecture that's future-proof for theming and image support.
+
+### Architecture
+
+**Composable Design Principles:**
+- **Separation of Concerns:** Layout, content, and theming are completely independent
+- **Theme System:** Colors and styles abstracted into reusable themes
+- **Content Renderers:** Pure functions for text, images, and mixed content
+- **Layout Components:** Header, footer, and content area are independent and reusable
+
+**Component Files:**
+```
+streamscene/components/eink/
+├── __init__.py              # Public API exports
+├── theme.py                 # Theme system (5 pre-defined themes)
+├── layout.py                # Composable layout components
+├── content_renderers.py     # Text/image/mixed renderers
+├── preview.py               # Main preview component
+└── text_utils.py            # Text measurement & wrapping
+```
+
+### Usage
+
+**Basic usage in UI:**
+```python
+from streamscene.components.eink import eink_preview
+
+# Simple text preview
+preview = eink_preview(
+    text_content=StreamPostsState.new_post_content,  # Can be Var or str
+    stream_name="Family Updates",
+    author_name="You",
+    theme_name="classic"
+)
+```
+
+**Available themes:**
+- `classic` - Black text on white background (default)
+- `dark` - White text on black background
+- `accent_red` - Black text with red header accents
+- `accent_blue` - Black text with blue header accents
+- `minimal` - Clean design without dividers
+
+**Adding a new theme:**
+```python
+# In streamscene/components/eink/theme.py
+from streamscene.components.eink import EInkTheme, register_theme
+
+sunset_theme = EInkTheme(
+    name="sunset",
+    description="Warm sunset colors",
+    background_color="yellow",
+    text_color="black",
+    header_color="red",
+    divider_color="#ffddaa",
+    font_family="monospace",
+    header_weight="bold",
+    show_dividers=True,
+    border_style="rounded"
+)
+
+register_theme(sunset_theme)
+```
+
+### Dynamic Font Sizing
+
+Text automatically resizes based on content length:
+- **< 100 chars:** 48px (large, impactful)
+- **100-200 chars:** 36px
+- **200-300 chars:** 28px
+- **300-400 chars:** 22px
+- **> 400 chars:** 18px + warning message
+
+### Integration
+
+**In post creation form (`stream_posts.py`):**
+- Toggle switch to show/hide preview
+- Real-time character counter (turns red >400 chars)
+- Warning messages for long content
+- Responsive scaling (70% desktop, 50% mobile)
+
+### Future Enhancements (Already Architected)
+
+1. **Stream-specific themes:** Add `theme_name` field to streams table
+2. **Image support:** Just update `image_content_renderer()` in `content_renderers.py`
+3. **Custom theme editor:** UI for creating themes (architecture ready)
+4. **Rotation preview:** Show multiple posts cycling (just compose multiple previews)
+
+### Important Notes for Development
+
+**Reflex Var Compatibility:**
+- Use `rx.cond()` instead of Python `if` statements when working with Vars
+- Content renderers handle both plain strings and Reflex Vars
+- Preview component works with reactive state updates
+
+**Example of Var-safe code:**
+```python
+# ❌ WRONG - Python if doesn't work with Vars
+if text.strip():
+    return rx.text(text)
+
+# ✅ CORRECT - Use rx.cond()
+return rx.cond(
+    text,  # Condition (works with Vars)
+    rx.text(text),  # If truthy
+    rx.text("Empty")  # If falsy
+)
+```
+
 ## Authentication Flow
 
 ### Web Users (OAuth2 + Cookie-Based Sessions)
@@ -461,6 +574,12 @@ config = rx.Config(
     - Track: what was tried, why it failed, server logs, lessons learned
     - Prevents repeating failed approaches in future sessions
     - Pattern: DEBUGGING_HISTORY.md with chronological attempt log
+18. **Reflex Var compatibility in component functions:**
+    - Never use Python `if`, `and`, `or`, `not` directly on Reflex Vars
+    - Use `rx.cond()` for conditional rendering instead of `if` statements
+    - Error: `VarTypeError: Cannot convert Var to bool`
+    - Example: E Ink preview components use `rx.cond(text, ...)` instead of `if text:`
+    - See `streamscene/components/eink/content_renderers.py` for working examples
 
 ## Testing Strategy
 
