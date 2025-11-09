@@ -413,21 +413,198 @@ return rx.cond(
 
 ## Device Client (Raspberry Pi)
 
-The device client code lives in a separate `streamscene-client/` repository:
+The device client code is located in `client/` directory:
 
 **Main Components:**
-- `display/` - E Ink driver and rendering logic
-- `network/` - WebSocket/REST API client
-- `setup/` - BLE server for WiFi configuration
-- `storage/` - Local content caching
-- `updater/` - OTA update client
+- `display.py` - E Ink driver and rendering logic
+- `api_client.py` - WebSocket/REST API client
+- `setup/` - WiFi hotspot and captive portal for setup
+  - `hotspot.py` - WiFi access point management (hostapd/dnsmasq)
+  - `portal_server.py` - Captive portal web server
+  - `wifi_client.py` - WiFi client connection management
+- `renderer.py` - Content rendering for E Ink
+- `main.py` - Device main loop
 
 **Device Main Loop:**
-1. Check WiFi connection → start BLE setup if needed
+1. Check WiFi connection → start hotspot + captive portal if needed
 2. Check registration → show QR code if not registered
 3. Check for OTA updates → download and install
 4. Connect WebSocket to server
 5. Listen for content updates and render to display
+
+## WiFi Setup System
+
+**Architecture:**
+The WiFi setup system enables devices to connect to home networks without pre-configuration. It uses a WiFi hotspot + captive portal approach (tested successfully on Raspberry Pi Zero 2 WH).
+
+**Components:**
+
+### 1. Hotspot Creation (`client/setup/hotspot.py`)
+- Creates WiFi access point using hostapd and dnsmasq
+- Generates device-specific SSID from UUID: `StreamScene-XXXX` (last 4 chars before final UUID segment)
+- Configures static IP 192.168.4.1 on wlan0
+- Default password: `streamscene` (8+ characters required by WPA2)
+- Automatically stops/masks wpa_supplicant to prevent mode conflicts
+
+**Key Functions:**
+```python
+generate_ssid(device_uuid: str) -> str  # StreamScene-XXXX from UUID
+create_hotspot(ssid: str, password: str = "streamscene") -> bool
+stop_hotspot() -> bool
+is_hotspot_active() -> bool
+```
+
+### 2. Captive Portal (`client/setup/portal_server.py`)
+- HTTP server on port 80 with threading support
+- Beautiful HTML form (NO JavaScript for maximum compatibility)
+- DNS wildcard redirect (all queries → 192.168.4.1) for automatic portal opening
+- Stores credentials to `wifi_credentials.json` on submission
+- Modern CSS gradient design with mobile-responsive layout
+
+**Key Class:**
+```python
+class CaptivePortalServer:
+    def start(self) -> None  # Start server in background thread
+    def stop(self) -> None
+    def has_credentials(self) -> bool
+    def get_credentials(self) -> dict
+```
+
+### 3. WiFi Client Connection (`client/setup/wifi_client.py`)
+- Generates wpa_supplicant configuration for home network
+- Manually starts wpa_supplicant with config file (bypasses unreliable systemd service)
+- Requests DHCP lease via dhclient
+- Verifies connection via wpa_cli status (checks for `wpa_state=COMPLETED`)
+- Tests internet connectivity by pinging 8.8.8.8
+
+**Key Functions:**
+```python
+save_credentials(ssid: str, password: str) -> bool
+load_credentials() -> Optional[dict]
+connect_to_wifi(ssid: str, password: str, timeout: int = 30) -> bool
+is_connected() -> bool
+get_ip_address() -> Optional[str]
+test_internet_connectivity(timeout: int = 10) -> bool
+```
+
+### WiFi Setup Flow
+
+1. **Device boots without WiFi credentials**
+2. **Hotspot mode activated:**
+   - Stop and mask wpa_supplicant (prevent conflicts)
+   - Configure wlan0 with static IP 192.168.4.1
+   - Start hostapd (WiFi AP) and dnsmasq (DHCP/DNS)
+3. **User connects phone to StreamScene-XXXX network**
+4. **Captive portal auto-opens** (DNS redirect to 192.168.4.1)
+5. **User submits WiFi credentials via HTML form**
+6. **Credentials saved to JSON file**
+7. **Hotspot stopped, services cleaned up**
+8. **WiFi client mode activated:**
+   - Unmask and manually start wpa_supplicant with config
+   - Request DHCP lease
+   - Verify connection and internet access
+9. **Device proceeds to registration flow**
+
+**Testing:**
+- End-to-end tested on Raspberry Pi Zero 2 WH
+- Requires ethernet for development/testing SSH access
+- See `client/WIFI_SETUP_DEPLOYMENT.md` for comprehensive testing guide
+
+**System Dependencies (Raspberry Pi):**
+```bash
+sudo apt-get install -y hostapd dnsmasq
+sudo systemctl disable hostapd dnsmasq  # Manual control only
+```
+
+**Configuration Files:**
+- `/etc/hostapd/hostapd.conf` - Hotspot configuration (generated dynamically)
+- `/etc/dnsmasq.d/streamscene.conf` - DNS/DHCP configuration
+- `/etc/wpa_supplicant/wpa_supplicant.conf` - WiFi client configuration
+- `/home/badgy/streamscene-client/wifi_credentials.json` - Saved credentials
+- `/boot/firmware/streamscene-device.txt` - Device UUID
+
+## OTA Update System
+
+**Server-Side Infrastructure (Phases 1-3):**
+
+### Database Models (`streamscene/core/models.py`)
+
+**DeviceUpdate:**
+- Stores update package metadata (version, path, hash, size, changelog)
+- Supports staged rollout via `rollout_percentage` (0-100)
+- Version compatibility via `min_version_required`
+- Mandatory vs optional updates via `is_mandatory`
+- Active/inactive flag for withdrawing bad updates
+
+**UpdateDeployment:**
+- Tracks installation status per device (pending → downloading → installing → completed/failed)
+- Records download progress (0-100%)
+- Captures error messages and rollback reasons
+- Links device to update via foreign keys
+
+### OTA Business Logic (`streamscene/core/ota.py`)
+
+**Staged Rollout Algorithm:**
+```python
+# Devices selected for rollout based on hash of device ID
+device_hash = int(hashlib.md5(str(device_id).encode()).hexdigest(), 16)
+device_percentage = (device_hash % 100) + 1
+eligible = device_percentage <= update.rollout_percentage
+```
+
+**Key Functions:**
+- `check_for_updates(device_id)` - Eligibility check (version, rollout %, active status)
+- `create_update_deployment(device_id, update_id)` - Initialize tracking record
+- `update_deployment_status(device_id, update_id, status, progress, error)` - Track progress
+- `get_deployment_stats(update_id)` - Success rate monitoring
+
+### Device API Endpoints (`streamscene/api/routes/devices.py`)
+
+**Check for Updates:**
+```
+GET /api/devices/{device_id}/updates/check
+Headers: X-Device-API-Key
+Returns: { update_available, version, is_mandatory, package_size, changelog }
+```
+
+**Download Update:**
+```
+GET /api/devices/{device_id}/updates/{version}/download
+Headers: X-Device-API-Key
+Returns: Binary .tar.gz file (FileResponse)
+```
+
+**Report Status:**
+```
+POST /api/devices/{device_id}/updates/report
+Headers: X-Device-API-Key
+Body: { update_id, status, download_progress, error_message, rollback_reason }
+Returns: { success, message }
+```
+
+### QR Code Generation (`streamscene/core/qr_utils.py`)
+
+**Device Registration QR Codes:**
+- Generates QR codes for device registration URLs
+- Format: `{FRONTEND_URL}/register?device_uuid={uuid}`
+- High error correction for reliability
+- Configurable size and border
+- Returns PNG bytes (ready for display or file save)
+
+**Functions:**
+```python
+generate_registration_qr(device_uuid: UUID, base_url: str = None,
+                        box_size: int = 10, border: int = 4) -> bytes
+save_registration_qr(device_uuid: UUID, output_path: str, ...) -> bool
+```
+
+**Client-Side Integration (Phase 7 - Pending):**
+- Download update package over WiFi
+- Verify SHA256 hash matches server
+- Extract to temporary directory
+- Run update script
+- Verify new version works
+- Automatic rollback on failure
 
 ## MVP Scope
 
@@ -435,9 +612,11 @@ The device client code lives in a separate `streamscene-client/` repository:
 - ✅ Text-only posts (images deferred to Phase 5)
 - ✅ Stream creation and management
 - ✅ User authentication via Authentik
-- ✅ Device registration via QR + BLE WiFi setup
-- ✅ WebSocket real-time updates
-- ✅ OTA update system
+- ✅ WiFi hotspot + captive portal setup (completed, tested on Pi Zero 2 WH)
+- ✅ OTA update system infrastructure (database, API endpoints)
+- 🚧 Device registration via QR code (server-side ready, client integration pending)
+- 🚧 WebSocket real-time updates (endpoint exists, client integration pending)
+- 🚧 OTA update client (download/install on device)
 
 **Deferred to v2:**
 - ❌ Image upload and processing
@@ -519,13 +698,71 @@ config = rx.Config(
 )
 ```
 
+## Device Deployment
+
+**Deploy Client Code to Raspberry Pi:**
+
+Using the provided deployment script:
+```bash
+# From development machine
+./deploy_to_pi.sh
+
+# Or manual deployment with sshpass
+sshpass -p 'password' scp -r client/ user@host:~/streamscene-client/
+```
+
+**Initial Device Setup (One-Time):**
+```bash
+# SSH into Raspberry Pi
+ssh badgy@192.168.1.40  # Use device IP or streamscene.local
+
+# Install system dependencies
+sudo apt-get update
+sudo apt-get install -y hostapd dnsmasq python3-pip
+
+# Disable services (manual control only)
+sudo systemctl disable hostapd dnsmasq
+sudo systemctl stop hostapd dnsmasq
+
+# Generate device UUID (if not already done)
+DEVICE_UUID=$(uuidgen)
+echo "DEVICE_UUID=$DEVICE_UUID" | sudo tee /boot/firmware/streamscene-device.txt
+cat /boot/firmware/streamscene-device.txt  # Verify
+
+# Test WiFi setup
+cd ~/streamscene-client
+sudo python3 test_wifi_setup.py
+```
+
+**Testing WiFi Setup:**
+1. Run test script (creates hotspot + portal)
+2. Connect phone to StreamScene-XXXX network
+3. Enter home WiFi credentials in captive portal
+4. Verify device connects to home WiFi
+5. Check IP address: `ip addr show wlan0`
+6. Test internet: `ping -c 3 8.8.8.8`
+
+**Reset WiFi Credentials (for re-testing):**
+```bash
+rm ~/streamscene-client/wifi_credentials.json
+sudo python3 ~/streamscene-client/test_wifi_setup.py
+```
+
 ## Critical Decision Points
 
-**Week 1 Day 5:** Validate Reflex can handle device API endpoints with WebSockets. If not, migrate to FastAPI while keeping UI in Reflex or switching entirely.
+**✅ WiFi Setup Approach (RESOLVED):**
+- Implemented hotspot + captive portal instead of BLE
+- Successfully tested on Raspberry Pi Zero 2 WH
+- No BLE dependencies required
 
-**WebSocket Stability:** If connection stability <90% after 1 week testing, immediately switch to polling fallback (60 second interval).
+**WebSocket Stability (PENDING):**
+- If connection stability <90% after 1 week testing, switch to polling fallback (60 second interval)
+- Device client WebSocket integration not yet implemented
 
-**Bluetooth Setup:** If BLE implementation takes >1 week or success rate <90%, fallback to ethernet-assisted setup.
+**Reflex for Device API (PENDING):**
+- Device API endpoints implemented and tested successfully
+- WebSocket endpoint exists but not yet tested with real device clients
+- If issues arise, consider FastAPI-only migration
 
 ## Common Gotchas
 
@@ -580,6 +817,27 @@ config = rx.Config(
     - Error: `VarTypeError: Cannot convert Var to bool`
     - Example: E Ink preview components use `rx.cond(text, ...)` instead of `if text:`
     - See `streamscene/components/eink/content_renderers.py` for working examples
+19. **WiFi adapter mode conflicts (Raspberry Pi):**
+    - Single WiFi adapter (wlan0) can only be in ONE mode: access point OR client, never both
+    - Before creating hotspot: MUST stop and mask wpa_supplicant to prevent conflicts
+    - Before connecting as client: MUST stop hostapd/dnsmasq
+    - Use `systemctl mask <service>` to prevent systemd from auto-restarting during mode switch
+    - Symptom: Hotspot not visible or client won't connect = both services running simultaneously
+20. **systemd command timeouts are critical:**
+    - ALWAYS add timeout parameter to subprocess.run() for systemd commands
+    - Without timeout, Ctrl+C can cause Pi to hang indefinitely on `systemctl stop`
+    - Use 5-10 second timeouts: `subprocess.run([...], timeout=10)`
+    - Use `check=False` for cleanup operations (don't fail if service already stopped)
+21. **Manual wpa_supplicant startup vs systemd service:**
+    - systemd wpa_supplicant service doesn't read config file by default
+    - Manual startup required: `wpa_supplicant -B -i wlan0 -c /etc/wpa_supplicant/wpa_supplicant.conf`
+    - Don't use `systemctl start wpa_supplicant` - it starts without `-c` flag
+    - Verify connection with: `wpa_cli -i wlan0 status` (look for `wpa_state=COMPLETED`)
+22. **Deploy to Pi workflow:**
+    - Use `sshpass -p 'password' scp file user@host:path` for automated deployment
+    - Ethernet connection recommended for testing (maintains SSH during WiFi mode switching)
+    - Always test WiFi setup end-to-end after deployment
+    - Reset test: `rm ~/streamscene-client/wifi_credentials.json` and rerun setup script
 
 ## Testing Strategy
 
