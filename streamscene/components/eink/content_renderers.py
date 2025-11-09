@@ -62,6 +62,7 @@ def text_content_renderer(
             text_align="center",
             color=theme.text_color,
             font_family=theme.font_family,
+            font_style="italic",
             white_space="pre-wrap",
             word_wrap="break-word",
             overflow="hidden",

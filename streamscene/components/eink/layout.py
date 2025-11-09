@@ -22,14 +22,16 @@ CONTENT_WIDTH = 680   # 800 - 60 (left) - 60 (right)
 
 def eink_header(
     stream_name: str,
-    timestamp: str,
+    author_name: str,
+    date: str,
     theme: EInkTheme
 ) -> rx.Component:
-    """Render E Ink display header (stream name + timestamp).
+    """Render E Ink display header (stream name + author + date).
 
     Args:
         stream_name: Name of the stream to display
-        timestamp: Formatted timestamp string
+        author_name: Name of the post author
+        date: Formatted date string (e.g., "Wed. 2025-12-31")
         theme: EInkTheme object for styling
 
     Returns:
@@ -38,12 +40,14 @@ def eink_header(
     Example:
         >>> from streamscene.components.eink.theme import CLASSIC_THEME
         >>> header = eink_header(
-        ...     stream_name="Family Updates",
-        ...     timestamp="Nov 8, 2025\\n2:30 PM",
+        ...     stream_name="Deep thoughts",
+        ...     author_name="Author",
+        ...     date="Wed. 2025-12-31",
         ...     theme=CLASSIC_THEME
         ... )
     """
     return rx.hstack(
+        # Left: Stream name
         rx.text(
             stream_name,
             font_size="20px",
@@ -53,16 +57,29 @@ def eink_header(
             white_space="nowrap",
             overflow="hidden",
             text_overflow="ellipsis",
-            max_width="500px",
+            flex="1",
         ),
-        rx.spacer(),
+        # Center: Author name
         rx.text(
-            timestamp,
+            author_name,
+            font_size="20px",
+            color=theme.text_color,
+            font_family=theme.font_family,
+            text_align="center",
+            white_space="nowrap",
+            overflow="hidden",
+            text_overflow="ellipsis",
+            flex="1",
+        ),
+        # Right: Date
+        rx.text(
+            date,
             font_size="18px",
             color=theme.text_color,
             font_family=theme.font_family,
             text_align="right",
-            white_space="pre-line",  # Allow line breaks in timestamp
+            white_space="nowrap",
+            flex="1",
         ),
         width="100%",
         height=f"{HEADER_HEIGHT}px",
@@ -74,14 +91,14 @@ def eink_header(
 def eink_footer(
     author_name: str,
     theme: EInkTheme,
-    show_prefix: bool = True
+    show_prefix: bool = False
 ) -> rx.Component:
     """Render E Ink display footer (author info).
 
     Args:
         author_name: Name of the post author
         theme: EInkTheme object for styling
-        show_prefix: Whether to show "Posted by: " prefix
+        show_prefix: Whether to show "Posted by: " prefix (default: False)
 
     Returns:
         Reflex component for the footer
@@ -91,7 +108,7 @@ def eink_footer(
         >>> footer = eink_footer(
         ...     author_name="John Doe",
         ...     theme=CLASSIC_THEME,
-        ...     show_prefix=True
+        ...     show_prefix=False
         ... )
     """
     text_content = f"Posted by: {author_name}" if show_prefix else author_name

@@ -58,14 +58,14 @@ def eink_preview(
         text_content: Text to display
         image_url: Image URL (for image/mixed content)
         content_type: Type of content ("text", "image", "mixed")
-        stream_name: Stream name for header
-        author_name: Author name for footer
-        timestamp: Timestamp string (defaults to current time)
+        stream_name: Stream name for header (left column)
+        author_name: Author name for header (center column)
+        timestamp: Date string for header (right column, defaults to current date in "Wed. 2025-12-31" format)
         theme_name: Theme name from registry ("classic", "dark", etc.)
         custom_theme: Custom theme object (overrides theme_name)
         show_header: Whether to show header
         show_footer: Whether to show footer
-        show_author_prefix: Whether to show "Posted by: " prefix
+        show_author_prefix: Whether to show "Posted by: " prefix in footer
 
     Returns:
         Reflex component representing E Ink display
@@ -74,7 +74,7 @@ def eink_preview(
         >>> # Basic text preview
         >>> preview = eink_preview(
         ...     text_content="Hello family!",
-        ...     stream_name="Family Updates",
+        ...     stream_name="Deep thoughts",
         ...     author_name="John Doe"
         ... )
         >>>
@@ -103,9 +103,9 @@ def eink_preview(
     print(f"[EINK_PREVIEW] Background color: {theme.background_color}")
     print(f"[EINK_PREVIEW] Text color: {theme.text_color}")
 
-    # Generate timestamp if not provided
+    # Generate date if not provided (short format: "Wed. 2025-12-31")
     if timestamp is None:
-        timestamp = datetime.now().strftime("%b %d, %Y\n%I:%M %p")
+        timestamp = datetime.now().strftime("%a. %Y-%m-%d")
 
     # Select content renderer based on type
     if content_type == "text":
@@ -124,30 +124,13 @@ def eink_preview(
     # Build layout by composing components
     layout_components = []
 
-    # Debug banner (temporary - shows active theme)
-    layout_components.append(
-        rx.box(
-            rx.text(
-                f"Theme: {theme.name}",
-                font_size="12px",
-                color="red",
-                font_weight="bold",
-                background="yellow",
-                padding="2px 8px",
-            ),
-            width="100%",
-            display="flex",
-            justify_content="center",
-        )
-    )
-
     # Top margin
     layout_components.append(rx.box(height=f"{TOP_MARGIN}px"))
 
     # Header (conditional)
     if show_header:
         layout_components.extend([
-            eink_header(stream_name, timestamp, theme),
+            eink_header(stream_name, author_name, timestamp, theme),
             eink_divider(theme),
         ])
 

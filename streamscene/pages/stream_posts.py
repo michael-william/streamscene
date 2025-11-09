@@ -587,38 +587,63 @@ def stream_posts_page() -> rx.Component:
                                 style={"background": StreamPostsState.theme_background},
                             ),
                             rx.box(
+                                id="eink-preview-wrapper",
                                 # Build preview manually with reactive Vars
                                 rx.box(
+                                    id="eink-preview-container",
                                     rx.vstack(
-                                        # Header
+                                        id="eink-preview-vstack",
+                                        # Header (3-column: stream name, author, date)
                                         rx.hstack(
+                                            id="eink-preview-header",
+                                            # Left: Stream name
                                             rx.text(
                                                 StreamPostsState.stream_name,
                                                 font_size="20px",
                                                 font_weight="bold",
                                                 color=StreamPostsState.theme_header_color,
                                                 font_family="monospace",
+                                                white_space="nowrap",
+                                                overflow="hidden",
+                                                text_overflow="ellipsis",
+                                                flex="1",
                                             ),
-                                            rx.spacer(),
+                                            # Center: Author name
                                             rx.text(
-                                                rx.moment(format="MMM DD, YYYY\nhh:mm A"),
+                                                "You",
+                                                font_size="20px",
+                                                color=StreamPostsState.theme_text_color,
+                                                font_family="monospace",
+                                                text_align="center",
+                                                white_space="nowrap",
+                                                overflow="hidden",
+                                                text_overflow="ellipsis",
+                                                flex="1",
+                                            ),
+                                            # Right: Date (short format)
+                                            rx.text(
+                                                rx.moment(format="ddd. YYYY-MM-DD"),
                                                 font_size="18px",
                                                 color=StreamPostsState.theme_text_color,
                                                 font_family="monospace",
                                                 text_align="right",
-                                                white_space="pre-line",
+                                                white_space="nowrap",
+                                                flex="1",
                                             ),
                                             width="100%",
                                             height="60px",
                                             align="center",
+                                            justify="between",
                                         ),
                                         # Divider
                                         rx.divider(
+                                            id="eink-preview-divider",
                                             border_color=StreamPostsState.theme_divider_color,
                                             margin_y="0",
                                         ),
                                         # Content
                                         rx.box(
+                                            id="eink-preview-content",
                                             rx.cond(
                                                 StreamPostsState.new_post_content,
                                                 rx.text(
@@ -627,6 +652,7 @@ def stream_posts_page() -> rx.Component:
                                                     text_align="center",
                                                     color=StreamPostsState.theme_text_color,
                                                     font_family="monospace",
+                                                    font_style="italic",
                                                     white_space="pre-wrap",
                                                     padding="10px",
                                                 ),
@@ -638,27 +664,10 @@ def stream_posts_page() -> rx.Component:
                                                     text_align="center",
                                                 ),
                                             ),
-                                            height="280px",
+                                            height="380px",
                                             display="flex",
                                             align_items="center",
                                             justify_content="center",
-                                        ),
-                                        # Divider
-                                        rx.divider(
-                                            border_color=StreamPostsState.theme_divider_color,
-                                            margin_y="0",
-                                        ),
-                                        # Footer
-                                        rx.box(
-                                            rx.text(
-                                                "Posted by: You",
-                                                font_size="18px",
-                                                color=StreamPostsState.theme_text_color,
-                                                font_family="monospace",
-                                            ),
-                                            height="60px",
-                                            display="flex",
-                                            align_items="center",
                                         ),
                                         spacing="0",
                                         width="100%",
@@ -671,13 +680,13 @@ def stream_posts_page() -> rx.Component:
                                     border_radius="8px",
                                     overflow="hidden",
                                     box_shadow="0 4px 6px rgba(0, 0, 0, 0.1)",
-                                    style={"background": StreamPostsState.theme_background},
                                 ),
                                 # Scale down to 70% for desktop, 50% for mobile
                                 transform="scale(0.7)",
                                 transform_origin="top left",
-                                # Mobile scaling override
+                                # Combined style: theme background + responsive scaling
                                 style={
+                                    "background": StreamPostsState.theme_background,
                                     "@media (max-width: 768px)": {
                                         "transform": "scale(0.5)",
                                     }
