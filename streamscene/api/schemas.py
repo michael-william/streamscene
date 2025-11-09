@@ -58,6 +58,34 @@ class DeviceHeartbeatResponse(BaseModel):
     timestamp: datetime = Field(..., description="Server timestamp")
 
 
+class UpdateCheckResponse(BaseModel):
+    """Response for checking available updates."""
+
+    update_available: bool = Field(..., description="Whether an update is available")
+    version: Optional[str] = Field(None, description="Version of the available update")
+    is_mandatory: bool = Field(False, description="Whether the update is mandatory")
+    package_size: Optional[int] = Field(None, description="Size of update package in bytes")
+    changelog: Optional[str] = Field(None, description="Update changelog")
+    current_version: str = Field(..., description="Device's current version")
+
+
+class UpdateReportRequest(BaseModel):
+    """Request body for reporting update installation status."""
+
+    update_id: UUID = Field(..., description="ID of the update being installed")
+    status: str = Field(..., description="Status: downloading, installing, completed, failed, rolled_back")
+    download_progress: Optional[int] = Field(None, description="Download progress (0-100)")
+    error_message: Optional[str] = Field(None, description="Error message if failed")
+    rollback_reason: Optional[str] = Field(None, description="Reason for rollback if rolled back")
+
+
+class UpdateReportResponse(BaseModel):
+    """Response for update status report."""
+
+    status: str = Field(..., description="Confirmation status")
+    message: str = Field(..., description="Status message")
+
+
 # ============================================================================
 # STREAM SCHEMAS
 # ============================================================================

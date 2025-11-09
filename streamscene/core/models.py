@@ -238,3 +238,76 @@ class DeviceStreamSettings(Base):
 
     def __repr__(self):
         return f"<DeviceStreamSettings(device_id={self.device_id}, stream_id={self.stream_id}, order={self.display_order})>"
+
+
+class DeviceUpdate(Base):
+    """DeviceUpdate model - Software update packages for OTA updates."""
+
+    __tablename__ = "device_updates"
+
+    id: Mapped[uuid.UUID] = Column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    version: Mapped[str] = Column(String(50), unique=True, nullable=False, index=True)
+    release_date: Mapped[datetime] = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    package_path: Mapped[str] = Column(String(500), nullable=False)  # Path to .tar.gz update file
+    package_hash: Mapped[str] = Column(String(64), nullable=False)  # SHA256 hash for verification
+    package_size: Mapped[int] = Column(Integer, nullable=False)  # Size in bytes
+    changelog: Mapped[str] = Column(Text, default="", nullable=False)
+    is_mandatory: Mapped[bool] = Column(Boolean, default=False, nullable=False)
+    rollout_percentage: Mapped[int] = Column(Integer, default=100, nullable=False)  # 0-100, staged rollout
+    min_version_required: Mapped[str] = Column(String(50), nullable=True)  # Minimum version that can upgrade
+    is_active: Mapped[bool] = Column(Boolean, default=True, nullable=False)  # Can be installed
+    created_at: Mapped[datetime] = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = Column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+    # Relationships
+    deployments: Mapped[List["UpdateDeployment"]] = relationship(
+        "UpdateDeployment", back_populates="update", cascade="all, delete-orphan"
+    )
+
+    def __repr__(self):
+        return f"<DeviceUpdate(id={self.id}, version={self.version}, active={self.is_active})>"
+
+
+class UpdateDeployment(Base):
+    """UpdateDeployment model - Tracks update installation status per device."""
+
+    __tablename__ = "update_deployments"
+
+    id: Mapped[uuid.UUID] = Column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    device_id: Mapped[uuid.UUID] = Column(
+        UUID(as_uuid=True), ForeignKey("devices.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    update_id: Mapped[uuid.UUID] = Column(
+        UUID(as_uuid=True), ForeignKey("device_updates.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    status: Mapped[str] = Column(
+        String(20), default="pending", nullable=False, index=True
+    )  # pending, downloading, installing, completed, failed, rolled_back
+    started_at: Mapped[datetime] = Column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime] = Column(DateTime(timezone=True), nullable=True)
+    error_message: Mapped[str] = Column(Text, nullable=True)
+    rollback_reason: Mapped[str] = Column(Text, nullable=True)
+    download_progress: Mapped[int] = Column(Integer, default=0, nullable=False)  # 0-100 percentage
+    created_at: Mapped[datetime] = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = Column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+    # Relationships
+    device: Mapped["Device"] = relationship("Device")
+    update: Mapped["DeviceUpdate"] = relationship("DeviceUpdate", back_populates="deployments")
+
+    # Composite index for efficient queries
+    __table_args__ = (
+        Index("idx_deployment_device_status", "device_id", "status"),
+        UniqueConstraint("device_id", "update_id", name="uq_device_update"),
+    )
+
+    def __repr__(self):
+        return f"<UpdateDeployment(device_id={self.device_id}, update_id={self.update_id}, status={self.status})>"
