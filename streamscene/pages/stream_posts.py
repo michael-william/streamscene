@@ -548,6 +548,7 @@ def stream_posts_page() -> rx.Component:
                         on_change=StreamPostsState.set_new_post_content,
                         size="3",
                         rows="4",
+                        max_length=160,  # Maximum character limit for E Ink display
                     ),
 
                     # Preview toggle
@@ -587,15 +588,11 @@ def stream_posts_page() -> rx.Component:
                                 style={"background": StreamPostsState.theme_background},
                             ),
                             rx.box(
-                                id="eink-preview-wrapper",
                                 # Build preview manually with reactive Vars
                                 rx.box(
-                                    id="eink-preview-container",
                                     rx.vstack(
-                                        id="eink-preview-vstack",
                                         # Header (3-column: stream name, author, date)
                                         rx.hstack(
-                                            id="eink-preview-header",
                                             # Left: Stream name
                                             rx.text(
                                                 StreamPostsState.stream_name,
@@ -630,6 +627,7 @@ def stream_posts_page() -> rx.Component:
                                                 white_space="nowrap",
                                                 flex="1",
                                             ),
+                                            id="eink-preview-header",
                                             width="100%",
                                             height="60px",
                                             align="center",
@@ -643,7 +641,6 @@ def stream_posts_page() -> rx.Component:
                                         ),
                                         # Content
                                         rx.box(
-                                            id="eink-preview-content",
                                             rx.cond(
                                                 StreamPostsState.new_post_content,
                                                 rx.text(
@@ -653,7 +650,11 @@ def stream_posts_page() -> rx.Component:
                                                     color=StreamPostsState.theme_text_color,
                                                     font_family="monospace",
                                                     font_style="italic",
+                                                    font_weight="500",  # Medium weight for E Ink contrast
                                                     white_space="pre-wrap",
+                                                    word_wrap="break-word",
+                                                    overflow="hidden",
+                                                    width="100%",
                                                     padding="10px",
                                                 ),
                                                 rx.text(
@@ -661,18 +662,23 @@ def stream_posts_page() -> rx.Component:
                                                     font_size="24px",
                                                     color="gray",
                                                     font_style="italic",
+                                                    font_weight="500",
                                                     text_align="center",
                                                 ),
                                             ),
+                                            id="eink-preview-content",
+                                            width="100%",
                                             height="380px",
                                             display="flex",
                                             align_items="center",
                                             justify_content="center",
                                         ),
+                                        id="eink-preview-vstack",
                                         spacing="0",
                                         width="100%",
                                         height="100%",
                                     ),
+                                    id="eink-preview-container",
                                     width="800px",
                                     height="480px",
                                     padding="0 60px",
@@ -681,6 +687,7 @@ def stream_posts_page() -> rx.Component:
                                     overflow="hidden",
                                     box_shadow="0 4px 6px rgba(0, 0, 0, 0.1)",
                                 ),
+                                id="eink-preview-wrapper",
                                 # Scale down to 70% for desktop, 50% for mobile
                                 transform="scale(0.7)",
                                 transform_origin="top left",
@@ -786,6 +793,7 @@ def stream_posts_page() -> rx.Component:
                             on_change=StreamPostsState.set_edit_post_content,
                             size="3",
                             rows="6",
+                            max_length=160,  # Maximum character limit for E Ink display
                         ),
                         rx.cond(
                             StreamPostsState.error_message,

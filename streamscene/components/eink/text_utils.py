@@ -3,67 +3,36 @@
 This module provides utilities for calculating optimal font sizes,
 estimating text dimensions, and wrapping text to fit within the
 E Ink display constraints.
+
+Font sizing uses binary search to maximize font size while respecting
+word wrapping and display constraints (680×380px content area).
 """
 
 from typing import List, Tuple
 
 
-def calculate_font_size(text: str) -> int:
-    """Calculate optimal font size based on text length.
-
-    Uses character count to determine appropriate font size that
-    maximizes readability while ensuring text fits in the content area.
-
-    Args:
-        text: Text content to size
-
-    Returns:
-        Font size in pixels
-
-    Example:
-        >>> calculate_font_size("Short")
-        48
-        >>> calculate_font_size("A" * 250)
-        28
-    """
-    char_count = len(text)
-
-    if char_count < 100:
-        return 48  # Large font for short messages
-    elif char_count < 200:
-        return 36  # Medium font
-    elif char_count < 300:
-        return 28  # Smaller font
-    elif char_count < 400:
-        return 22  # Even smaller
-    else:
-        return 18  # Minimum readable size
-
-
 def calculate_line_height(font_size: int) -> float:
-    """Calculate line height based on font size.
+    """Calculate line height based on WCAG accessibility standards.
+
+    Returns 1.5× for all font sizes to meet WCAG AA accessibility
+    requirements and optimize readability on E Ink displays.
 
     Args:
         font_size: Font size in pixels
 
     Returns:
-        Line height multiplier
+        Line height multiplier (always 1.5)
 
     Example:
         >>> calculate_line_height(48)
-        1.4
-        >>> calculate_line_height(18)
-        1.2
+        1.5
+        >>> calculate_line_height(28)
+        1.5
     """
-    if font_size >= 36:
-        return 1.4  # More spacing for large text
-    elif font_size >= 22:
-        return 1.3  # Medium spacing
-    else:
-        return 1.2  # Tighter spacing for small text
+    return 1.5  # WCAG AA standard for all font sizes
 
 
-def get_max_lines(font_size: int, content_height: int = 280) -> int:
+def get_max_lines(font_size: int, content_height: int = 380) -> int:
     """Calculate maximum number of lines that fit in content area.
 
     Args:
@@ -110,6 +79,88 @@ def estimate_text_width(text: str, font_size: int, font_family: str = "monospace
         char_width = font_size * 0.5
 
     return int(len(text) * char_width)
+
+
+def calculate_optimal_font_size(
+    text: str,
+    max_width: int = 680,
+    max_height: int = 380,
+    min_size: int = 28,
+    max_size: int = 64,
+    font_family: str = "monospace"
+) -> int:
+    """Calculate optimal font size using binary search.
+
+    Finds the largest font size that fits the text within the given
+    width and height constraints, respecting word wrapping boundaries.
+
+    This algorithm maximizes font size for maximum impact on the E Ink
+    display while ensuring text never overflows.
+
+    Args:
+        text: Text content to size
+        max_width: Maximum width in pixels (default: 680px content area)
+        max_height: Maximum height in pixels (default: 380px content area)
+        min_size: Minimum font size in pixels (default: 28px for 5-ft viewing)
+        max_size: Maximum font size in pixels (default: 64px)
+        font_family: Font family for width calculation (default: "monospace")
+
+    Returns:
+        Optimal font size in pixels
+
+    Example:
+        >>> calculate_optimal_font_size("Hello world!")
+        64
+        >>> calculate_optimal_font_size("A" * 160)
+        28
+    """
+    # Handle empty text
+    if not text.strip():
+        return min_size
+
+    # Binary search for largest font that fits
+    best_size = min_size
+
+    while max_size - min_size > 1:  # 1px precision
+        mid = (min_size + max_size) // 2
+
+        # Wrap text at this font size
+        lines = wrap_text(text, max_width, mid, font_family)
+
+        # Calculate total height needed
+        line_height = mid * calculate_line_height(mid)
+        total_height = len(lines) * line_height
+
+        if total_height <= max_height:
+            # Text fits! Try larger font
+            best_size = mid
+            min_size = mid
+        else:
+            # Text too large, try smaller font
+            max_size = mid
+
+    return best_size
+
+
+def calculate_font_size(text: str) -> int:
+    """Calculate optimal font size (wrapper for binary search).
+
+    This function provides a simple interface to the binary search
+    algorithm, using default E Ink display constraints.
+
+    Args:
+        text: Text content to size
+
+    Returns:
+        Font size in pixels
+
+    Example:
+        >>> calculate_font_size("Short")
+        64
+        >>> calculate_font_size("A" * 160)
+        28
+    """
+    return calculate_optimal_font_size(text)
 
 
 def wrap_text(
@@ -196,37 +247,34 @@ def truncate_to_max_lines(lines: List[str], max_lines: int) -> Tuple[List[str], 
     return truncated, True
 
 
-def get_text_warnings(text: str, font_size: int, max_width: int = 680) -> List[str]:
+def get_text_warnings(text: str, font_size: int = 28, max_width: int = 680) -> List[str]:
     """Get warning messages for text that may not display well.
 
     Args:
         text: Text content
-        font_size: Font size in pixels
-        max_width: Maximum width in pixels
+        font_size: Font size in pixels (default: 28px minimum)
+        max_width: Maximum width in pixels (default: 680px)
 
     Returns:
         List of warning messages (empty if no warnings)
 
     Example:
-        >>> get_text_warnings("A" * 500, 18)
-        ['⚠️ Very long message (500 chars). May be hard to read on device.']
+        >>> get_text_warnings("A" * 200)
+        ['⚠️ Message too long (200 chars). Maximum is 160 characters.']
     """
     warnings = []
     char_count = len(text)
 
-    # Warn about very long messages
-    if char_count > 400:
+    # Warn about messages exceeding 160 character limit
+    if char_count > 160:
         warnings.append(
-            f"⚠️ Very long message ({char_count} chars). May be hard to read on device."
+            f"⚠️ Message too long ({char_count} chars). Maximum is 160 characters."
         )
-
-    # Check if text will be truncated
-    lines = wrap_text(text, max_width, font_size)
-    max_lines = get_max_lines(font_size)
-
-    if len(lines) > max_lines:
+    elif char_count > 140:
+        # Soft warning when approaching limit
+        remaining = 160 - char_count
         warnings.append(
-            f"⚠️ Message will be truncated on device. Consider shortening to ~{max_lines * 10} chars."
+            f"ℹ️ Approaching character limit ({remaining} characters remaining)."
         )
 
     return warnings

@@ -63,6 +63,7 @@ def text_content_renderer(
             color=theme.text_color,
             font_family=theme.font_family,
             font_style="italic",
+            font_weight="500",  # Medium weight for better E Ink contrast
             white_space="pre-wrap",
             word_wrap="break-word",
             overflow="hidden",
@@ -76,6 +77,7 @@ def text_content_renderer(
             font_size="24px",
             color="gray",
             font_style="italic",
+            font_weight="500",
             text_align="center",
         ),
     )
