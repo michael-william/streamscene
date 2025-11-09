@@ -14,3 +14,4 @@ CREDENTIALS.md
 .coverage
 htmlcov/
 .tox/
+usertesting/
