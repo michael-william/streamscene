@@ -39,8 +39,8 @@ def generate_registration_qr(
         base_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
     # Create registration URL
-    # Format: https://streamscene.dataandstories.com/register?device_uuid=xxx
-    registration_url = f"{base_url}/register?device_uuid={device_uuid}"
+    # Format: https://streamscene.dataandstories.com/setup?device_uuid=xxx
+    registration_url = f"{base_url}/setup?device_uuid={device_uuid}"
 
     # Create QR code
     qr = qrcode.QRCode(
@@ -129,9 +129,9 @@ def get_registration_url(device_uuid: uuid.UUID, base_url: Optional[str] = None)
         >>> device_uuid = uuid.uuid4()
         >>> url = get_registration_url(device_uuid)
         >>> print(url)
-        https://streamscene.dataandstories.com/register?device_uuid=...
+        https://streamscene.dataandstories.com/setup?device_uuid=...
     """
     if base_url is None:
         base_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
-    return f"{base_url}/register?device_uuid={device_uuid}"
+    return f"{base_url}/setup?device_uuid={device_uuid}"

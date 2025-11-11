@@ -11,6 +11,7 @@ from streamscene.pages.dashboard import dashboard
 from streamscene.pages.streams import streams
 from streamscene.pages.stream_posts import stream_posts_page
 from streamscene.pages.profile import profile
+from streamscene.pages.setup import setup
 
 # Import FastAPI app for device API
 from streamscene.api import api
@@ -46,3 +47,4 @@ app.add_page(dashboard, route="/dashboard")
 app.add_page(streams, route="/streams")
 app.add_page(stream_posts_page, route="/stream-posts")
 app.add_page(profile, route="/profile")
+app.add_page(setup, route="/setup")
