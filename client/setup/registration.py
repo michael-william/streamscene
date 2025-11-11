@@ -15,10 +15,9 @@ def check_registration(api_client) -> bool:
     """
     Check if device is registered with the server.
 
-    Polls the /api/devices/{id}/config endpoint.
-    - If returns 200: Device is registered
-    - If returns 404/403: Device not registered yet
-    - If returns other error: Connection/server issue
+    Polls the /api/devices/{id}/registration-status endpoint (unauthenticated).
+    - If registered and API key available: saves API key and returns True
+    - If not registered: returns False
 
     Args:
         api_client: APIClient instance configured with device UUID
@@ -29,16 +28,32 @@ def check_registration(api_client) -> bool:
     logger.debug("[Registration] Checking registration status...")
 
     try:
-        # Try to fetch device config
-        # This endpoint requires device to be registered
-        config = api_client.fetch_config()
+        # Check registration status (unauthenticated endpoint)
+        status = api_client.check_registration_status()
 
-        if config:
-            logger.info("[Registration] Device is registered!")
-            logger.debug(f"[Registration] Device config: {config}")
+        if not status:
+            logger.debug("[Registration] Failed to get registration status from server")
+            return False
+
+        is_registered = status.get("is_registered", False)
+        api_key = status.get("api_key")
+        nickname = status.get("nickname")
+
+        if is_registered:
+            logger.info(f"[Registration] Device is registered! Nickname: {nickname}")
+
+            # If API key is provided, save it locally
+            if api_key:
+                logger.info("[Registration] API key received, saving locally...")
+                import config
+                if config.save_api_key(api_key):
+                    logger.info(f"[Registration] ✓ API key saved to {config.API_KEY_FILE}")
+                else:
+                    logger.error("[Registration] ✗ Failed to save API key!")
+
             return True
         else:
-            logger.debug("[Registration] Device not registered yet (no config returned)")
+            logger.debug("[Registration] Device not registered yet")
             return False
 
     except Exception as e:

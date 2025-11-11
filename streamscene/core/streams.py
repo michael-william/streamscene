@@ -644,6 +644,8 @@ def register_device(
         existing_device.api_key_hash = api_key_hash
         existing_device.nickname = nickname or "My StreamScene Frame"
         existing_device.registered_at = utc_now()
+        # Store API key temporarily in config for device to retrieve
+        existing_device.config["pending_api_key"] = api_key
         device = existing_device
     else:
         # Create new device
@@ -653,6 +655,7 @@ def register_device(
             api_key_hash=api_key_hash,
             nickname=nickname or "My StreamScene Frame",
             registered_at=utc_now(),
+            config={"pending_api_key": api_key},  # Store API key temporarily
         )
         session.add(device)
 

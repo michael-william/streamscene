@@ -15,7 +15,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 
-from . import config
+import config
 
 
 class StreamSceneAPIClient:
@@ -41,14 +41,20 @@ class StreamSceneAPIClient:
 
         if not self.device_id:
             raise ValueError("Device ID is required")
-        if not self.api_key:
-            raise ValueError("API key is required")
+
+        # API key is optional during setup phase (before registration)
+        # Methods requiring authentication will fail gracefully if missing
+        # This allows polling for registration status without credentials
 
         # Create session with retry logic
         self.session = self._create_session()
 
         print(f"[API Client] Initialized for device {self.device_id}")
         print(f"[API Client] API URL: {self.base_url}")
+        if self.api_key:
+            print(f"[API Client] API key: present")
+        else:
+            print(f"[API Client] API key: not set (setup mode)")
 
     def _create_session(self) -> requests.Session:
         """
@@ -72,10 +78,13 @@ class StreamSceneAPIClient:
         session.mount("https://", adapter)
 
         # Set default headers
-        session.headers.update({
-            "X-Device-Api-Key": self.api_key,
-            "User-Agent": "StreamScene-Client/1.0",
-        })
+        headers = {"User-Agent": "StreamScene-Client/1.0"}
+
+        # Only add API key if present (allows unauthenticated calls during setup)
+        if self.api_key:
+            headers["X-Device-Api-Key"] = self.api_key
+
+        session.headers.update(headers)
 
         return session
 
@@ -169,6 +178,11 @@ class StreamSceneAPIClient:
             print(f"[API Client] Error fetching config: {e}")
             return None
 
+    # Alias for compatibility with registration code
+    def fetch_config(self) -> Optional[Dict[str, Any]]:
+        """Alias for get_config(). Used during registration polling."""
+        return self.get_config()
+
     def health_check(self) -> bool:
         """
         Check if API server is reachable.
@@ -211,6 +225,39 @@ class StreamSceneAPIClient:
 
         print(f"[API Client] Server not available after {max_attempts} attempts")
         return False
+
+    def check_registration_status(self) -> Optional[Dict[str, Any]]:
+        """
+        Check device registration status (unauthenticated).
+
+        This endpoint does not require API key authentication.
+        Used during setup to detect when device has been registered.
+
+        Returns:
+            Dict with registration status:
+            {
+                "is_registered": bool,
+                "api_key": str or None,
+                "nickname": str or None
+            }
+            Returns None if request fails.
+        """
+        url = f"{self.base_url}/api/devices/{self.device_id}/registration-status"
+
+        try:
+            print(f"[API Client] Checking registration status...")
+            # Use a temporary session without API key for this unauthenticated request
+            response = requests.get(url, timeout=config.REQUEST_TIMEOUT)
+            response.raise_for_status()
+
+            data = response.json()
+            print(f"[API Client] Registration check: is_registered={data.get('is_registered')}")
+
+            return data
+
+        except requests.exceptions.RequestException as e:
+            print(f"[API Client] Error checking registration status: {e}")
+            return None
 
 
 if __name__ == "__main__":

@@ -8,9 +8,8 @@ from typing import Optional, Tuple
 from datetime import datetime
 
 from PIL import Image, ImageDraw, ImageFont
-import numpy as np
 
-from . import config
+import config
 
 
 class ContentRenderer:
@@ -190,10 +189,13 @@ class ContentRenderer:
 
     def _convert_to_eink_palette(self, image: Image.Image) -> Image.Image:
         """
-        Convert image to 6-color E Ink palette using Floyd-Steinberg dithering.
+        Convert image to 4-color E Ink palette using PIL's fast quantize().
 
-        The Waveshare 7.3" 6-color display supports:
-        - Black, White, Red, Yellow, Blue, Green
+        The Waveshare 7.3" G variant (epd7in3g) supports:
+        - Black, White, Yellow, Red (4 colors, not 6)
+
+        This uses PIL's built-in quantize() with a custom palette, which is
+        much faster than manual Floyd-Steinberg dithering in Python.
 
         Args:
             image: RGB image
@@ -201,50 +203,25 @@ class ContentRenderer:
         Returns:
             RGB image with colors quantized to E Ink palette
         """
-        # Convert to numpy array for faster processing
-        img_array = np.array(image, dtype=np.float32)
-        height, width = img_array.shape[:2]
+        # Create a palette image with the 4 colors supported by epd7in3g
+        pal_image = Image.new("P", (1, 1))
+        # Palette format: (R, G, B) tuples for each color
+        # BLACK=0x000000, WHITE=0xffffff, YELLOW=0x00ffff (BGR), RED=0x0000ff (BGR)
+        # In RGB: BLACK=(0,0,0), WHITE=(255,255,255), YELLOW=(255,255,0), RED=(255,0,0)
+        palette_colors = (
+            0, 0, 0,           # Black
+            255, 255, 255,     # White
+            255, 255, 0,       # Yellow
+            255, 0, 0          # Red
+        )
+        # Pad remaining 252 colors with black
+        pal_image.putpalette(palette_colors + (0, 0, 0) * 252)
 
-        # E Ink palette
-        palette = np.array([
-            config.COLORS["BLACK"],
-            config.COLORS["WHITE"],
-            config.COLORS["RED"],
-            config.COLORS["YELLOW"],
-            config.COLORS["BLUE"],
-            config.COLORS["GREEN"],
-        ], dtype=np.float32)
+        # Convert to RGB and quantize using the palette with dithering
+        image_quantized = image.convert("RGB").quantize(palette=pal_image, dither=Image.Dither.FLOYDSTEINBERG)
 
-        # Floyd-Steinberg dithering
-        for y in range(height):
-            for x in range(width):
-                old_pixel = img_array[y, x]
-
-                # Find closest palette color
-                distances = np.sum((palette - old_pixel) ** 2, axis=1)
-                closest_idx = np.argmin(distances)
-                new_pixel = palette[closest_idx]
-
-                img_array[y, x] = new_pixel
-
-                # Calculate quantization error
-                quant_error = old_pixel - new_pixel
-
-                # Distribute error to neighboring pixels
-                if x + 1 < width:
-                    img_array[y, x + 1] += quant_error * 7 / 16
-
-                if y + 1 < height:
-                    if x > 0:
-                        img_array[y + 1, x - 1] += quant_error * 3 / 16
-                    img_array[y + 1, x] += quant_error * 5 / 16
-                    if x + 1 < width:
-                        img_array[y + 1, x + 1] += quant_error * 1 / 16
-
-        # Clip values and convert back to uint8
-        img_array = np.clip(img_array, 0, 255).astype(np.uint8)
-
-        return Image.fromarray(img_array)
+        # Convert back to RGB mode for consistency
+        return image_quantized.convert("RGB")
 
     def render_error(self, error_message: str) -> Image.Image:
         """

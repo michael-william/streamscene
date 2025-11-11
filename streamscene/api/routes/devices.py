@@ -13,6 +13,7 @@ from streamscene.api.schemas import (
     DeviceContentResponse,
     DeviceConfigResponse,
     DeviceHeartbeatResponse,
+    RegistrationStatusResponse,
     UpdateCheckResponse,
     UpdateReportRequest,
     UpdateReportResponse,
@@ -77,6 +78,59 @@ async def register_device(
 
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
+
+
+@router.get("/{device_id}/registration-status", response_model=RegistrationStatusResponse)
+async def check_registration_status(
+    device_id: UUID,
+    db: Session = Depends(get_db),
+):
+    """
+    Check if a device is registered (unauthenticated endpoint).
+
+    This endpoint allows devices to poll for registration status during
+    the setup flow without requiring an API key. Once registered, it
+    returns the API key (ONE TIME ONLY) so the device can save it and
+    transition to authenticated operation.
+
+    Args:
+        device_id: Device UUID
+        db: Database session
+
+    Returns:
+        RegistrationStatusResponse: Registration status and API key if registered
+    """
+    device = stream_ops.get_device_by_id(db, device_id)
+
+    if not device:
+        # Device UUID not found - not registered yet
+        return RegistrationStatusResponse(
+            is_registered=False,
+            api_key=None,
+            nickname=None
+        )
+
+    # Device exists - check if there's a pending API key
+    pending_api_key = device.config.get("pending_api_key")
+
+    if pending_api_key:
+        # First time device is retrieving the API key
+        # Clear it from config after retrieval (one-time only)
+        device.config.pop("pending_api_key", None)
+        db.commit()
+
+        return RegistrationStatusResponse(
+            is_registered=True,
+            api_key=pending_api_key,  # Return API key ONE TIME
+            nickname=device.nickname
+        )
+
+    # Device is registered but API key already retrieved
+    return RegistrationStatusResponse(
+        is_registered=True,
+        api_key=None,  # API key already retrieved
+        nickname=device.nickname
+    )
 
 
 @router.get("/{device_id}/content", response_model=DeviceContentResponse)

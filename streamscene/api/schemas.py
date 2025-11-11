@@ -58,6 +58,14 @@ class DeviceHeartbeatResponse(BaseModel):
     timestamp: datetime = Field(..., description="Server timestamp")
 
 
+class RegistrationStatusResponse(BaseModel):
+    """Response for checking device registration status (unauthenticated)."""
+
+    is_registered: bool = Field(..., description="Whether the device is registered")
+    api_key: Optional[str] = Field(None, description="API key if device is registered")
+    nickname: Optional[str] = Field(None, description="Device nickname if registered")
+
+
 class UpdateCheckResponse(BaseModel):
     """Response for checking available updates."""
 

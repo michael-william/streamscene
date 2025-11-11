@@ -43,7 +43,7 @@ from typing import Optional
 
 from PIL import Image
 
-from . import config
+import config
 
 
 class DisplayAdapter(ABC):
@@ -120,82 +120,80 @@ class HeadlessDisplay(DisplayAdapter):
 # ============================================================================
 # E INK DISPLAY ADAPTER (FOR HARDWARE)
 # ============================================================================
-#
-# UNCOMMENT THIS SECTION when you have the Raspberry Pi + E Ink hardware
-#
-# class EInkDisplay(DisplayAdapter):
-#     """
-#     E Ink display adapter for Waveshare 7.3" 6-color E-Paper HAT.
-#
-#     Requires:
-#     - Raspberry Pi (tested on Pi Zero 2 WH)
-#     - Waveshare 7.3inch e-Paper HAT (F)
-#     - waveshare-epd library installed
-#     - SPI enabled in raspi-config
-#     - Run with sudo for GPIO access
-#     """
-#
-#     def __init__(self):
-#         """Initialize E Ink display."""
-#         try:
-#             # Import Waveshare library (only when this class is used)
-#             from waveshare_epd import epd7in3f
-#             self.epd = epd7in3f.EPD()
-#
-#             print("[Display] Initializing Waveshare 7.3\" E Ink display...")
-#             self.epd.init()
-#             self.epd.Clear()
-#             print("[Display] E Ink display ready")
-#
-#         except ImportError:
-#             raise ImportError(
-#                 "waveshare-epd library not installed. "
-#                 "Install with: pip install waveshare-epd"
-#             )
-#         except Exception as e:
-#             raise RuntimeError(f"Failed to initialize E Ink display: {e}")
-#
-#     def show(self, image: Image.Image) -> None:
-#         """Display image on E Ink screen."""
-#         print("[Display] Updating E Ink display...")
-#         print("[Display] (This takes ~30 seconds - E Ink refresh is slow)")
-#
-#         # Ensure image is correct size
-#         if image.size != (config.DISPLAY_WIDTH, config.DISPLAY_HEIGHT):
-#             image = image.resize(
-#                 (config.DISPLAY_WIDTH, config.DISPLAY_HEIGHT),
-#                 Image.Resampling.LANCZOS
-#             )
-#
-#         # Convert image to format expected by Waveshare library
-#         # The library expects RGB mode
-#         if image.mode != "RGB":
-#             image = image.convert("RGB")
-#
-#         # Display the image
-#         self.epd.display(self.epd.getbuffer(image))
-#         print("[Display] E Ink display updated")
-#
-#     def clear(self) -> None:
-#         """Clear the E Ink display to white."""
-#         print("[Display] Clearing E Ink display...")
-#         self.epd.Clear()
-#         print("[Display] E Ink display cleared")
-#
-#     def sleep(self) -> None:
-#         """Put E Ink display into low-power sleep mode."""
-#         print("[Display] Putting E Ink display to sleep...")
-#         self.epd.sleep()
-#         print("[Display] E Ink display in sleep mode")
-#
-#     def __del__(self):
-#         """Cleanup on destruction."""
-#         try:
-#             if hasattr(self, 'epd'):
-#                 self.epd.sleep()
-#         except:
-#             pass
-#
+
+class EInkDisplay(DisplayAdapter):
+    """
+    E Ink display adapter for Waveshare 7.3" 4-color E-Paper HAT.
+
+    Requires:
+    - Raspberry Pi (tested on Pi Zero 2 WH)
+    - Waveshare 7.3inch e-Paper HAT (G variant - 4 colors)
+    - waveshare-epd library installed
+    - SPI enabled in raspi-config
+    - Run with sudo for GPIO access
+    """
+
+    def __init__(self):
+        """Initialize E Ink display."""
+        try:
+            # Import Waveshare library (only when this class is used)
+            from waveshare_epd import epd7in3g
+            self.epd = epd7in3g.EPD()
+
+            print("[Display] Initializing Waveshare 7.3\" E Ink display (G variant)...")
+            self.epd.init()
+            self.epd.Clear()
+            print("[Display] E Ink display ready")
+
+        except ImportError:
+            raise ImportError(
+                "waveshare-epd library not installed. "
+                "Install with: pip install waveshare-epd"
+            )
+        except Exception as e:
+            raise RuntimeError(f"Failed to initialize E Ink display: {e}")
+
+    def show(self, image: Image.Image) -> None:
+        """Display image on E Ink screen."""
+        print("[Display] Updating E Ink display...")
+        print("[Display] (This takes ~30 seconds - E Ink refresh is slow)")
+
+        # Ensure image is correct size
+        if image.size != (config.DISPLAY_WIDTH, config.DISPLAY_HEIGHT):
+            image = image.resize(
+                (config.DISPLAY_WIDTH, config.DISPLAY_HEIGHT),
+                Image.Resampling.LANCZOS
+            )
+
+        # Convert image to format expected by Waveshare library
+        # The library expects RGB mode
+        if image.mode != "RGB":
+            image = image.convert("RGB")
+
+        # Display the image
+        self.epd.display(self.epd.getbuffer(image))
+        print("[Display] E Ink display updated")
+
+    def clear(self) -> None:
+        """Clear the E Ink display to white."""
+        print("[Display] Clearing E Ink display...")
+        self.epd.Clear()
+        print("[Display] E Ink display cleared")
+
+    def sleep(self) -> None:
+        """Put E Ink display into low-power sleep mode."""
+        print("[Display] Putting E Ink display to sleep...")
+        self.epd.sleep()
+        print("[Display] E Ink display in sleep mode")
+
+    def __del__(self):
+        """Cleanup on destruction."""
+        try:
+            if hasattr(self, 'epd'):
+                self.epd.sleep()
+        except:
+            pass
+
 # ============================================================================
 
 
@@ -217,10 +215,6 @@ def get_display(mode: Optional[str] = None) -> DisplayAdapter:
     if mode == "headless":
         return HeadlessDisplay()
     elif mode == "eink":
-        # When hardware arrives, uncomment the EInkDisplay class above and uncomment this:
-        # return EInkDisplay()
-        raise NotImplementedError(
-            "E Ink display mode not yet available - uncomment EInkDisplay class in display.py"
-        )
+        return EInkDisplay()
     else:
         raise ValueError(f"Invalid display mode: {mode}. Must be 'headless' or 'eink'")

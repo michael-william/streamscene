@@ -30,7 +30,7 @@ import logging
 from typing import Optional
 from pathlib import Path
 
-from .config import (
+from config import (
     validate_config,
     POLL_INTERVAL,
     HEARTBEAT_INTERVAL,
@@ -39,13 +39,13 @@ from .config import (
     save_api_key,
     load_api_key,
 )
-from .api_client import StreamSceneAPIClient
-from .display import get_display
-from .renderer import ContentRenderer
-from .states import StateMachine, DeviceState
-from .setup.network_manager import NetworkManager
-from .setup.setup_manager import SetupManager
-from .setup.registration import get_registration_url
+from api_client import StreamSceneAPIClient
+from display import get_display
+from renderer import ContentRenderer
+from states import StateMachine, DeviceState
+from setup.network_manager import NetworkManager
+from setup.setup_manager import SetupManager
+from setup.registration import get_registration_url
 
 # Configure logging
 logging.basicConfig(
@@ -77,12 +77,12 @@ class StreamSceneClient:
         print("\n[Client] Initializing components...")
 
         # State machine (loads persisted state or starts at wifi_setup)
-        self.state_machine = StateMachine()
+        self.state_machine = StateMachine(device_uuid=DEVICE_ID)
         logger.info(f"[Client] Starting in state: {self.state_machine.current_state.value}")
 
         # Setup components (WiFi, registration)
-        self.network_manager = NetworkManager()
-        self.setup_manager = SetupManager()
+        self.network_manager = NetworkManager(device_uuid=DEVICE_ID)
+        self.setup_manager = SetupManager(device_uuid=DEVICE_ID, network_manager=self.network_manager)
 
         # API client (may not be usable until device is registered)
         self.api_client = StreamSceneAPIClient()
@@ -161,6 +161,18 @@ class StreamSceneClient:
         """Handle WIFI_SETUP state - create hotspot and run captive portal."""
         logger.info("[WiFi Setup] Starting WiFi credential capture...")
 
+        # First check if we already have saved credentials
+        saved_credentials = self.setup_manager.check_saved_credentials()
+
+        if saved_credentials:
+            logger.info(f"[WiFi Setup] Found saved credentials for SSID: {saved_credentials['ssid']}")
+            logger.info("[WiFi Setup] Skipping hotspot setup, using saved credentials")
+            self.state_machine.transition_to(DeviceState.CONNECTING, saved_credentials)
+            return
+
+        # No saved credentials - run full WiFi setup flow
+        logger.info("[WiFi Setup] No saved credentials found, starting hotspot setup")
+
         # Display message on E Ink
         image = self.renderer.render_message(
             "WiFi Setup",
@@ -182,7 +194,7 @@ class StreamSceneClient:
 
     def _handle_connecting(self):
         """Handle CONNECTING state - attempt to connect to WiFi."""
-        state_data = self.state_machine.get_state_data()
+        state_data = self.state_machine.get_all_state_data()
         ssid = state_data.get("ssid")
         password = state_data.get("password")
 
@@ -333,7 +345,7 @@ class StreamSceneClient:
 
     def _handle_error(self):
         """Handle ERROR state - display error and attempt recovery."""
-        state_data = self.state_machine.get_state_data()
+        state_data = self.state_machine.get_all_state_data()
         error = state_data.get("error", "Unknown error")
         previous_state = state_data.get("previous_state", "unknown")
 
