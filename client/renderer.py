@@ -289,6 +289,140 @@ class ContentRenderer:
 
         return self._convert_to_eink_palette(image)
 
+    def render_message(
+        self, title: str, message: str, color: str = "black"
+    ) -> Image.Image:
+        """
+        Render a simple message with title and body text.
+
+        Args:
+            title: Title text
+            message: Body message
+            color: Color for title ("black", "red", "blue", "green")
+
+        Returns:
+            PIL Image (800x480, RGB mode)
+        """
+        image = Image.new("RGB", (self.width, self.height), config.COLORS["WHITE"])
+        draw = ImageDraw.Draw(image)
+
+        # Map color names to config colors
+        color_map = {
+            "black": config.COLORS["BLACK"],
+            "red": config.COLORS["RED"],
+            "blue": config.COLORS["BLUE"],
+            "green": config.COLORS["GREEN"],
+            "yellow": config.COLORS["YELLOW"],
+        }
+        title_color = color_map.get(color.lower(), config.COLORS["BLACK"])
+
+        # Draw title at top
+        bbox = draw.textbbox((0, 0), title, font=self.font_large)
+        text_width = bbox[2] - bbox[0]
+
+        draw.text(
+            ((self.width - text_width) // 2, 80),
+            title,
+            fill=title_color,
+            font=self.font_large,
+        )
+
+        # Draw horizontal line
+        draw.line([(100, 150), (self.width - 100, 150)], fill=config.COLORS["BLACK"], width=2)
+
+        # Draw message
+        wrapped_lines = self._wrap_text(message, self.font_medium, self.width - 100)
+        y = 180
+
+        for line in wrapped_lines:
+            bbox = draw.textbbox((0, 0), line, font=self.font_medium)
+            text_width = bbox[2] - bbox[0]
+
+            draw.text(
+                ((self.width - text_width) // 2, y),
+                line,
+                fill=config.COLORS["BLACK"],
+                font=self.font_medium,
+            )
+            y += 40
+
+        return self._convert_to_eink_palette(image)
+
+    def render_qr_code(
+        self, url: str, title: str = "Scan QR Code", instructions: str = ""
+    ) -> Image.Image:
+        """
+        Render a QR code with title and instructions.
+
+        Args:
+            url: URL to encode in QR code
+            title: Title text above QR code
+            instructions: Instructions text below QR code
+
+        Returns:
+            PIL Image (800x480, RGB mode)
+        """
+        try:
+            import qrcode
+        except ImportError:
+            # If qrcode library not available, render error
+            return self.render_error(
+                "QR code library not installed.\nInstall with: pip install qrcode"
+            )
+
+        image = Image.new("RGB", (self.width, self.height), config.COLORS["WHITE"])
+        draw = ImageDraw.Draw(image)
+
+        # Draw title
+        bbox = draw.textbbox((0, 0), title, font=self.font_large)
+        title_width = bbox[2] - bbox[0]
+
+        draw.text(
+            ((self.width - title_width) // 2, 40),
+            title,
+            fill=config.COLORS["BLACK"],
+            font=self.font_large,
+        )
+
+        # Generate QR code
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_H,
+            box_size=5,
+            border=2,
+        )
+        qr.add_data(url)
+        qr.make(fit=True)
+
+        qr_img = qr.make_image(fill_color="black", back_color="white")
+
+        # Resize QR code to fit nicely (300x300 pixels)
+        qr_size = 300
+        qr_img = qr_img.resize((qr_size, qr_size), Image.Resampling.NEAREST)
+
+        # Paste QR code in center
+        qr_x = (self.width - qr_size) // 2
+        qr_y = 120
+
+        image.paste(qr_img, (qr_x, qr_y))
+
+        # Draw instructions below QR code
+        if instructions:
+            wrapped_lines = self._wrap_text(instructions, self.font_small, self.width - 100)
+            y = qr_y + qr_size + 20
+
+            for line in wrapped_lines:
+                # Left-align instructions
+                draw.text(
+                    (50, y),
+                    line,
+                    fill=config.COLORS["BLACK"],
+                    font=self.font_small,
+                )
+                y += 25
+
+        return self._convert_to_eink_palette(image)
+
 
 if __name__ == "__main__":
     # Test renderer
