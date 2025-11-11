@@ -201,6 +201,17 @@ class Device(Base):
     rotation_enabled: Mapped[bool] = Column(Boolean, default=False, nullable=False)
     rotation_interval: Mapped[int] = Column(Integer, default=60, nullable=False)  # Seconds, minimum 60
     registered_at: Mapped[datetime] = Column(DateTime(timezone=True), nullable=True)
+
+    # Setup state tracking (Phase 5)
+    setup_state: Mapped[str] = Column(
+        String(50),
+        default="wifi_setup",
+        nullable=False
+    )  # Device setup state: wifi_setup, connecting, awaiting_registration, registered, ready, error
+    setup_completed_at: Mapped[datetime] = Column(
+        DateTime(timezone=True), nullable=True
+    )  # When setup was completed (entered 'ready' state)
+
     config: Mapped[dict] = Column(JSON, default=dict, nullable=False)  # Additional device configuration
 
     # Relationships

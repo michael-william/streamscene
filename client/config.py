@@ -1,18 +1,153 @@
 """Client configuration
 
-Configuration is loaded from environment variables with sensible defaults.
+Configuration is loaded from environment variables and boot partition files.
 """
 
 import os
+import logging
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+# ============================================================================
+# Device UUID Loading
+# ============================================================================
+
+# Device UUID file location (Raspberry Pi boot partition)
+DEVICE_UUID_FILE = Path("/boot/firmware/streamscene-device.txt")
+
+
+def load_device_uuid() -> str:
+    """
+    Load device UUID from boot partition file.
+
+    Falls back to environment variable for development.
+
+    Returns:
+        Device UUID string
+
+    Raises:
+        ValueError: If UUID cannot be loaded from file or environment
+    """
+    # Try loading from boot partition file (production)
+    if DEVICE_UUID_FILE.exists():
+        try:
+            with open(DEVICE_UUID_FILE, 'r') as f:
+                content = f.read().strip()
+
+            # Handle both formats:
+            # 1. Just the UUID: "1c91d1e9-3cc9-44ba-a008-9cdee188d90c"
+            # 2. Key=value format: "DEVICE_UUID=1c91d1e9-3cc9-44ba-a008-9cdee188d90c"
+            if '=' in content:
+                # Parse key=value format
+                for line in content.split('\n'):
+                    line = line.strip()
+                    if line.startswith('DEVICE_UUID='):
+                        uuid = line.split('=', 1)[1].strip()
+                        logger.info(f"[Config] Loaded device UUID from {DEVICE_UUID_FILE}")
+                        return uuid
+            else:
+                # Plain UUID format
+                logger.info(f"[Config] Loaded device UUID from {DEVICE_UUID_FILE}")
+                return content
+
+            raise ValueError(f"Invalid format in {DEVICE_UUID_FILE}")
+
+        except Exception as e:
+            logger.warning(f"[Config] Error reading UUID file: {e}")
+            # Fall through to environment variable
+
+    # Fallback to environment variable (development)
+    uuid = os.getenv("STREAMSCENE_DEVICE_ID", "")
+
+    if uuid:
+        logger.info("[Config] Loaded device UUID from environment variable (development mode)")
+        return uuid
+
+    # No UUID found anywhere
+    raise ValueError(
+        "Device UUID not found. Expected file at /boot/firmware/streamscene-device.txt "
+        "or STREAMSCENE_DEVICE_ID environment variable"
+    )
+
 
 # ============================================================================
 # API Configuration
 # ============================================================================
 
 API_BASE_URL = os.getenv("STREAMSCENE_API_URL", "http://localhost:8000")
-DEVICE_ID = os.getenv("STREAMSCENE_DEVICE_ID", "")
+BASE_URL = API_BASE_URL  # Alias for compatibility
+
+# Load device UUID (with error handling for import-time)
+try:
+    DEVICE_ID = load_device_uuid()
+except ValueError as e:
+    logger.warning(f"[Config] {e}")
+    DEVICE_ID = ""  # Will fail validation later
+
 API_KEY = os.getenv("STREAMSCENE_API_KEY", "")
+
+# API Key file location (saved after registration)
+API_KEY_FILE = Path.home() / "streamscene-client" / "device_api_key.txt"
+
+
+def load_api_key() -> str:
+    """
+    Load API key from file or environment.
+
+    Returns:
+        API key if found, empty string otherwise
+    """
+    # Try loading from file (post-registration)
+    if API_KEY_FILE.exists():
+        try:
+            with open(API_KEY_FILE, 'r') as f:
+                key = f.read().strip()
+                if key:
+                    logger.info(f"[Config] Loaded API key from {API_KEY_FILE}")
+                    return key
+        except Exception as e:
+            logger.warning(f"[Config] Error reading API key file: {e}")
+
+    # Fall back to environment variable
+    key = os.getenv("STREAMSCENE_API_KEY", "")
+    if key:
+        logger.info("[Config] Loaded API key from environment variable")
+
+    return key
+
+
+def save_api_key(api_key: str) -> bool:
+    """
+    Save API key to file after registration.
+
+    Args:
+        api_key: API key to save
+
+    Returns:
+        True if saved successfully
+    """
+    try:
+        # Ensure directory exists
+        API_KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(API_KEY_FILE, 'w') as f:
+            f.write(api_key)
+
+        # Set restrictive permissions (owner read/write only)
+        API_KEY_FILE.chmod(0o600)
+
+        logger.info(f"[Config] Saved API key to {API_KEY_FILE}")
+        return True
+
+    except Exception as e:
+        logger.error(f"[Config] Error saving API key: {e}")
+        return False
+
+
+# Try to load API key (but don't fail if not present during setup)
+if not API_KEY:
+    API_KEY = load_api_key()
 
 # ============================================================================
 # Display Configuration
@@ -69,21 +204,34 @@ RETRY_BACKOFF = float(os.getenv("STREAMSCENE_RETRY_BACKOFF", "2.0"))
 # Validation
 # ============================================================================
 
-def validate_config():
-    """Validate configuration and raise errors if invalid."""
+def validate_config(require_api_key: bool = False):
+    """
+    Validate configuration and raise errors if invalid.
+
+    Args:
+        require_api_key: If True, API key is required. If False, only warn if missing.
+                        Set to False during setup phase before device registration.
+    """
     errors = []
+    warnings = []
 
     if not DEVICE_ID:
-        errors.append("STREAMSCENE_DEVICE_ID environment variable is required")
+        errors.append("Device UUID is required (file /boot/firmware/streamscene-device.txt or STREAMSCENE_DEVICE_ID env var)")
 
     if not API_KEY:
-        errors.append("STREAMSCENE_API_KEY environment variable is required")
+        if require_api_key:
+            errors.append("API key is required (device must be registered)")
+        else:
+            warnings.append("API key not found (device not yet registered)")
 
     if POLL_INTERVAL < 60:
         errors.append(f"POLL_INTERVAL must be at least 60 seconds (got {POLL_INTERVAL})")
 
     if DISPLAY_MODE not in ["headless", "eink"]:
         errors.append(f"DISPLAY_MODE must be 'headless' or 'eink' (got {DISPLAY_MODE})")
+
+    if warnings:
+        logger.warning("Configuration warnings:\n" + "\n".join(f"  - {w}" for w in warnings))
 
     if errors:
         raise ValueError("Configuration errors:\n" + "\n".join(f"  - {e}" for e in errors))
