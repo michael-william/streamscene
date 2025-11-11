@@ -1,277 +1,211 @@
-# Next Session - Phase 5 Complete, Ready for Testing
+# Next Session - Phase 6 In Progress: Registration Detection Issue
 
-**Last Updated:** November 11, 2025 (After Phase 5 Implementation)
-**Current Phase:** Phase 5 ✅ COMPLETE - Device State Machine & Registration
-
----
-
-## 🎉 What We Just Completed
-
-### Phase 5: Device State Machine & Registration ✅
-
-**Commits:**
-- `67e9947` - Sprint 1: State machine foundation (1,264 lines, 7 files)
-- `6b83d8b` - Sprint 2: Web registration flow (389 lines, 3 files)
-- `99778f7` - Sprint 3: State-driven client (437 lines, 2 files)
-
-**Sprint 1 - Core State Machine Foundation:**
-- ✅ `client/states.py` - 6-state device lifecycle (wifi_setup → connecting → awaiting_registration → registered → ready → error)
-- ✅ `client/setup/network_manager.py` - WiFi mode switching coordinator (AP ↔ Client)
-- ✅ `client/setup/setup_manager.py` - High-level setup flow orchestration
-- ✅ `client/setup/registration.py` - Registration polling and URL generation
-- ✅ `client/config.py` - UUID loading, API key management
-- ✅ Database migration - Added `setup_state` and `setup_completed_at` to Device model
-- ✅ State persistence to JSON file (survives reboots)
-
-**Sprint 2 - Web Registration Flow:**
-- ✅ `streamscene/pages/setup.py` - Device registration page at /setup
-  - User scans QR code → logs in via OAuth → enters nickname → registers
-  - Success view shows API key ONCE with warning
-  - Error handling for invalid UUIDs, auth failures
-- ✅ `streamscene/streamscene.py` - Registered /setup route in app
-- ✅ `streamscene/core/qr_utils.py` - Updated QR codes to use /setup?device_uuid= format
-- ✅ Fixed import to use streams.register_device() (correct module)
-
-**Sprint 3 - State-Driven Client:**
-- ✅ `client/main.py` - Completely refactored with state machine
-  - State-driven execution with handlers for all 6 states
-  - Integrated NetworkManager and SetupManager
-  - Error recovery with intelligent state transitions
-  - Proper cleanup on shutdown
-- ✅ `client/renderer.py` - Added missing methods:
-  - `render_message()` - Title + message display for setup flows
-  - `render_qr_code()` - QR code generation with instructions
-
-**Device Lifecycle (Fully Implemented):**
-1. **WIFI_SETUP** - Create hotspot, run captive portal, get credentials
-2. **CONNECTING** - Switch to client mode, connect to home WiFi
-3. **AWAITING_REGISTRATION** - Display QR code, poll server every 10s
-4. **REGISTERED** - Device just registered, save API key
-5. **READY** - Normal operation (fetch/display content, heartbeat)
-6. **ERROR** - Display error, attempt intelligent recovery
+**Last Updated:** November 11, 2025 (End of Session - Phase 6 Testing)
+**Current Phase:** Phase 6 🔄 IN PROGRESS - Device Testing & Debugging
 
 ---
 
-## 🎯 Next Session: Phase 6 - End-to-End Testing & Deployment
+## 🎯 Current Status
 
-### Goal
-Deploy the complete Phase 5 implementation to the Raspberry Pi and test the full device lifecycle from unboxing to operational.
+### What Works ✅
+- WiFi setup flow (hotspot + captive portal) - TESTED
+- WiFi client connection - TESTED
+- E Ink display with QR codes - TESTED (using epd7in3g driver)
+- Renderer performance (removed Floyd-Steinberg dithering) - TESTED
+- Device state machine transitions (wifi_setup → connecting → awaiting_registration)
+- Web registration UI - TESTED (device successfully registered)
+- Device registration in database - VERIFIED
 
-### Testing Plan
+### Current Blocker 🚫
+**Registration Status Endpoint Returns 404**
 
-#### Pre-Deployment Checklist
-- [ ] Verify all Sprint 1-3 changes are committed
-- [ ] Check that client code has no syntax errors
-- [ ] Verify server /setup page is accessible
-- [ ] Ensure database migration is applied
+The `/api/devices/{device_id}/registration-status` endpoint is returning 404 Not Found when accessed by the client or via curl, even though:
+- Code exists in `streamscene/api/routes/devices.py:83-133`
+- Router is registered in `streamscene/api/__init__.py`
+- Reflex server has been restarted
+- Other endpoints work (e.g., `/api/health`)
 
-#### Test 1: WiFi Setup Flow
-```bash
-# SSH to device
-ssh badgy@192.168.1.40  # Password: JjKUa9XJ8*FFUZHYB.AP
-
-# Reset to clean state
-cd ~/streamscene-client
-rm wifi_credentials.json
-rm device_state.json
-rm device_api_key.txt
-
-# Deploy latest client code
-# (On dev machine)
-./deploy_to_pi.sh
-
-# Run client (should start in WIFI_SETUP state)
-sudo python3 main.py
-```
-
-**Expected Behavior:**
-1. Device starts in `wifi_setup` state
-2. Creates hotspot "StreamScene-91d1" (last 4 chars of UUID)
-3. Captive portal starts on 192.168.4.1
-4. Connect phone to hotspot
-5. Portal opens automatically
-6. Submit home WiFi credentials
-7. Device transitions to `connecting` state
-8. Successfully connects to home WiFi
-
-#### Test 2: Registration Flow
-**Expected Behavior (after WiFi connected):**
-1. Device transitions to `awaiting_registration` state
-2. Displays QR code on E Ink (or headless output)
-3. QR code URL: `https://streamscene.dataandstories.com/setup?device_uuid=1c91d1e9-3cc9-44ba-a008-9cdee188d90c`
-4. Polls server every 10 seconds
-5. User scans QR code on phone
-6. User logs in via OAuth (Authentik)
-7. User enters nickname "Test Device"
-8. User clicks "Register This Device"
-9. Server registers device, returns API key
-10. Device detects registration on next poll
-11. Device transitions to `registered` state
-12. API key saved to `~/streamscene-client/device_api_key.txt`
-13. Device transitions to `ready` state
-
-#### Test 3: Operational State
-**Expected Behavior (after registration):**
-1. Device in `ready` state
-2. Fetches content from server
-3. Renders content to E Ink display
-4. Sends heartbeat every 5 minutes
-5. Polls for new content every 60 seconds
-6. State persists across reboots (stored in JSON)
-
-#### Test 4: Reboot Persistence
-```bash
-# After device is in READY state
-sudo reboot
-
-# After reboot, device should:
-# 1. Load state from device_state.json (should be READY)
-# 2. Skip WiFi setup (credentials already saved)
-# 3. Skip registration (API key already saved)
-# 4. Resume normal operation
-```
-
-#### Test 5: Error Recovery
-**Test scenarios:**
-1. **WiFi disconnection** - Should stay in READY, display error, keep trying
-2. **Invalid WiFi credentials** - Should return to WIFI_SETUP
-3. **Registration timeout** - Should transition to ERROR, allow retry
-4. **Server unreachable** - Should stay in READY, display error on screen
+**Impact:** Device cannot detect when user has registered it via web UI. It gets stuck in `AWAITING_REGISTRATION` state polling for registration status but receiving 404 errors.
 
 ---
 
-## 🔍 Known Issues to Watch For
+## 📝 What We Just Completed (This Session)
 
-### Potential Issues from Implementation
+### Session Commit: `c2b3a4d`
+**Commit Message:** "feat: add unauthenticated device registration status endpoint"
 
-1. **Import errors** - State machine and setup managers are new modules
-   - Check all imports work on Pi
-   - Verify Python path includes client/ directory
+**Server Changes:**
+1. Added `/api/devices/{device_id}/registration-status` endpoint (unauthenticated)
+   - Location: `streamscene/api/routes/devices.py:83-133`
+   - Returns `{"is_registered": bool, "api_key": str or None, "nickname": str}`
+   - API key returned ONE TIME only, then cleared from `device.config["pending_api_key"]`
 
-2. **Renderer methods** - render_qr_code requires qrcode library
-   - Ensure `pip install qrcode` on Pi
-   - Test QR code generation doesn't crash on Pi
+2. Added `RegistrationStatusResponse` schema
+   - Location: `streamscene/api/schemas.py:61-66`
 
-3. **State persistence** - JSON file permissions
-   - Check device_state.json is readable/writable
-   - Verify no permission errors when running as sudo
+3. Modified `register_device()` to store API key temporarily
+   - Location: `streamscene/core/streams.py:180-200`
+   - Stores plaintext API key in `device.config["pending_api_key"]`
+   - Cleared after first retrieval by device
 
-4. **API client** - Registration polling may have timing issues
-   - Monitor logs for polling errors
-   - Check that setup_manager correctly waits for registration
+**Client Changes:**
+1. Added `check_registration_status()` method to `APIClient`
+   - Location: `client/api_client.py:229-260`
+   - Makes unauthenticated GET request (no API key header)
 
-5. **Network mode switching** - Switching between AP and Client modes
-   - Verify hotspot stops cleanly before client mode
-   - Check wpa_supplicant doesn't conflict with hostapd
+2. Updated `check_registration()` to use new endpoint and save API key
+   - Location: `client/setup/registration.py:14-61`
+   - Saves API key to file when received
 
-### Debug Commands
+3. Fixed import issues (relative → absolute imports)
+   - Location: `client/api_client.py:18`
 
-```bash
-# Check state file
-cat ~/streamscene-client/device_state.json
+**Display/Renderer Fixes (Previous Session):**
+1. Fixed display driver (epd7in3f → epd7in3g for 4-color display)
+   - Location: `client/display.py:127`
 
-# Check API key file
-cat ~/streamscene-client/device_api_key.txt
-
-# Check WiFi credentials
-cat ~/streamscene-client/wifi_credentials.json
-
-# Monitor logs
-sudo python3 main.py 2>&1 | tee test.log
-
-# Check WiFi status
-ip addr show wlan0
-wpa_cli -i wlan0 status
-
-# Check if hotspot is running
-sudo systemctl status hostapd dnsmasq
-```
+2. Removed slow Floyd-Steinberg dithering
+   - Location: `client/renderer.py:78-82`
+   - Changed to simple nearest-color conversion for performance
 
 ---
 
-## 🚀 Deployment Steps
+## 🔍 Next Session: Debug Registration-Status Endpoint
 
-### Step 1: Deploy Client Code
+### Priority 1: Fix 404 Endpoint Issue
+
+**Problem:**
 ```bash
-# From dev machine at /root/streamscene
-./deploy_to_pi.sh
-
-# Or manually:
-sshpass -p 'JjKUa9XJ8*FFUZHYB.AP' scp -r client/ badgy@192.168.1.40:~/streamscene-client/
+$ curl https://streamscene.dataandstories.com/api/devices/1c91d1e9-3cc9-44ba-a008-9cdee188d90c/registration-status
+{"detail":"Not Found"}  # 404 error
 ```
 
-### Step 2: Install Dependencies (if needed)
+**Possible Causes:**
+1. **Routing Issue:** FastAPI route not registered with Reflex app
+   - Check: `streamscene/api/__init__.py` - devices router included?
+   - Check: Main app mounts API routes correctly?
+
+2. **Reflex Restart Didn't Take:** Server still running old code
+   - Solution: More aggressive restart (kill by PID, not just port)
+   - Check: `ps aux | grep reflex` to verify processes stopped
+
+3. **Path Conflict:** Another route catching the request first
+   - Check: Route order in FastAPI router
+   - Check: Other routes with similar patterns
+
+4. **API Prefix Issue:** Endpoint at wrong path
+   - Check: API router prefix configuration
+   - Test: Try without `/api` prefix
+
+5. **AsyncIO/FastAPI Issue:** Async route not registered properly
+   - Check: Other endpoints use `async def`, this one does too
+   - Check: Dependencies (get_db) work in other endpoints
+
+**Debug Steps:**
 ```bash
-ssh badgy@192.168.1.40
-cd ~/streamscene-client
-pip3 install qrcode[pil]  # For QR code generation
+# Step 1: Verify Reflex is truly restarted with new code
+./restart-reflex.sh
+sleep 5
+ps aux | grep reflex  # Should show fresh processes
+
+# Step 2: Check server logs for route registration
+tail -f /root/.reflex/state_dir/web/logs/stdout.log | grep -i "register\|route\|device"
+
+# Step 3: Test endpoint variations
+curl https://streamscene.dataandstories.com/api/health  # Works
+curl https://streamscene.dataandstories.com/api/devices/1c91d1e9-3cc9-44ba-a008-9cdee188d90c/config  # Requires auth
+curl https://streamscene.dataandstories.com/api/devices/1c91d1e9-3cc9-44ba-a008-9cdee188d90c/registration-status  # 404
+
+# Step 4: Check FastAPI docs (if accessible)
+# Visit: https://streamscene.dataandstories.com/docs
+# Look for: /api/devices/{device_id}/registration-status endpoint
+
+# Step 5: Check API router registration
+cat streamscene/api/__init__.py  # Verify devices router included
+
+# Step 6: Nuclear restart option
+sudo systemctl stop reflex 2>/dev/null
+pkill -9 -f reflex
+rm -rf /root/.reflex/state_dir/web/reflex.db  # Clear state
+./restart-reflex.sh
 ```
 
-### Step 3: Clean Slate Test
-```bash
-ssh badgy@192.168.1.40
-cd ~/streamscene-client
+**Files to Investigate:**
+- `streamscene/api/__init__.py` - Router registration
+- `streamscene/streamscene.py` - Main app setup
+- `rxconfig.py` - Reflex configuration
+- Nginx config - Proxy routing
 
-# Remove all state files
-rm -f wifi_credentials.json device_state.json device_api_key.txt
+### Priority 2: Complete End-to-End Testing
 
-# Start fresh
-sudo python3 main.py
-```
+Once endpoint is working:
 
-### Step 4: Monitor & Debug
-```bash
-# Watch for errors in real-time
-sudo python3 main.py 2>&1 | tee phase5_test.log
+1. **Reset device to clean state**
+   ```bash
+   ssh badgy@192.168.1.40
+   cd ~/streamscene-client
+   sudo rm -f device_state.json device_api_key.txt
+   ```
 
-# If errors occur, check:
-# 1. Import errors - missing modules
-# 2. Permission errors - need sudo
-# 3. Network errors - check WiFi
-# 4. State transition errors - check logs
-```
+2. **Restart client**
+   ```bash
+   export STREAMSCENE_API_URL='https://streamscene.dataandstories.com'
+   export STREAMSCENE_DISPLAY_MODE='eink'
+   sudo -E python3 main.py
+   ```
+
+3. **Test registration detection**
+   - Device should poll endpoint every 10 seconds
+   - Should receive `{"is_registered": true, "api_key": "...", "nickname": "..."}`
+   - Should save API key to file
+   - Should transition to REGISTERED → READY
+
+4. **Test operational state**
+   - Device fetches content
+   - Device sends heartbeats
+   - Content displays on E Ink
 
 ---
 
-## 📋 Testing Checklist
+## 📋 Testing Checklist (In Progress)
 
-### WiFi Setup
-- [ ] Device starts in wifi_setup state
-- [ ] Hotspot created with correct SSID (StreamScene-91d1)
-- [ ] Captive portal accessible at 192.168.4.1
-- [ ] Can submit WiFi credentials via portal
-- [ ] Credentials saved to wifi_credentials.json
-- [ ] Device transitions to connecting state
+### WiFi Setup ✅
+- [x] Device starts in wifi_setup state
+- [x] Hotspot created with correct SSID (StreamScene-91d1)
+- [x] Captive portal accessible at 192.168.4.1
+- [x] Can submit WiFi credentials via portal
+- [x] Credentials saved to wifi_credentials.json
+- [x] Device transitions to connecting state
 
-### WiFi Connection
-- [ ] Device switches from AP to client mode
-- [ ] Device connects to home WiFi
-- [ ] Device gets IP address via DHCP
-- [ ] Internet connectivity test passes (ping 8.8.8.8)
-- [ ] Device transitions to awaiting_registration state
+### WiFi Connection ✅
+- [x] Device switches from AP to client mode
+- [x] Device connects to home WiFi
+- [x] Device gets IP address via DHCP
+- [x] Internet connectivity test passes (ping 8.8.8.8)
+- [x] Device transitions to awaiting_registration state
 
-### Registration
-- [ ] QR code displayed (or printed to console)
-- [ ] QR code URL is correct format
-- [ ] Device polls server every 10 seconds
-- [ ] Web page (/setup) loads when QR scanned
-- [ ] User can log in via OAuth
-- [ ] User can enter device nickname
-- [ ] Registration succeeds
-- [ ] Device detects registration
+### Registration 🔄 IN PROGRESS
+- [x] QR code displayed on E Ink display
+- [x] QR code URL is correct format
+- [x] Device polls server every 10 seconds
+- [x] Web page (/setup) loads when QR scanned
+- [x] User can log in via OAuth
+- [x] User can enter device nickname
+- [x] Registration succeeds (device in database)
+- [ ] **BLOCKED:** Device detects registration (404 endpoint error)
 - [ ] API key saved to file
 - [ ] Device transitions to registered then ready state
 
-### Operational
+### Operational ⏸️ PENDING
 - [ ] Device fetches content from API
 - [ ] Content renders correctly
-- [ ] Display updates (headless or E Ink)
+- [ ] Display updates on E Ink
 - [ ] Heartbeat sent every 5 minutes
 - [ ] Content polling every 60 seconds
 - [ ] State persists after reboot
 - [ ] Device skips setup on subsequent boots
 
-### Error Recovery
+### Error Recovery ⏸️ NOT TESTED
 - [ ] WiFi errors → back to wifi_setup
 - [ ] Registration timeout → error state with retry
 - [ ] Server errors → stay in ready, show error
@@ -279,60 +213,125 @@ sudo python3 main.py 2>&1 | tee phase5_test.log
 
 ---
 
-## 🔑 Critical Files
+## 🔧 Known Issues & Fixes Applied
 
-### Server-Side
-- `streamscene/pages/setup.py` - Registration web page
-- `streamscene/core/streams.py` - register_device() function
-- `streamscene/core/qr_utils.py` - QR code generation
-- `streamscene/api/routes/devices.py` - Device API endpoints
+### Issue 1: Chicken-and-Egg Authentication ✅ SOLVED
+**Problem:** Device needed API key to check registration, but couldn't get key until registered.
 
-### Client-Side
-- `client/main.py` - State-driven main loop
-- `client/states.py` - State machine implementation
-- `client/setup/network_manager.py` - WiFi mode switching
-- `client/setup/setup_manager.py` - Setup flow orchestration
-- `client/setup/registration.py` - Registration polling
-- `client/renderer.py` - Display rendering (QR codes, messages)
-- `client/config.py` - Configuration and persistence
+**Solution:** Created unauthenticated `/registration-status` endpoint that:
+- Doesn't require API key
+- Returns API key ONE TIME only
+- Stores key temporarily in `device.config["pending_api_key"]`
+- Clears key after first retrieval
+
+### Issue 2: E Ink Display Driver ✅ SOLVED
+**Problem:** Using wrong driver (epd7in3f) for 4-color display.
+
+**Solution:** Changed to epd7in3g driver in `client/display.py:127`
+
+### Issue 3: Renderer Too Slow ✅ SOLVED
+**Problem:** Floyd-Steinberg dithering took too long on Pi Zero.
+
+**Solution:** Removed dithering, use simple nearest-color conversion
+
+### Issue 4: Registration Endpoint 404 ❌ UNRESOLVED
+**Problem:** Endpoint returns 404 despite code existing.
+
+**Next Steps:** See Priority 1 above.
 
 ---
 
-## 📖 Reference Documentation
+## 🎯 Success Criteria
 
-- `docs/plans/DEVICE_SETUP_OTA.md` - Full implementation plan (Phase 6-8 remaining)
-- `docs/deployment/WIFI_SETUP.md` - WiFi setup detailed guide
-- `CLAUDE.md` - Architecture, gotchas, lessons learned
-
----
-
-## ✅ Success Criteria
-
-Phase 6 (Testing) is complete when:
-- [ ] Full device lifecycle tested end-to-end
-- [ ] All 6 states transition correctly
+Phase 6 (Testing) will be complete when:
+- [ ] Registration-status endpoint returns correct responses
+- [ ] Device can detect registration via polling
+- [ ] API key is saved locally after registration
+- [ ] Device transitions to READY state after registration
+- [ ] Device fetches and displays content in READY state
 - [ ] State persists across reboots
-- [ ] Error recovery works as expected
-- [ ] Device can be registered via web UI
-- [ ] Device operates normally after registration
-- [ ] No critical bugs found
-- [ ] Documentation updated with any findings
+- [ ] Full lifecycle tested end-to-end (no blockers)
 
 ---
 
-## 🎯 After Testing: Phase 7 (Future)
+## 📖 Architecture Documentation
 
-Once Phase 5/6 are validated:
-- **Phase 7:** Production deployment (systemd service, auto-start on boot)
-- **Phase 8:** OTA update client implementation
-- **Phase 9:** Multi-device testing and refinements
+### Registration Flow (Updated)
+
+**See CLAUDE.md lines 551-585 for complete documentation.**
+
+Key points:
+1. Device polls **unauthenticated** endpoint during setup
+2. Server stores API key temporarily in `device.config["pending_api_key"]`
+3. First poll returns API key, then clears it (one-time retrieval)
+4. Subsequent polls return `is_registered=true` but `api_key=null`
+5. Device saves API key to `/boot/firmware/streamscene-apikey.txt`
+
+**Security:** Unauthenticated endpoint is intentional and required for initial setup. API key is exposed only:
+- Once to web user during registration (with warning)
+- Once to device via polling (then immediately cleared)
 
 ---
 
-**Current Priority:** Deploy to Pi and run complete end-to-end test. Use ethernet for SSH access during testing to maintain connection during WiFi state transitions.
+## 🚀 Quick Start for Next Session
 
-**Device Info:**
-- SSH: `ssh badgy@192.168.1.40` (password: `JjKUa9XJ8*FFUZHYB.AP`)
-- UUID: `1c91d1e9-3cc9-44ba-a008-9cdee188d90c`
-- Client code: `~/streamscene-client/`
-- Expected hotspot: `StreamScene-91d1`
+```bash
+# Terminal 1: SSH to device (monitor logs)
+ssh badgy@192.168.1.40
+cd ~/streamscene-client
+export STREAMSCENE_API_URL='https://streamscene.dataandstories.com'
+export STREAMSCENE_DISPLAY_MODE='eink'
+sudo -E python3 main.py 2>&1 | tee session.log
+
+# Terminal 2: Debug endpoint on server
+ssh root@192.168.1.118  # StreamScene server
+cd /root/streamscene
+
+# Try aggressive restart
+./restart-reflex.sh
+ps aux | grep reflex  # Verify stopped
+sleep 5
+reflex run --env prod &
+
+# Monitor logs
+tail -f /root/.reflex/state_dir/web/logs/stdout.log
+
+# Test endpoint
+curl -v https://streamscene.dataandstories.com/api/devices/1c91d1e9-3cc9-44ba-a008-9cdee188d90c/registration-status
+```
+
+---
+
+## 📂 Key Files Modified This Session
+
+### Server
+- `streamscene/api/routes/devices.py` - Added registration-status endpoint (line 83)
+- `streamscene/api/schemas.py` - Added RegistrationStatusResponse schema (line 61)
+- `streamscene/core/streams.py` - Modified register_device() (line 180)
+- `CLAUDE.md` - Added Device Authentication documentation (line 551)
+
+### Client
+- `client/api_client.py` - Added check_registration_status() method (line 229)
+- `client/setup/registration.py` - Updated check_registration() (line 14)
+- `client/display.py` - Fixed driver to epd7in3g (line 127)
+- `client/renderer.py` - Removed Floyd-Steinberg dithering (line 78)
+
+### Documentation
+- `CLAUDE.md` - Updated with registration flow architecture
+- `NEXT_SESSION.md` - This file (updated with current status)
+
+---
+
+## 🔑 Device Info
+
+- **SSH:** `ssh badgy@192.168.1.40` (password: `JjKUa9XJ8*FFUZHYB.AP`)
+- **UUID:** `1c91d1e9-3cc9-44ba-a008-9cdee188d90c`
+- **Client code:** `~/streamscene-client/`
+- **Hotspot SSID:** `StreamScene-91d1`
+- **Registration URL:** `https://streamscene.dataandstories.com/setup?device_uuid=1c91d1e9-3cc9-44ba-a008-9cdee188d90c`
+- **Current state:** `awaiting_registration` (stuck polling for registration)
+- **Registered in DB:** Yes (nickname: "Badhy's StreamScene Frame")
+
+---
+
+**Next Action:** Debug why `/api/devices/{id}/registration-status` endpoint returns 404. Once fixed, complete end-to-end testing of registration detection and operational state.

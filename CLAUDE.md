@@ -549,11 +549,40 @@ return rx.cond(
 - **Logout:** Set cookie to empty string: `self.user_id = ""`
 
 ### Device Authentication
-1. Device boots with pre-configured UUID
-2. User scans QR code during setup
-3. Device registration endpoint generates API key
-4. All device requests include `X-Device-API-Key` header
-5. API keys hashed in database (bcrypt)
+
+**Overview:** Device authentication uses API keys to secure device-server communication. The registration flow solves the "chicken-and-egg" problem where devices need API keys to check registration status but can't get keys until registered.
+
+**Registration Flow:**
+1. Device boots with pre-configured UUID from `/boot/firmware/streamscene-device.txt`
+2. Device enters `AWAITING_REGISTRATION` state and displays QR code
+3. User scans QR code → opens web registration page
+4. User logs in (OAuth) and registers device with nickname
+5. Server:
+   - Generates API key and hashes it (bcrypt) for storage
+   - Temporarily stores plaintext API key in `device.config["pending_api_key"]`
+   - Returns success to user
+6. Device polls unauthenticated `/api/devices/{id}/registration-status` endpoint (every 10s)
+7. Server returns API key ONE TIME:
+   - First poll: Returns `{"is_registered": true, "api_key": "xxx", "nickname": "..."}`
+   - Immediately clears `pending_api_key` from config
+8. Device saves API key to `/boot/firmware/streamscene-apikey.txt`
+9. Device transitions to `REGISTERED` then `READY` state
+10. All future requests include `X-Device-API-Key` header
+
+**Security Considerations:**
+- API keys stored hashed in database (bcrypt)
+- Plaintext API key exposed ONLY:
+  - In registration response to web user (shown once with warning)
+  - In one-time retrieval by device via `/registration-status`
+- Unauthenticated `/registration-status` endpoint is intentional - required for initial setup
+- After first retrieval, API key is cleared from `device.config`
+- Subsequent polls return `{"is_registered": true, "api_key": null}` (already retrieved)
+
+**Key Files:**
+- `/root/streamscene/streamscene/api/routes/devices.py:83` - Registration status endpoint
+- `/root/streamscene/client/api_client.py:229` - Client registration polling
+- `/root/streamscene/client/setup/registration.py:14` - Registration logic
+- `/root/streamscene/streamscene/core/streams.py:180` - Device registration (stores pending key)
 
 ## Development Workflow
 
