@@ -25,7 +25,7 @@
 - ✅ WiFi client connection (`client/setup/wifi_client.py`)
 - ✅ End-to-end tested on Raspberry Pi Zero 2 WH
 - ✅ Deployment script (`deploy_to_pi.sh`)
-- ✅ 450-line deployment guide (`client/WIFI_SETUP_DEPLOYMENT.md`)
+- ✅ 450-line deployment guide (`docs/deployment/WIFI_SETUP.md`)
 
 **Device Status:**
 - SSH: `ssh badgy@192.168.1.40` (password: `JjKUa9XJ8*FFUZHYB.AP`)
@@ -232,8 +232,8 @@ ssh badgy@192.168.1.40 "cat /boot/firmware/streamscene-device.txt"
 
 ## 📖 Reference Documentation
 
-- `DEVICE_SETUP_OTA_PLAN.md` - Full implementation plan (Phases 5-8 remaining)
-- `client/WIFI_SETUP_DEPLOYMENT.md` - WiFi setup testing guide
+- `docs/plans/DEVICE_SETUP_OTA.md` - Full implementation plan (Phases 5-8 remaining)
+- `docs/deployment/WIFI_SETUP.md` - WiFi setup testing guide
 - `CLAUDE.md` - Architecture, gotchas, WiFi/OTA documentation
 
 ---

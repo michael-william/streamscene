@@ -144,18 +144,137 @@ streamscene/
 ## Database Schema
 
 ### Core Tables
-- `users` - Minimal user records (references Authentik)
-- `devices` - Raspberry Pi devices with UUID, API key, last_seen
-- `streams` - Shared message channels (public/private, text/image settings)
-- `stream_subscriptions` - User memberships in streams
-- `posts` - Messages/images posted to streams
-- `device_stream_settings` - Per-device stream display configuration
+
+**users** (Minimal - Authentik is single source of truth)
+```sql
+users
+  - id (UUID, primary)
+  - email (unique, string)
+  - username (unique, string)
+  - created_at (timestamp)
+  - updated_at (timestamp)
+```
+
+**devices**
+```sql
+devices
+  - id (UUID, primary)
+  - device_uuid (unique, string) - Pre-configured UUID
+  - user_id (foreign key to users)
+  - nickname (string)
+  - api_key (unique, hashed with bcrypt)
+  - current_version (string)
+  - last_seen (timestamp)
+  - current_stream_id (foreign key to streams, nullable)
+  - rotation_enabled (boolean)
+  - rotation_interval (integer, seconds)
+  - registered_at (timestamp)
+  - created_at (timestamp)
+  - updated_at (timestamp)
+```
+
+**streams**
+```sql
+streams
+  - id (UUID, primary)
+  - owner_id (foreign key to users)
+  - name (string, max 100 chars)
+  - description (text)
+  - is_public (boolean, default false)
+  - allow_text (boolean, default true)
+  - allow_images (boolean, default true)
+  - show_history (boolean, default true)
+  - max_history_items (integer, default 10)
+  - theme_name (string, default "classic")
+  - created_at (timestamp)
+  - updated_at (timestamp)
+```
+
+**stream_subscriptions**
+```sql
+stream_subscriptions
+  - id (UUID, primary)
+  - user_id (foreign key to users)
+  - stream_id (foreign key to streams)
+  - is_approved (boolean, default false for private streams)
+  - subscribed_at (timestamp)
+  - unique(user_id, stream_id)
+```
+
+**posts**
+```sql
+posts
+  - id (UUID, primary)
+  - stream_id (foreign key to streams)
+  - author_id (foreign key to users)
+  - content_type (enum: text, image, mixed)
+  - text_content (text, nullable)
+  - image_path (string, nullable)
+  - processed_image_path (string, nullable)
+  - created_at (timestamp)
+  - updated_at (timestamp)
+```
+
+**device_stream_settings**
+```sql
+device_stream_settings
+  - id (UUID, primary)
+  - device_id (foreign key to devices)
+  - stream_id (foreign key to streams)
+  - display_order (integer)
+  - is_active (boolean)
+```
+
+**device_updates** (OTA System - See streamscene/core/models.py for DeviceUpdate model)
+```sql
+device_updates
+  - id (UUID, primary)
+  - version (string, unique, e.g., "1.2.3")
+  - release_date (timestamp)
+  - package_path (string) - Path to .tar.gz update package
+  - package_hash (string) - SHA256 checksum for verification
+  - package_size (integer) - Size in bytes
+  - changelog (text)
+  - is_active (boolean) - Can be disabled to withdraw bad updates
+  - min_version_required (string, nullable) - Minimum version that can install this update
+  - is_mandatory (boolean)
+  - rollout_percentage (integer, 0-100) - Staged rollout (0=none, 100=all devices)
+  - created_at (timestamp)
+  - updated_at (timestamp)
+```
+
+**update_deployments** (OTA System - Tracks installation per device)
+```sql
+update_deployments
+  - id (UUID, primary)
+  - device_id (foreign key to devices)
+  - update_id (foreign key to device_updates)
+  - status (enum: pending, downloading, installing, completed, failed, rolled_back)
+  - download_progress (integer, 0-100)
+  - error_message (text, nullable)
+  - rollback_reason (text, nullable)
+  - started_at (timestamp)
+  - completed_at (timestamp, nullable)
+  - created_at (timestamp)
+  - updated_at (timestamp)
+```
 
 ### Important Relationships
 - Devices belong to one user (1:N)
 - Streams owned by one user, subscribed by many (N:M via subscriptions)
 - Posts belong to one stream and one author (N:1)
 - Devices can display multiple streams in rotation
+- OTA updates deployed to multiple devices (1:N)
+
+### Performance Indexes
+```sql
+CREATE INDEX idx_posts_stream_created ON posts(stream_id, created_at DESC);
+CREATE INDEX idx_devices_user ON devices(user_id);
+CREATE INDEX idx_stream_subs ON stream_subscriptions(user_id, stream_id);
+CREATE INDEX idx_posts_author ON posts(author_id, created_at DESC);
+CREATE INDEX idx_devices_last_seen ON devices(last_seen DESC);
+CREATE INDEX idx_update_deployments_device ON update_deployments(device_id, status);
+```
 
 ## API Endpoints
 
@@ -164,36 +283,84 @@ streamscene/
 - `GET /docs` - FastAPI automatic API documentation (Swagger UI)
 - `GET /redoc` - FastAPI automatic API documentation (ReDoc)
 
+### Authentication Endpoints
+Web users authenticate via Authentik OAuth2:
+- User visits `/` → clicks "Sign In" → redirected to Authentik
+- Authentik redirects back to `/callback?code=...` with authorization code
+- Callback page exchanges code for access token and user info
+- User ID stored in cookie-based session (`rx.Cookie`)
+
 ### Device Endpoints (For E Ink Devices)
 **Authentication:** All device endpoints require `X-Device-Api-Key` header (except registration)
 
+**Registration & Configuration:**
 - `POST /api/devices/register` - Register device with UUID (returns API key - shown once!)
   - Request body: `{"device_uuid": "UUID", "nickname": "optional"}`
-  - Returns: Device ID and API key
-
-- `GET /api/devices/{id}/content` - Get current content to display
-  - Returns: Latest post from device's assigned stream
-  - Includes: content_type, text_content, image_url, stream_name, posted_at
-
-- `POST /api/devices/{id}/heartbeat` - Update device last_seen timestamp
-  - Devices should call this every 5-10 minutes
+  - Returns: `{"device_id": "UUID", "api_key": "key"}`
+  - Note: API key returned only once, device must save it
 
 - `GET /api/devices/{id}/config` - Get device configuration
   - Returns: nickname, current_stream_id, rotation settings, version
 
-### User Endpoints (Web UI)
-Currently implemented through Reflex pages:
+- `POST /api/devices/{id}/heartbeat` - Update device last_seen timestamp
+  - Devices should call this every 5-10 minutes
+  - Returns: `{"status": "ok", "server_time": "timestamp"}`
+
+**Content Retrieval:**
+- `GET /api/devices/{id}/content` - Get current content to display
+  - Returns: Latest post from device's assigned stream
+  - Includes: content_type, text_content, image_url, stream_name, posted_at, author_name
+
+**OTA Updates (See streamscene/api/routes/devices.py):**
+- `GET /api/devices/{id}/updates/check` - Check if update available
+  - Returns: `{"update_available": bool, "version": "1.2.3", "is_mandatory": bool, "package_size": int, "changelog": "..."}`
+  - Uses staged rollout algorithm (hash-based percentage)
+
+- `GET /api/devices/{id}/updates/{version}/download` - Download update package
+  - Returns: Binary .tar.gz file (FileResponse)
+  - Device must verify SHA256 hash after download
+
+- `POST /api/devices/{id}/updates/report` - Report installation status
+  - Request body: `{"update_id": "UUID", "status": "completed|failed", "download_progress": 100, "error_message": "...", "rollback_reason": "..."}`
+  - Returns: `{"success": true, "message": "Status recorded"}`
+
+**WebSocket Endpoint:**
+- `WS /api/devices/{id}/stream` - WebSocket for real-time content updates
+  - Authentication via API key in connection headers
+  - Server pushes new content when stream posts are created
+  - Heartbeat every 30 seconds required
+  - Auto-reconnect with exponential backoff on disconnect
+
+### Stream Endpoints (Web UI - via Reflex State)
+Implemented in `streamscene/core/streams.py`:
+- **CRUD Operations:**
+  - `create_stream(session, owner_id, name, description, is_public)` - Create new stream
+  - `get_stream_by_id(session, stream_id)` - Get stream details
+  - `get_user_streams(session, user_id)` - List user's owned streams
+  - `update_stream(session, stream_id, **kwargs)` - Update stream settings
+  - `delete_stream(session, stream_id)` - Delete stream (cascade deletes posts)
+
+- **Subscriptions:**
+  - `subscribe_to_stream(session, user_id, stream_id)` - Subscribe to stream
+  - `unsubscribe_from_stream(session, user_id, stream_id)` - Unsubscribe
+  - `get_subscribed_streams(session, user_id)` - List subscribed streams
+  - `approve_subscription(session, subscription_id)` - Approve private stream subscription
+  - `get_stream_subscribers(session, stream_id)` - List all subscribers
+
+- **Posts:**
+  - `create_post(session, stream_id, author_id, content_type, text_content, image_path)` - Create post
+  - `get_stream_posts(session, stream_id, limit, offset)` - Get paginated posts
+  - `get_latest_stream_post(session, stream_id)` - Get most recent post
+  - `delete_post(session, post_id)` - Delete post
+
+### User Endpoints (Web UI Pages)
+Implemented as Reflex pages:
 - `/` - Landing page (with direct OAuth link to Authentik)
 - `/callback` - OAuth callback handler (processes code, creates user, sets cookie)
-- `/streams` - Stream management UI (create streams, post messages, manage devices)
+- `/streams` - Stream management UI (create streams, post messages, view posts, manage subscriptions)
+- `/devices` - Device management (register, configure, view status)
 
 **Note:** `/login` page removed - index page links directly to Authentik OAuth URL to avoid WebSocket issues.
-
-**Core business logic** in `streamscene/core/streams.py`:
-- Stream CRUD: create_stream, get_stream_by_id, update_stream, delete_stream
-- Post operations: create_post, get_stream_posts, get_latest_stream_post
-- Subscriptions: subscribe_to_stream, unsubscribe_from_stream
-- Device operations: register_device, get_device_content, update_device_heartbeat
 
 ## Environment Configuration
 
@@ -508,7 +675,7 @@ test_internet_connectivity(timeout: int = 10) -> bool
 **Testing:**
 - End-to-end tested on Raspberry Pi Zero 2 WH
 - Requires ethernet for development/testing SSH access
-- See `client/WIFI_SETUP_DEPLOYMENT.md` for comprehensive testing guide
+- See `docs/deployment/WIFI_SETUP.md` for comprehensive testing guide
 
 **System Dependencies (Raspberry Pi):**
 ```bash
@@ -606,23 +773,116 @@ save_registration_qr(device_uuid: UUID, output_path: str, ...) -> bool
 - Verify new version works
 - Automatic rollback on failure
 
+## Development Phases Status
+
+### Phase 0: Infrastructure Setup ✅ COMPLETE (Nov 2, 2025)
+- ✅ LXC container created and configured
+- ✅ PostgreSQL 15 installed and configured
+- ✅ Redis server setup
+- ✅ Authentik OAuth provider configured
+- ✅ Nginx Proxy Manager + SSL certificates
+- ✅ Domain configuration (dataandstories.com)
+- ✅ Development environment initialized
+
+### Phase 1: Web App Core ✅ COMPLETE (Nov 3, 2025)
+- ✅ SQLAlchemy ORM models (users, devices, streams, posts, subscriptions)
+- ✅ Alembic database migrations
+- ✅ Authentik OAuth2 integration (cookie-based sessions)
+- ✅ Stream CRUD operations (`streamscene/core/streams.py`)
+- ✅ Post creation (text-only MVP)
+- ✅ Subscription system (subscribe/unsubscribe/approve)
+- ✅ Reflex web UI with responsive design
+- ✅ Streams page redesign (table-based layout, search, modals)
+- ✅ E Ink preview system (composable themes, dynamic font sizing)
+
+### Phase 2-3: OTA Update Infrastructure ✅ COMPLETE (Nov 9, 2025)
+**Server-Side (Phases 1-3):**
+- ✅ DeviceUpdate and UpdateDeployment models
+- ✅ Staged rollout algorithm (hash-based percentage)
+- ✅ QR code generation (`streamscene/core/qr_utils.py`)
+- ✅ Device API endpoints:
+  - `GET /api/devices/{id}/updates/check`
+  - `GET /api/devices/{id}/updates/{version}/download`
+  - `POST /api/devices/{id}/updates/report`
+
+### Phase 4: WiFi Setup System ✅ COMPLETE (Nov 9, 2025)
+**Client-Side:**
+- ✅ WiFi hotspot creation (`client/setup/hotspot.py`)
+- ✅ Captive portal server (`client/setup/portal_server.py`)
+- ✅ WiFi client connection (`client/setup/wifi_client.py`)
+- ✅ End-to-end tested on Raspberry Pi Zero 2 WH
+- ✅ Deployment script (`deploy_to_pi.sh`)
+- ✅ Comprehensive deployment guide (`docs/deployment/WIFI_SETUP.md`)
+
+### Phase 5: Device State Machine & Registration 🚧 IN PROGRESS (Current)
+**Goal:** Integrate WiFi setup into main device loop and implement registration flow
+
+**Tasks:**
+- 🚧 Create device state machine (`client/state_machine.py`)
+  - States: WIFI_SETUP → REGISTRATION → OPERATIONAL → ERROR
+- 🚧 Create registration module (`client/registration.py`)
+  - Generate QR code from device UUID
+  - Poll server for registration status (every 5 seconds)
+  - Save API key locally after registration
+- 🚧 Update main device loop (`client/main.py`)
+  - Load device UUID from `/boot/firmware/streamscene-device.txt`
+  - Run state machine
+- 🚧 Server-side registration check endpoint (may need to add)
+
+**Reference:** See `docs/plans/DEVICE_SETUP_OTA.md` for detailed Phase 5 plan
+
+### Phase 6: E Ink Display Integration ⏳ PENDING
+- ⏳ E Ink driver integration (`client/display.py`)
+- ⏳ Setup state rendering (WiFi setup screen, QR code display)
+- ⏳ Content rendering for operational state
+- ⏳ Transition effects (slide/fade)
+- ⏳ Display testing on physical Waveshare 7.3" 6-color screen
+
+### Phase 7: WebSocket & Content Display ⏳ PENDING
+- ⏳ WebSocket client implementation (`client/api_client.py`)
+- ⏳ Connect to server WebSocket endpoint
+- ⏳ Handle real-time content push
+- ⏳ Heartbeat mechanism (every 30 seconds)
+- ⏳ Auto-reconnect with exponential backoff
+- ⏳ Render content to E Ink display
+
+### Phase 8: OTA Update Client ⏳ PENDING
+- ⏳ Download update packages over WiFi
+- ⏳ Verify SHA256 hash matches server
+- ⏳ Extract to temporary directory
+- ⏳ Run update script
+- ⏳ Verify new version works
+- ⏳ Automatic rollback on failure
+
+### Phase 9: Production Deployment ⏳ PENDING
+- ⏳ SD card "golden image" creation
+- ⏳ Device UUID pre-configuration process
+- ⏳ QR code sticker generation and printing
+- ⏳ Device testing checklist
+- ⏳ End-to-end production device test
+- ⏳ Documentation for device provisioning
+
 ## MVP Scope
 
-**Phase 1 (Current):**
-- ✅ Text-only posts (images deferred to Phase 5)
-- ✅ Stream creation and management
-- ✅ User authentication via Authentik
-- ✅ WiFi hotspot + captive portal setup (completed, tested on Pi Zero 2 WH)
-- ✅ OTA update system infrastructure (database, API endpoints)
-- 🚧 Device registration via QR code (server-side ready, client integration pending)
-- 🚧 WebSocket real-time updates (endpoint exists, client integration pending)
-- 🚧 OTA update client (download/install on device)
+**Included in MVP (v1.0):**
+- ✅ User authentication via Authentik OAuth2
+- ✅ Stream creation and management (CRUD + subscriptions)
+- ✅ Text post creation and display
+- ✅ E Ink preview system (web UI)
+- ✅ WiFi hotspot + captive portal setup
+- ✅ OTA update infrastructure (server-side)
+- 🚧 Device registration via QR code (Phase 5)
+- 🚧 WebSocket real-time updates (Phase 7)
+- 🚧 Device state machine (Phase 5)
+- 🚧 E Ink content display (Phase 6-7)
+- ⏳ OTA update client (Phase 8)
 
 **Deferred to v2:**
 - ❌ Image upload and processing
 - ❌ Stream discovery/search
 - ❌ User profiles and analytics
 - ❌ Advanced moderation tools
+- ❌ Multi-device stream rotation
 
 ## Infrastructure
 
