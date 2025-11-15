@@ -13,6 +13,8 @@ from .base_state import BaseState
 class ProfileState(BaseState):
     """State for profile page."""
 
+    state_auto_setters = True  # Enable auto-generation of setter methods
+
     # User information
     email: str = ""
     username: str = ""

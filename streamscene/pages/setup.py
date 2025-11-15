@@ -12,6 +12,8 @@ from .base_state import BaseState
 class SetupState(BaseState):
     """State for device setup and registration."""
 
+    state_auto_setters = True  # Enable auto-generation of setter methods
+
     # Device information
     device_uuid: str = ""
     device_nickname: str = "My StreamScene Frame"

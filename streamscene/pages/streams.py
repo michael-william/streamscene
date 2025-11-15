@@ -15,6 +15,8 @@ from .base_state import BaseState
 class StreamsState(BaseState):
     """State for stream management."""
 
+    state_auto_setters = True  # Enable auto-generation of setter methods
+
     # user_id inherited from BaseState
 
     # Separate stream lists for better organization

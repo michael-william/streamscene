@@ -18,6 +18,8 @@ class StreamPostsState(BaseState):
     Stream ID is passed via query parameter: /stream-posts?id={uuid}
     """
 
+    state_auto_setters = True  # Enable auto-generation of setter methods
+
     # Stream info
     stream_id: str = ""
     stream_name: str = ""

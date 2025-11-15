@@ -7,6 +7,8 @@ from streamscene.pages.base_state import BaseState
 class SidebarState(BaseState):
     """State for sidebar navigation."""
 
+    state_auto_setters = True  # Enable auto-generation of setter methods
+
     is_mobile_menu_open: bool = False
 
     def toggle_mobile_menu(self):

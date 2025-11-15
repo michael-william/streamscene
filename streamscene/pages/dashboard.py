@@ -14,6 +14,8 @@ from .base_state import BaseState
 class DashboardState(BaseState):
     """State for the dashboard page."""
 
+    state_auto_setters = True  # Enable auto-generation of setter methods
+
     stream_count: int = 0
     recent_posts_count: int = 0
     recent_streams: List[dict] = []

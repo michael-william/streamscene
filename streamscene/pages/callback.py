@@ -13,6 +13,8 @@ from .base_state import BaseState
 class CallbackState(BaseState):
     """State for OAuth callback handling."""
 
+    state_auto_setters = True  # Enable auto-generation of setter methods
+
     error_message: str = ""
     is_loading: bool = True
     # user_id inherited from BaseState
