@@ -233,7 +233,7 @@ def registration_complete_view() -> rx.Component:
     return rx.vstack(
         # Success header
         rx.vstack(
-            rx.icon("check_circle", size=64, color="green"),
+            rx.icon("circle_check", size=64, color="green"),
             rx.heading("Device Registered!", size="8"),
             rx.text(
                 "Your StreamScene device is now connected to your account.",
@@ -330,7 +330,7 @@ def error_view() -> rx.Component:
     """Error view when no device UUID provided."""
     return rx.container(
         rx.vstack(
-            rx.icon("x_circle", size=64, color="red"),
+            rx.icon("circle_x", size=64, color="red"),
             rx.heading("Invalid Setup Link", size="8"),
             rx.text(
                 SetupState.error_message,
