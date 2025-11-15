@@ -19,8 +19,8 @@ class CallbackState(BaseState):
 
     def on_load(self):
         """Called when the page loads - extract code from URL and process."""
-        # Get the authorization code from URL query parameters
-        code = self.router.page.params.get("code", "") if hasattr(self.router.page, "params") else ""
+        # Get the authorization code from URL query parameters (new API)
+        code = self.router.url.query_parameters.get("code", "") if self.router.url.query_parameters else ""
 
         # Fallback to checking query params from URL
         if not code:

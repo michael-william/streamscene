@@ -96,7 +96,7 @@ class StreamPostsState(BaseState):
         """Load stream and posts when page loads.
 
         Using on_load (page-level) instead of on_mount (component-level)
-        to ensure router.page.params is populated. See DEBUGGING_HISTORY.md.
+        to ensure router.url.query_parameters is populated. See DEBUGGING_HISTORY.md.
         """
         # Check authentication first
         if redirect := self.require_auth():
@@ -105,11 +105,11 @@ class StreamPostsState(BaseState):
         # Clear any previous error messages
         self.error_message = ""
 
-        # Method 1: Get stream ID from router.page.params
-        stream_id = self.router.page.params.get("id", "") if hasattr(self.router.page, "params") else ""
+        # Method 1: Get stream ID from router.url.query_parameters (new API)
+        stream_id = self.router.url.query_parameters.get("id", "") if self.router.url.query_parameters else ""
 
         print(f"[STREAM_POSTS] on_load called (page-level lifecycle)")
-        print(f"[STREAM_POSTS] Method 1 (router.page.params): '{stream_id}'")
+        print(f"[STREAM_POSTS] Method 1 (router.url.query_parameters): '{stream_id}'")
 
         # Method 2: Fallback to client_query_params (proven pattern from callback.py)
         if not stream_id:

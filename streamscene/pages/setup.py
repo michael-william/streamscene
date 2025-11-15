@@ -36,8 +36,8 @@ class SetupState(BaseState):
             print("[Setup] No user_id, redirecting to /")
             return rx.redirect("/")
 
-        # Get device_uuid from query params
-        device_uuid = self.router.page.params.get("device_uuid", "") if hasattr(self.router.page, "params") else ""
+        # Get device_uuid from query params (new API)
+        device_uuid = self.router.url.query_parameters.get("device_uuid", "") if self.router.url.query_parameters else ""
 
         # Fallback to session query params
         if not device_uuid:
