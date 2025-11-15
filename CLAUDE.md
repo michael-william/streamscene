@@ -216,18 +216,18 @@ See `docs/deployment/WIFI_SETUP.md` for comprehensive testing guide.
 
 ## E Ink Display Constraints
 
-**Waveshare 7.3" 6-Color E-Paper:**
+**Waveshare 7.3" 7-Color E-Paper (E variant - epd7in3e):**
 - Resolution: 800x480 pixels
-- Colors: Black, White, Red, Yellow, Blue, Green only
+- Colors: Black, White, Red, Yellow, Blue, Green, Orange
 - Refresh time: ~30 seconds for full update
 - **Minimum content rotation:** 60 seconds (30s refresh + buffer)
 
 **Image Processing Pipeline:**
-1. Resize to exactly 800x480 pixels
-2. Reduce to 6-color palette using Floyd-Steinberg dithering
-3. Convert to Waveshare buffer format
-4. Pre-process on server (not on Pi) to save CPU
-5. Cache processed images
+1. Server: Resize images to exactly 800x480 pixels (pre-processing to save Pi CPU)
+2. Server: Cache processed images
+3. Client: Render text/layout to RGB image (PIL)
+4. Client: Pass RGB image to Waveshare driver
+5. **Driver handles all palette conversion and dithering automatically** (optimized C code)
 
 ## E Ink Preview System
 

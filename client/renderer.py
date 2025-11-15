@@ -84,9 +84,7 @@ class ContentRenderer:
                 self._draw_text_content(draw, content)
             # TODO: Add image support in Phase 5
 
-        # Convert to 6-color palette
-        image = self._convert_to_eink_palette(image)
-
+        # Return RGB image - Waveshare driver handles palette conversion
         return image
 
     def _draw_system_message(self, draw: ImageDraw.ImageDraw, message: str):
@@ -187,42 +185,6 @@ class ContentRenderer:
 
         return lines
 
-    def _convert_to_eink_palette(self, image: Image.Image) -> Image.Image:
-        """
-        Convert image to 4-color E Ink palette using PIL's fast quantize().
-
-        The Waveshare 7.3" G variant (epd7in3g) supports:
-        - Black, White, Yellow, Red (4 colors, not 6)
-
-        This uses PIL's built-in quantize() with a custom palette, which is
-        much faster than manual Floyd-Steinberg dithering in Python.
-
-        Args:
-            image: RGB image
-
-        Returns:
-            RGB image with colors quantized to E Ink palette
-        """
-        # Create a palette image with the 4 colors supported by epd7in3g
-        pal_image = Image.new("P", (1, 1))
-        # Palette format: (R, G, B) tuples for each color
-        # BLACK=0x000000, WHITE=0xffffff, YELLOW=0x00ffff (BGR), RED=0x0000ff (BGR)
-        # In RGB: BLACK=(0,0,0), WHITE=(255,255,255), YELLOW=(255,255,0), RED=(255,0,0)
-        palette_colors = (
-            0, 0, 0,           # Black
-            255, 255, 255,     # White
-            255, 255, 0,       # Yellow
-            255, 0, 0          # Red
-        )
-        # Pad remaining 252 colors with black
-        pal_image.putpalette(palette_colors + (0, 0, 0) * 252)
-
-        # Convert to RGB and quantize using the palette with dithering
-        image_quantized = image.convert("RGB").quantize(palette=pal_image, dither=Image.Dither.FLOYDSTEINBERG)
-
-        # Convert back to RGB mode for consistency
-        return image_quantized.convert("RGB")
-
     def render_error(self, error_message: str) -> Image.Image:
         """
         Render an error message.
@@ -264,7 +226,8 @@ class ContentRenderer:
             )
             y += 50
 
-        return self._convert_to_eink_palette(image)
+        # Return RGB image - Waveshare driver handles palette conversion
+        return image
 
     def render_message(
         self, title: str, message: str, color: str = "black"
@@ -323,7 +286,8 @@ class ContentRenderer:
             )
             y += 40
 
-        return self._convert_to_eink_palette(image)
+        # Return RGB image - Waveshare driver handles palette conversion
+        return image
 
     def render_qr_code(
         self, url: str, title: str = "Scan QR Code", instructions: str = ""
@@ -398,7 +362,8 @@ class ContentRenderer:
                 )
                 y += 25
 
-        return self._convert_to_eink_palette(image)
+        # Return RGB image - Waveshare driver handles palette conversion
+        return image
 
 
 if __name__ == "__main__":

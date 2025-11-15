@@ -1,6 +1,6 @@
 # StreamScene E Ink Client
 
-Python client for Raspberry Pi Zero 2 WH devices with Waveshare 7.3" 6-color E Ink displays.
+Python client for Raspberry Pi Zero 2 WH devices with Waveshare 7.3" 7-color E Ink displays (E variant - epd7in3e).
 
 Supports two modes:
 - **Headless mode** (testing): Saves PNG files - no hardware needed
@@ -58,7 +58,7 @@ python -m client.renderer
 ### Prerequisites
 
 - Raspberry Pi Zero 2 WH
-- Waveshare 7.3inch e-Paper HAT (F) - 6-color
+- Waveshare 7.3inch e-Paper HAT (E) - 7-color (epd7in3e)
 - SD card with Raspberry Pi OS Lite
 - Power supply (5V 2.5A recommended)
 
@@ -229,8 +229,8 @@ ls /dev/spidev*
 
 **Test Waveshare library:**
 ```python
-from waveshare_epd import epd7in3f
-epd = epd7in3f.EPD()
+from waveshare_epd import epd7in3e
+epd = epd7in3e.EPD()
 epd.init()
 epd.Clear()
 ```
@@ -242,15 +242,16 @@ sudo python3 -m client.main
 
 ### Display Shows Wrong Colors
 
-The 6-color E Ink palette is:
+The 7-color E Ink palette (epd7in3e) is:
 - Black (0, 0, 0)
 - White (255, 255, 255)
 - Red (255, 0, 0)
 - Yellow (255, 255, 0)
 - Blue (0, 0, 255)
 - Green (0, 255, 0)
+- Orange (255, 165, 0)
 
-Colors are dithered using Floyd-Steinberg algorithm.
+The Waveshare driver automatically handles palette conversion and dithering (optimized C code).
 
 ### Display Updates Too Slowly
 

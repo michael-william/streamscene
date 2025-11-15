@@ -27,12 +27,12 @@ def create_stream_button_click(self):
 
 **Problem:** Processing images on Raspberry Pi Zero (limited CPU).
 
-**Solution:** Pre-process all images on server before sending to device.
+**Solution:** Pre-process images on server before sending to device.
 
 - Resize to exactly 800x480 pixels
-- Reduce to 6-color palette using Floyd-Steinberg dithering
-- Convert to Waveshare buffer format
 - Cache processed images
+- Client renders text/layout to RGB images
+- **Waveshare driver automatically handles 7-color palette conversion and dithering** (optimized C code)
 
 ## Security
 

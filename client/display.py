@@ -123,11 +123,11 @@ class HeadlessDisplay(DisplayAdapter):
 
 class EInkDisplay(DisplayAdapter):
     """
-    E Ink display adapter for Waveshare 7.3" 4-color E-Paper HAT.
+    E Ink display adapter for Waveshare 7.3" 7-color E-Paper HAT.
 
     Requires:
     - Raspberry Pi (tested on Pi Zero 2 WH)
-    - Waveshare 7.3inch e-Paper HAT (G variant - 4 colors)
+    - Waveshare 7.3inch e-Paper HAT (E variant - 7 colors)
     - waveshare-epd library installed
     - SPI enabled in raspi-config
     - Run with sudo for GPIO access
@@ -137,10 +137,10 @@ class EInkDisplay(DisplayAdapter):
         """Initialize E Ink display."""
         try:
             # Import Waveshare library (only when this class is used)
-            from waveshare_epd import epd7in3g
-            self.epd = epd7in3g.EPD()
+            from waveshare_epd import epd7in3e
+            self.epd = epd7in3e.EPD()
 
-            print("[Display] Initializing Waveshare 7.3\" E Ink display (G variant)...")
+            print("[Display] Initializing Waveshare 7.3\" E Ink display (E variant - 7 colors)...")
             self.epd.init()
             self.epd.Clear()
             print("[Display] E Ink display ready")

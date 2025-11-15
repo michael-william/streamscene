@@ -17,10 +17,10 @@
    - 512MB RAM
    - Built-in WiFi and Bluetooth
 
-2. **Waveshare 7.3" 6-color E Ink Display**
-   - Model: 7.3inch e-Paper HAT (F)
+2. **Waveshare 7.3" 7-color E Ink Display**
+   - Model: 7.3inch e-Paper HAT (E) - epd7in3e
    - Resolution: 800×480 pixels
-   - 6 colors: Black, White, Red, Yellow, Blue, Green
+   - 7 colors: Black, White, Red, Yellow, Blue, Green, Orange
    - Connects via GPIO pins
 
 3. **MicroSD Card (64GB)**
@@ -321,8 +321,8 @@ sudo apt-get install -y hostapd dnsmasq network-manager
    ```bash
    # Test Waveshare library directly
    python3 << EOF
-   from waveshare_epd import epd7in3f
-   epd = epd7in3f.EPD()
+   from waveshare_epd import epd7in3e
+   epd = epd7in3e.EPD()
    epd.init()
    epd.Clear()
    print("Display cleared successfully!")
@@ -362,7 +362,7 @@ sudo apt-get install -y hostapd dnsmasq network-manager
 - ✅ QR code is sharp and scannable
 - ✅ Screen refreshes (~30 seconds)
 - ✅ All text is legible
-- ✅ Colors render correctly (6-color palette)
+- ✅ Colors render correctly (7-color palette: Black, White, Red, Yellow, Blue, Green, Orange)
 
 **Common Issues:**
 - Display not responding → Check GPIO connection
@@ -676,7 +676,7 @@ sudo apt-get install -y hostapd dnsmasq network-manager
 - [ ] E Ink library installed (`pip install waveshare-epd`)
 - [ ] Test display with Waveshare sample code
 - [ ] GPIO pins properly connected (verify pinout)
-- [ ] Confirmed display model matches code (7.3" 6-color)
+- [ ] Confirmed display model matches code (7.3" E variant - 7-color epd7in3e)
 
 ---
 

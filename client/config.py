@@ -166,7 +166,8 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 DISPLAY_WIDTH = 800
 DISPLAY_HEIGHT = 480
 
-# 6-color E Ink palette (Waveshare 7.3" 6-color)
+# 7-color E Ink palette (Waveshare 7.3" E variant - epd7in3e)
+# Waveshare driver handles palette conversion - these are RGB reference colors
 COLORS = {
     "BLACK": (0, 0, 0),
     "WHITE": (255, 255, 255),
@@ -174,6 +175,7 @@ COLORS = {
     "YELLOW": (255, 255, 0),
     "BLUE": (0, 0, 255),
     "GREEN": (0, 255, 0),
+    "ORANGE": (255, 165, 0),
 }
 
 # ============================================================================
