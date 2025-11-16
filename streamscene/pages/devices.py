@@ -23,6 +23,7 @@ class DeviceInfo(rx.Base):
     last_seen: Optional[str] = None
     rotation_enabled: bool = False
     rotation_interval: int = 60
+    rotation_post_count: int = 10
     is_online: bool = False
 
 
@@ -55,6 +56,15 @@ class DevicesState(BaseState):
     rename_device_id: str = ""
     rename_device_nickname: str = ""
     is_renaming: bool = False
+
+    # Rotation settings modal state
+    is_rotation_modal_open: bool = False
+    rotation_device_id: str = ""
+    rotation_enabled: bool = False
+    rotation_value: int = 2
+    rotation_unit: str = "minutes"  # "minutes" or "hours"
+    rotation_post_count: int = 10  # Number of posts to show (2-10)
+    is_updating_rotation: bool = False
 
     def on_mount(self):
         """Load user's devices when page loads."""
@@ -108,6 +118,7 @@ class DevicesState(BaseState):
                             last_seen=device.last_seen.isoformat() if device.last_seen else None,
                             rotation_enabled=device.rotation_enabled,
                             rotation_interval=device.rotation_interval,
+                            rotation_post_count=device.rotation_post_count,
                             is_online=self._is_device_online(device.last_seen),
                         )
                     )
@@ -205,6 +216,107 @@ class DevicesState(BaseState):
             self.error_message = f"Error renaming device: {str(e)}"
         finally:
             self.is_renaming = False
+
+    def open_rotation_modal(self, device_id: str, current_enabled: bool, current_interval: int, current_post_count: int):
+        """Open the rotation settings modal for a device."""
+        print(f"[DEVICES] Opening rotation modal for device {device_id}")
+        self.rotation_device_id = device_id
+        self.rotation_enabled = current_enabled
+        self.rotation_post_count = current_post_count
+
+        # Convert seconds to minutes or hours for display
+        if current_interval >= 3600 and current_interval % 3600 == 0:
+            # Show in hours if evenly divisible
+            self.rotation_value = current_interval // 3600
+            self.rotation_unit = "hours"
+        else:
+            # Show in minutes
+            self.rotation_value = current_interval // 60
+            self.rotation_unit = "minutes"
+
+        self.is_rotation_modal_open = True
+        self.error_message = ""
+
+    def close_rotation_modal(self):
+        """Close the rotation settings modal."""
+        self.is_rotation_modal_open = False
+        self.rotation_device_id = ""
+
+    def set_rotation_value_from_input(self, value: str):
+        """Set rotation value from input, handling string conversion."""
+        try:
+            int_value = int(value) if value else 1
+            # Clamp between 1 and 24
+            self.rotation_value = max(1, min(24, int_value))
+        except (ValueError, TypeError):
+            self.rotation_value = 1
+
+    def set_rotation_post_count_from_input(self, value: str):
+        """Set rotation post count from input, handling string conversion."""
+        try:
+            int_value = int(value) if value else 2
+            # Clamp between 2 and 10
+            self.rotation_post_count = max(2, min(10, int_value))
+        except (ValueError, TypeError):
+            self.rotation_post_count = 2
+
+    def update_rotation_settings(self):
+        """Update rotation settings for the device."""
+        print(f"[DEVICES] Updating rotation for device {self.rotation_device_id}")
+
+        if not self.rotation_device_id:
+            self.error_message = "No device selected"
+            return
+
+        self.is_updating_rotation = True
+        self.error_message = ""
+        self.success_message = ""
+
+        try:
+            device_uuid = UUID(self.rotation_device_id)
+
+            # Convert to seconds
+            if self.rotation_unit == "hours":
+                interval_seconds = self.rotation_value * 3600
+            else:  # minutes
+                interval_seconds = self.rotation_value * 60
+
+            with get_db_session() as session:
+                device = stream_ops.update_device_rotation(
+                    session,
+                    device_id=device_uuid,
+                    rotation_enabled=self.rotation_enabled,
+                    rotation_interval=interval_seconds,
+                    rotation_post_count=self.rotation_post_count,
+                )
+
+                if not device:
+                    self.error_message = "Device not found"
+                    self.is_updating_rotation = False
+                    return
+
+                session.commit()
+
+                # Update the device in the list
+                for i, dev in enumerate(self.devices):
+                    if dev.id == self.rotation_device_id:
+                        self.devices[i].rotation_enabled = self.rotation_enabled
+                        self.devices[i].rotation_interval = interval_seconds
+                        self.devices[i].rotation_post_count = self.rotation_post_count if self.rotation_enabled else 1
+                        break
+
+                self.success_message = "Rotation settings updated successfully"
+                self.is_rotation_modal_open = False
+                print(f"[DEVICES] Rotation settings updated successfully")
+
+        except ValueError as e:
+            print(f"[DEVICES] Validation error: {e}")
+            self.error_message = str(e)
+        except Exception as e:
+            print(f"[DEVICES] Error updating rotation: {e}")
+            self.error_message = f"Error updating rotation: {str(e)}"
+        finally:
+            self.is_updating_rotation = False
 
     def assign_stream(self, device_id: str, stream_id: str):
         """Assign a stream to a device."""
@@ -330,6 +442,28 @@ def device_card(device: DeviceInfo) -> rx.Component:
                         spacing="2",
                     ),
                 ),
+                # Rotation status
+                rx.cond(
+                    device.rotation_enabled,
+                    rx.hstack(
+                        rx.text("Rotation:", weight="bold", size="2"),
+                        rx.text(
+                            rx.cond(
+                                device.rotation_interval >= 3600,
+                                (device.rotation_interval // 3600).to(str) + " hour(s), " + device.rotation_post_count.to(str) + " posts",
+                                (device.rotation_interval // 60).to(str) + " min, " + device.rotation_post_count.to(str) + " posts",
+                            ),
+                            size="2",
+                            color="green",
+                        ),
+                        spacing="2",
+                    ),
+                    rx.hstack(
+                        rx.text("Rotation:", weight="bold", size="2"),
+                        rx.text("Off (latest post only)", size="2", color="gray"),
+                        spacing="2",
+                    ),
+                ),
                 spacing="2",
                 align="start",
                 width="100%",
@@ -347,10 +481,16 @@ def device_card(device: DeviceInfo) -> rx.Component:
                     size="2",
                 ),
                 rx.button(
-                    "Configure",
+                    rx.icon("refresh_cw", size=16),
+                    "Rotation",
+                    on_click=lambda: DevicesState.open_rotation_modal(
+                        device.id,
+                        device.rotation_enabled,
+                        device.rotation_interval,
+                        device.rotation_post_count,
+                    ),
                     variant="soft",
                     size="2",
-                    disabled=True,  # TODO: Implement configuration
                 ),
                 spacing="2",
             ),
@@ -441,6 +581,153 @@ def rename_device_modal() -> rx.Component:
         ),
         open=DevicesState.is_rename_modal_open,
         on_open_change=DevicesState.set_is_rename_modal_open,
+    )
+
+
+def rotation_settings_modal() -> rx.Component:
+    """Modal dialog for configuring device rotation."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.vstack(
+                rx.dialog.title("Rotation Settings"),
+                rx.dialog.description(
+                    "Configure how this device rotates through stream posts.",
+                    size="2",
+                ),
+
+                rx.vstack(
+                    # Enable rotation toggle
+                    rx.hstack(
+                        rx.switch(
+                            checked=DevicesState.rotation_enabled,
+                            on_change=DevicesState.set_rotation_enabled,
+                        ),
+                        rx.text("Enable rotation", weight="bold", size="3"),
+                        spacing="3",
+                        align="center",
+                    ),
+
+                    rx.cond(
+                        DevicesState.rotation_enabled,
+                        rx.vstack(
+                            rx.divider(),
+
+                            # Rotation interval
+                            rx.vstack(
+                                rx.text("Rotation Interval", weight="bold", size="2"),
+                                rx.hstack(
+                                    rx.input(
+                                        type="number",
+                                        value=DevicesState.rotation_value.to(str),
+                                        on_change=DevicesState.set_rotation_value_from_input,
+                                        min="1",
+                                        max="24",
+                                        size="3",
+                                        width="100px",
+                                    ),
+                                    rx.select.root(
+                                        rx.select.trigger(),
+                                        rx.select.content(
+                                            rx.select.item("Minutes", value="minutes"),
+                                            rx.select.item("Hours", value="hours"),
+                                        ),
+                                        value=DevicesState.rotation_unit,
+                                        on_change=DevicesState.set_rotation_unit,
+                                        size="3",
+                                    ),
+                                    spacing="2",
+                                    align="center",
+                                ),
+                                rx.text(
+                                    "How long to show each post before rotating to the next",
+                                    size="1",
+                                    color="gray",
+                                ),
+                                spacing="2",
+                                align="start",
+                                width="100%",
+                            ),
+
+                            # Post count selector
+                            rx.vstack(
+                                rx.text("Number of Posts", weight="bold", size="2"),
+                                rx.input(
+                                    type="number",
+                                    value=DevicesState.rotation_post_count.to(str),
+                                    on_change=DevicesState.set_rotation_post_count_from_input,
+                                    min="2",
+                                    max="10",
+                                    size="3",
+                                    width="100px",
+                                ),
+                                rx.text(
+                                    "How many recent posts to rotate through (2-10)",
+                                    size="1",
+                                    color="gray",
+                                ),
+                                spacing="2",
+                                align="start",
+                                width="100%",
+                            ),
+
+                            spacing="4",
+                            width="100%",
+                        ),
+                    ),
+
+                    spacing="4",
+                    width="100%",
+                    align="start",
+                ),
+
+                # Error message
+                rx.cond(
+                    DevicesState.error_message,
+                    rx.callout(
+                        DevicesState.error_message,
+                        icon="triangle_alert",
+                        color_scheme="red",
+                        size="2",
+                    ),
+                ),
+
+                # Actions
+                rx.hstack(
+                    rx.dialog.close(
+                        rx.button(
+                            "Cancel",
+                            variant="soft",
+                            color_scheme="gray",
+                            size="3",
+                            on_click=DevicesState.close_rotation_modal,
+                        ),
+                    ),
+                    rx.button(
+                        rx.cond(
+                            DevicesState.is_updating_rotation,
+                            rx.hstack(
+                                rx.spinner(size="1"),
+                                rx.text("Saving..."),
+                                spacing="2",
+                            ),
+                            rx.text("Save Settings"),
+                        ),
+                        on_click=DevicesState.update_rotation_settings,
+                        disabled=DevicesState.is_updating_rotation,
+                        size="3",
+                    ),
+                    spacing="3",
+                    justify="end",
+                    width="100%",
+                ),
+
+                spacing="4",
+                width="100%",
+            ),
+            max_width="500px",
+        ),
+        open=DevicesState.is_rotation_modal_open,
+        on_open_change=DevicesState.set_is_rotation_modal_open,
     )
 
 
@@ -562,6 +849,7 @@ def devices_page() -> rx.Component:
         rx.vstack(
             devices_list(),
             rename_device_modal(),
+            rotation_settings_modal(),
             spacing="0",
             width="100%",
         ),

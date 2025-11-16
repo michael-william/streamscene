@@ -200,6 +200,7 @@ class Device(Base):
     )
     rotation_enabled: Mapped[bool] = Column(Boolean, default=False, nullable=False)
     rotation_interval: Mapped[int] = Column(Integer, default=60, nullable=False)  # Seconds, minimum 60
+    rotation_post_count: Mapped[int] = Column(Integer, default=10, nullable=False)  # Number of posts to rotate through (2-10)
     registered_at: Mapped[datetime] = Column(DateTime(timezone=True), nullable=True)
 
     # Setup state tracking (Phase 5)

@@ -826,3 +826,50 @@ def update_device_nickname(
     device.nickname = nickname.strip()
     session.flush()
     return device
+
+
+def update_device_rotation(
+    session: Session,
+    device_id: UUID,
+    rotation_enabled: bool,
+    rotation_interval: int,
+    rotation_post_count: int = 10,
+) -> Optional[Device]:
+    """
+    Update rotation settings for a device.
+
+    Args:
+        session: Database session
+        device_id: Device UUID
+        rotation_enabled: Enable/disable rotation
+        rotation_interval: Interval in seconds between posts
+        rotation_post_count: Number of posts to rotate through (2-10)
+
+    Returns:
+        Optional[Device]: Updated device or None if not found
+
+    Raises:
+        ValueError: If rotation settings are invalid
+    """
+    if rotation_enabled:
+        if rotation_interval < 60:
+            raise ValueError("Rotation interval must be at least 60 seconds (1 minute)")
+
+        if rotation_interval > 86400:
+            raise ValueError("Rotation interval must be less than 24 hours")
+
+        if rotation_post_count < 2:
+            raise ValueError("Post count must be at least 2")
+
+        if rotation_post_count > 10:
+            raise ValueError("Post count must be at most 10")
+
+    device = get_device_by_id(session, device_id)
+    if not device:
+        return None
+
+    device.rotation_enabled = rotation_enabled
+    device.rotation_interval = rotation_interval
+    device.rotation_post_count = rotation_post_count if rotation_enabled else 1
+    session.flush()
+    return device
