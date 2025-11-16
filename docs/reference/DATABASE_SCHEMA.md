@@ -33,6 +33,7 @@ devices
   - current_stream_id (foreign key to streams, nullable)
   - rotation_enabled (boolean)
   - rotation_interval (integer, seconds)
+  - rotation_post_count (integer, 2-10, default 10)
   - registered_at (timestamp)
   - created_at (timestamp)
   - updated_at (timestamp)
