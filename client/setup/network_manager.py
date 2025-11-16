@@ -75,6 +75,10 @@ class NetworkManager:
         logger.debug("[NetworkManager] Current mode: Unknown")
         return NetworkMode.UNKNOWN
 
+    def is_in_ap_mode(self) -> bool:
+        """Check if currently in Access Point mode."""
+        return is_hotspot_active()
+
     def switch_to_ap_mode(self) -> bool:
         """
         Switch to Access Point (hotspot) mode.

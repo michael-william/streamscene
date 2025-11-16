@@ -123,6 +123,10 @@ class StateMachine:
         """Get data associated with current state."""
         return self.state_data.get(key, default)
 
+    def get_all_state_data(self) -> Dict[str, Any]:
+        """Get all state data."""
+        return self.state_data.copy()
+
     def set_state_data(self, key: str, value: Any) -> None:
         """Set data associated with current state."""
         self.state_data[key] = value

@@ -11,12 +11,17 @@ StreamScene is a family message board system using color E Ink displays (Wavesha
 ## Quick Start Commands
 
 ```bash
-# Development
+# Reflex Service Management (Production)
+sudo systemctl restart reflex       # Restart after code changes
+sudo systemctl status reflex        # Check service status
+sudo journalctl -u reflex -f        # View live logs
+sudo journalctl -u reflex -n 100    # View recent logs
+sudo systemctl stop reflex          # Stop service
+sudo systemctl start reflex         # Start service
+
+# Development (local testing only)
 source venv/bin/activate
 reflex run
-
-# Reliable restart (handles port conflicts)
-./restart-reflex.sh
 
 # Database migrations
 alembic upgrade head
@@ -31,6 +36,11 @@ psql -U streamscene -d streamscene -h localhost
 
 # Redis
 redis-cli
+```
+
+**Quick Restart Alias:** Add to `~/.bashrc` for faster restarts:
+```bash
+alias rr='sudo systemctl restart reflex && sudo journalctl -u reflex -f'
 ```
 
 ## Architecture
@@ -82,26 +92,30 @@ streamscene/
 - Automatic rollback on failure
 - See `docs/reference/OTA_SYSTEM.md` for details
 
-## Current Phase: Phase 5 (Device State Machine & Registration)
+## Current Phase: Phase 6 (E Ink Display Integration)
 
-**Status:** 🚧 IN PROGRESS
+**Status:** ⏸️ AWAITING HARDWARE
 
-**Goal:** Integrate WiFi setup into main device loop and implement registration flow
+**Goal:** Full E Ink hardware support on Raspberry Pi
 
 **Completed Phases:**
 - ✅ Phase 0: Infrastructure Setup
 - ✅ Phase 1: Web App Core
 - ✅ Phase 2-3: OTA Update Infrastructure (server-side)
 - ✅ Phase 4: WiFi Setup System
+- ✅ Phase 5: Device State Machine & Registration
 
-**Current Tasks:**
-- Create device state machine (`client/state_machine.py`)
-- Create registration module (`client/registration.py`)
-- Update main device loop (`client/main.py`)
+**Phase 5 Deliverables:**
+- ✅ Device state machine with persistence (`client/states.py`)
+- ✅ Device registration polling (`client/setup/registration.py`)
+- ✅ Main device loop with state-driven execution (`client/main.py`)
+- ✅ QR code rendering for setup (`client/renderer.py`)
+- ✅ Device setup web page (`streamscene/pages/setup.py`)
+- ✅ Device management web page (`streamscene/pages/devices.py`)
 
 **Next Phases:**
-- Phase 6: E Ink Display Integration
-- Phase 7: WebSocket & Content Display
+- Phase 6: E Ink Display Integration (awaiting hardware)
+- Phase 7: Content Display & Rotation
 - Phase 8: OTA Update Client
 
 ## Development Workflow
@@ -151,7 +165,7 @@ Single WiFi adapter can only be in ONE mode (AP or client). Must stop and mask s
 Use container IP (192.168.1.118), not 127.0.0.1 for proxy targets.
 
 ### 9. Port Conflicts on Restart
-Use `./restart-reflex.sh` to cleanly kill processes by port before restarting.
+Use `sudo systemctl restart reflex` for clean restarts. The systemd service handles port conflicts automatically.
 
 ### 10. Pre-Process Images Server-Side
 Pi Zero has limited CPU - don't process images on device.
@@ -265,7 +279,12 @@ See `docs/plans/EINK_PREVIEW.md` for architecture details.
 
 - PostgreSQL 15
 - Redis Server
-- Reflex web server (frontend :3000, backend :8000)
+- **Reflex web server** (systemd service: `reflex.service`)
+  - Frontend: port 3000
+  - Backend: port 8000
+  - Auto-starts on boot
+  - Auto-restarts on failure
+  - Service file: `/etc/systemd/system/reflex.service`
 - Celery worker (systemd service - not yet configured)
 - Celery beat scheduler (systemd service - not yet configured)
 
