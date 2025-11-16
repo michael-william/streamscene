@@ -41,6 +41,12 @@ class DevicesState(BaseState):
     error_message: str = ""
     success_message: str = ""
 
+    # Rename modal state
+    is_rename_modal_open: bool = False
+    rename_device_id: str = ""
+    rename_device_nickname: str = ""
+    is_renaming: bool = False
+
     def on_mount(self):
         """Load user's devices when page loads."""
         print(f"[DEVICES] on_mount() called")
@@ -118,6 +124,72 @@ class DevicesState(BaseState):
         now = datetime.now(timezone.utc)
         return (now - last_seen) < timedelta(minutes=10)
 
+    def open_rename_modal(self, device_id: str, current_nickname: str):
+        """Open the rename modal for a device."""
+        print(f"[DEVICES] Opening rename modal for device {device_id}")
+        self.rename_device_id = device_id
+        self.rename_device_nickname = current_nickname
+        self.is_rename_modal_open = True
+        self.error_message = ""
+
+    def close_rename_modal(self):
+        """Close the rename modal."""
+        self.is_rename_modal_open = False
+        self.rename_device_id = ""
+        self.rename_device_nickname = ""
+
+    def rename_device(self):
+        """Rename the device."""
+        print(f"[DEVICES] Renaming device {self.rename_device_id} to '{self.rename_device_nickname}'")
+
+        if not self.rename_device_id:
+            self.error_message = "No device selected"
+            return
+
+        if not self.rename_device_nickname or not self.rename_device_nickname.strip():
+            self.error_message = "Nickname cannot be empty"
+            return
+
+        self.is_renaming = True
+        self.error_message = ""
+        self.success_message = ""
+
+        try:
+            device_uuid = UUID(self.rename_device_id)
+
+            with get_db_session() as session:
+                device = stream_ops.update_device_nickname(
+                    session,
+                    device_id=device_uuid,
+                    nickname=self.rename_device_nickname,
+                )
+
+                if not device:
+                    self.error_message = "Device not found"
+                    self.is_renaming = False
+                    return
+
+                session.commit()
+
+                # Update the device in the list
+                for i, dev in enumerate(self.devices):
+                    if dev.id == self.rename_device_id:
+                        self.devices[i].nickname = self.rename_device_nickname
+                        break
+
+                self.success_message = f"Device renamed to '{self.rename_device_nickname}'"
+                self.is_rename_modal_open = False
+                print(f"[DEVICES] Device renamed successfully")
+
+        except ValueError as e:
+            print(f"[DEVICES] Validation error: {e}")
+            self.error_message = str(e)
+        except Exception as e:
+            print(f"[DEVICES] Error renaming device: {e}")
+            self.error_message = f"Error renaming device: {str(e)}"
+        finally:
+            self.is_renaming = False
+
 
 def device_card(device: DeviceInfo) -> rx.Component:
     """Render a single device card."""
@@ -180,13 +252,14 @@ def device_card(device: DeviceInfo) -> rx.Component:
 
             rx.divider(),
 
-            # Actions (placeholder for future features)
+            # Actions
             rx.hstack(
                 rx.button(
-                    "View Details",
+                    rx.icon("pencil", size=16),
+                    "Rename",
+                    on_click=lambda: DevicesState.open_rename_modal(device.id, device.nickname),
                     variant="soft",
                     size="2",
-                    disabled=True,  # TODO: Implement device details page
                 ),
                 rx.button(
                     "Configure",
@@ -202,6 +275,87 @@ def device_card(device: DeviceInfo) -> rx.Component:
             align="start",
         ),
         width="100%",
+    )
+
+
+def rename_device_modal() -> rx.Component:
+    """Modal dialog for renaming a device."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.vstack(
+                rx.dialog.title("Rename Device"),
+                rx.dialog.description(
+                    "Enter a new name for your device.",
+                    size="2",
+                ),
+
+                rx.vstack(
+                    rx.text("Device Nickname", weight="bold", size="2"),
+                    rx.input(
+                        placeholder="My StreamScene Frame",
+                        value=DevicesState.rename_device_nickname,
+                        on_change=DevicesState.set_rename_device_nickname,
+                        size="3",
+                        width="100%",
+                    ),
+                    rx.text(
+                        "Choose a name to identify this device (e.g., 'Kitchen Frame', 'Mom\\'s Device')",
+                        size="1",
+                        color="gray",
+                    ),
+                    spacing="2",
+                    width="100%",
+                    align="start",
+                ),
+
+                # Error message
+                rx.cond(
+                    DevicesState.error_message,
+                    rx.callout(
+                        DevicesState.error_message,
+                        icon="triangle_alert",
+                        color_scheme="red",
+                        size="2",
+                    ),
+                ),
+
+                # Actions
+                rx.hstack(
+                    rx.dialog.close(
+                        rx.button(
+                            "Cancel",
+                            variant="soft",
+                            color_scheme="gray",
+                            size="3",
+                            on_click=DevicesState.close_rename_modal,
+                        ),
+                    ),
+                    rx.button(
+                        rx.cond(
+                            DevicesState.is_renaming,
+                            rx.hstack(
+                                rx.spinner(size="1"),
+                                rx.text("Renaming..."),
+                                spacing="2",
+                            ),
+                            rx.text("Rename Device"),
+                        ),
+                        on_click=DevicesState.rename_device,
+                        disabled=DevicesState.is_renaming,
+                        size="3",
+                    ),
+                    spacing="3",
+                    justify="end",
+                    width="100%",
+                ),
+
+                spacing="4",
+                width="100%",
+            ),
+            max_width="450px",
+        ),
+        open=DevicesState.is_rename_modal_open,
+        on_open_change=DevicesState.set_is_rename_modal_open,
     )
 
 
@@ -320,7 +474,12 @@ def devices_list() -> rx.Component:
 def devices_page() -> rx.Component:
     """Devices management page."""
     content = rx.container(
-        devices_list(),
+        rx.vstack(
+            devices_list(),
+            rename_device_modal(),
+            spacing="0",
+            width="100%",
+        ),
         max_width="1200px",
         padding="4",
         on_mount=DevicesState.on_mount,

@@ -792,3 +792,37 @@ def update_device_stream(
     device.current_stream_id = stream_id
     session.flush()
     return device
+
+
+def update_device_nickname(
+    session: Session,
+    device_id: UUID,
+    nickname: str,
+) -> Optional[Device]:
+    """
+    Update the nickname for a device.
+
+    Args:
+        session: Database session
+        device_id: Device UUID
+        nickname: New nickname for the device
+
+    Returns:
+        Optional[Device]: Updated device or None if not found
+
+    Raises:
+        ValueError: If nickname is empty or invalid
+    """
+    if not nickname or not nickname.strip():
+        raise ValueError("Nickname cannot be empty")
+
+    if len(nickname) > 100:
+        raise ValueError("Nickname must be 100 characters or less")
+
+    device = get_device_by_id(session, device_id)
+    if not device:
+        return None
+
+    device.nickname = nickname.strip()
+    session.flush()
+    return device
