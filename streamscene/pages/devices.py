@@ -26,6 +26,12 @@ class DeviceInfo(rx.Base):
     is_online: bool = False
 
 
+class StreamOption(rx.Base):
+    """Stream option for selection."""
+    id: str
+    name: str
+
+
 class DevicesState(BaseState):
     """State for device management."""
 
@@ -33,6 +39,9 @@ class DevicesState(BaseState):
 
     # Device list
     devices: List[DeviceInfo] = []
+
+    # Available streams for assignment
+    available_streams: List[StreamOption] = []
 
     # Loading states
     is_loading: bool = True
@@ -103,7 +112,14 @@ class DevicesState(BaseState):
                         )
                     )
 
-                print(f"[DEVICES] Loaded {len(self.devices)} devices")
+                # Load user's streams for assignment
+                user_streams = stream_ops.get_user_streams(session, user_uuid)
+                self.available_streams = [
+                    StreamOption(id=str(stream.id), name=stream.name)
+                    for stream in user_streams
+                ]
+
+                print(f"[DEVICES] Loaded {len(self.devices)} devices and {len(self.available_streams)} streams")
 
         except Exception as e:
             print(f"[DEVICES] Error loading devices: {e}")
@@ -190,6 +206,55 @@ class DevicesState(BaseState):
         finally:
             self.is_renaming = False
 
+    def assign_stream(self, device_id: str, stream_id: str):
+        """Assign a stream to a device."""
+        print(f"[DEVICES] Assigning stream {stream_id} to device {device_id}")
+
+        self.error_message = ""
+        self.success_message = ""
+
+        try:
+            device_uuid = UUID(device_id)
+            # "none" is our special value for unassigning
+            stream_uuid = UUID(stream_id) if stream_id and stream_id != "none" else None
+
+            with get_db_session() as session:
+                device = stream_ops.update_device_stream(
+                    session,
+                    device_id=device_uuid,
+                    stream_id=stream_uuid,
+                )
+
+                if not device:
+                    self.error_message = "Device not found"
+                    return
+
+                session.commit()
+
+                # Update the device in the list
+                from streamscene.core.models import Stream
+                stream_name = "No stream"
+                if stream_uuid:
+                    stream = session.query(Stream).filter(Stream.id == stream_uuid).first()
+                    if stream:
+                        stream_name = stream.name
+
+                for i, dev in enumerate(self.devices):
+                    if dev.id == device_id:
+                        self.devices[i].current_stream_id = stream_id if stream_id != "none" else None
+                        self.devices[i].current_stream_name = stream_name
+                        break
+
+                self.success_message = f"Stream assigned successfully"
+                print(f"[DEVICES] Stream assigned successfully")
+
+        except ValueError as e:
+            print(f"[DEVICES] Validation error: {e}")
+            self.error_message = str(e)
+        except Exception as e:
+            print(f"[DEVICES] Error assigning stream: {e}")
+            self.error_message = f"Error assigning stream: {str(e)}"
+
 
 def device_card(device: DeviceInfo) -> rx.Component:
     """Render a single device card."""
@@ -221,10 +286,30 @@ def device_card(device: DeviceInfo) -> rx.Component:
                     rx.text(device.current_version, size="2"),
                     spacing="2",
                 ),
-                rx.hstack(
-                    rx.text("Current Stream:", weight="bold", size="2"),
-                    rx.text(device.current_stream_name, size="2"),
-                    spacing="2",
+                rx.vstack(
+                    rx.text("Assigned Stream:", weight="bold", size="2"),
+                    rx.cond(
+                        DevicesState.available_streams.length() > 0,
+                        rx.select.root(
+                            rx.select.trigger(placeholder="Select a stream..."),
+                            rx.select.content(
+                                rx.select.group(
+                                    rx.select.item("(No stream)", value="none"),
+                                    rx.foreach(
+                                        DevicesState.available_streams,
+                                        lambda stream: rx.select.item(stream.name, value=stream.id),
+                                    ),
+                                ),
+                            ),
+                            value=rx.cond(device.current_stream_id, device.current_stream_id, "none"),
+                            on_change=lambda value: DevicesState.assign_stream(device.id, value),
+                            size="2",
+                        ),
+                        rx.text("No streams available - create one first", size="2", color="gray"),
+                    ),
+                    spacing="1",
+                    align="start",
+                    width="100%",
                 ),
                 rx.cond(
                     device.last_seen,
