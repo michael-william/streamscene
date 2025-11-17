@@ -1,0 +1,36 @@
+# StreamScene Client Log Rotation Configuration
+# Installation: Copy to /etc/logrotate.d/streamscene
+#
+# This configuration rotates StreamScene client logs daily, keeping 7 days of history
+
+/var/log/streamscene/*.log {
+    # Rotate daily
+    daily
+
+    # Keep 7 days of logs
+    rotate 7
+
+    # Compress old logs (saves disk space)
+    compress
+
+    # Delay compression until next rotation (so current log isn't compressed)
+    delaycompress
+
+    # Don't error if log file is missing
+    missingok
+
+    # Don't rotate if log is empty
+    notifempty
+
+    # Create new log file with these permissions
+    create 0644 pi pi
+
+    # Use date as suffix for rotated logs
+    dateext
+    dateformat -%Y%m%d
+
+    # Run postrotate script after rotation
+    postrotate
+        # No need to restart service - Python logging handles rotation gracefully
+    endscript
+}

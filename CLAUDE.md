@@ -228,6 +228,41 @@ Pi Zero has limited CPU - don't process images on device.
 
 See `docs/deployment/WIFI_SETUP.md` for comprehensive testing guide.
 
+### Device Deployment (Production SD Card Image)
+
+**NEW:** The recommended deployment method is a pre-built SD card image with all software pre-installed.
+
+**Build SD Card Image:**
+```bash
+sudo ./build_sd_image.sh
+```
+
+**Output:** `streamscene-client-1.0.0.img` - Ready to flash to SD cards
+
+**Features:**
+- Raspberry Pi OS Lite (Bookworm) base
+- StreamScene client pre-installed in `/home/pi/streamscene-client`
+- All dependencies configured (hostapd, dnsmasq, Python packages)
+- Passwordless sudo for network commands (`/etc/sudoers.d/streamscene`)
+- SSH enabled (default: `pi` / `streamscene`)
+- First-boot provisioning (auto-generates UUID, enables service)
+- Comprehensive logging infrastructure (`/var/log/streamscene/`)
+- Log rotation configured (7-day retention)
+
+**Deployment Flow:**
+1. Flash image to SD card (Raspberry Pi Imager / Etcher / dd)
+2. Insert SD card into Pi Zero 2 WH and power on
+3. First boot: Auto-provision (generate UUID, enable service)
+4. Hotspot mode: `StreamScene-XXXX` network appears
+5. User configures WiFi via captive portal
+6. Device connects to WiFi and displays registration QR code
+7. User scans QR and registers via web UI
+8. Device enters normal operation
+
+**See:** `docs/deployment/SD_CARD_IMAGE.md` for complete guide
+
+**Troubleshooting:** `docs/deployment/TROUBLESHOOTING.md` for log analysis
+
 ## E Ink Display Constraints
 
 **Waveshare 7.3" 7-Color E-Paper (E variant - epd7in3e):**
@@ -305,7 +340,9 @@ See `docs/deployment/PRODUCTION.md` for complete deployment guide.
 
 ### Deployment Documentation
 
-- **`docs/deployment/PRODUCTION.md`** - Production deployment, Nginx config, systemd services
+- **`docs/deployment/SD_CARD_IMAGE.md`** - **[NEW]** Production SD card image creation and deployment guide
+- **`docs/deployment/TROUBLESHOOTING.md`** - **[NEW]** Comprehensive troubleshooting and log analysis guide
+- **`docs/deployment/PRODUCTION.md`** - Production server deployment, Nginx config, systemd services
 - **`docs/deployment/WIFI_SETUP.md`** - WiFi setup system testing guide
 - **`docs/deployment/AUTHENTIK_SETUP.md`** - Authentik OAuth configuration
 - **`docs/deployment/HARDWARE_TESTING.md`** - E Ink hardware testing procedures

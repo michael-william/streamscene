@@ -1,0 +1,52 @@
+# StreamScene Client Sudoers Configuration
+# This file grants passwordless sudo for specific network commands needed by the StreamScene client
+#
+# Installation: Copy to /etc/sudoers.d/streamscene
+# Permissions: Must be mode 0440 (read-only by root)
+#
+# Usage:
+#   sudo install -m 0440 /path/to/sudoers.streamscene /etc/sudoers.d/streamscene
+#   sudo visudo -c  # Verify syntax
+
+# Allow pi user to manage network services without password
+pi ALL=(ALL) NOPASSWD: /usr/bin/systemctl start hostapd
+pi ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop hostapd
+pi ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart hostapd
+pi ALL=(ALL) NOPASSWD: /usr/bin/systemctl unmask hostapd
+pi ALL=(ALL) NOPASSWD: /usr/bin/systemctl mask hostapd
+pi ALL=(ALL) NOPASSWD: /usr/bin/systemctl is-active hostapd
+pi ALL=(ALL) NOPASSWD: /usr/bin/systemctl status hostapd
+
+pi ALL=(ALL) NOPASSWD: /usr/bin/systemctl start dnsmasq
+pi ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop dnsmasq
+pi ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart dnsmasq
+pi ALL=(ALL) NOPASSWD: /usr/bin/systemctl is-active dnsmasq
+pi ALL=(ALL) NOPASSWD: /usr/bin/systemctl status dnsmasq
+
+pi ALL=(ALL) NOPASSWD: /usr/bin/systemctl start wpa_supplicant
+pi ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop wpa_supplicant
+pi ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart wpa_supplicant
+pi ALL=(ALL) NOPASSWD: /usr/bin/systemctl unmask wpa_supplicant
+pi ALL=(ALL) NOPASSWD: /usr/bin/systemctl mask wpa_supplicant
+
+# Allow pi user to manage network interfaces without password
+pi ALL=(ALL) NOPASSWD: /usr/bin/ip addr *
+pi ALL=(ALL) NOPASSWD: /usr/bin/ip link *
+pi ALL=(ALL) NOPASSWD: /usr/bin/ip route *
+
+# Allow pi user to manage WiFi client without password
+pi ALL=(ALL) NOPASSWD: /usr/sbin/wpa_cli *
+pi ALL=(ALL) NOPASSWD: /usr/sbin/dhclient *
+pi ALL=(ALL) NOPASSWD: /usr/bin/pkill wpa_supplicant
+pi ALL=(ALL) NOPASSWD: /usr/bin/pkill dhclient
+
+# Allow pi user to manage configuration files without password
+pi ALL=(ALL) NOPASSWD: /usr/bin/mv /tmp/hostapd.conf /etc/hostapd/hostapd.conf
+pi ALL=(ALL) NOPASSWD: /usr/bin/mv /tmp/dnsmasq_streamscene.conf /etc/dnsmasq.d/streamscene.conf
+pi ALL=(ALL) NOPASSWD: /usr/bin/mv /tmp/wpa_supplicant.conf /etc/wpa_supplicant/wpa_supplicant.conf
+pi ALL=(ALL) NOPASSWD: /usr/bin/chmod 600 /etc/hostapd/hostapd.conf
+pi ALL=(ALL) NOPASSWD: /usr/bin/chmod 600 /etc/wpa_supplicant/wpa_supplicant.conf
+pi ALL=(ALL) NOPASSWD: /usr/bin/mkdir -p /etc/dnsmasq.d
+
+# Allow pi user to check system logs for troubleshooting
+pi ALL=(ALL) NOPASSWD: /usr/bin/journalctl *

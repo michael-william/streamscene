@@ -1,0 +1,16 @@
+# StreamScene Raspberry Pi Client Dependencies
+
+# Image processing and E Ink display
+pillow>=10.0.0
+
+# HTTP client for API communication
+requests>=2.31.0
+
+# QR code generation for device registration
+qrcode[pil]>=7.4.2
+
+# Note: System packages required (install via apt):
+# - hostapd (WiFi access point daemon)
+# - dnsmasq (DNS/DHCP server for captive portal)
+# - python3-dev (Python development headers)
+# - python3-venv (Virtual environment support)
