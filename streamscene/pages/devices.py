@@ -5,6 +5,7 @@ from uuid import UUID
 from datetime import datetime, timezone, timedelta
 
 import reflex as rx
+from pydantic import BaseModel
 
 from streamscene.core.database import get_db_session
 from streamscene.core import streams as stream_ops
@@ -12,7 +13,7 @@ from streamscene.components.layout import authenticated_layout
 from .base_state import BaseState
 
 
-class DeviceInfo(rx.Base):
+class DeviceInfo(BaseModel):
     """Device information for display."""
     id: str
     device_uuid: str
@@ -27,7 +28,7 @@ class DeviceInfo(rx.Base):
     is_online: bool = False
 
 
-class StreamOption(rx.Base):
+class StreamOption(BaseModel):
     """Stream option for selection."""
     id: str
     name: str
