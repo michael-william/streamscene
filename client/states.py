@@ -41,7 +41,7 @@ class StateMachine:
 
     # Valid state transitions (from_state -> [allowed_to_states])
     VALID_TRANSITIONS = {
-        DeviceState.WIFI_SETUP: [DeviceState.CONNECTING, DeviceState.ERROR],
+        DeviceState.WIFI_SETUP: [DeviceState.CONNECTING, DeviceState.AWAITING_REGISTRATION, DeviceState.ERROR],
         DeviceState.CONNECTING: [DeviceState.AWAITING_REGISTRATION, DeviceState.WIFI_SETUP, DeviceState.ERROR],
         DeviceState.AWAITING_REGISTRATION: [DeviceState.REGISTERED, DeviceState.ERROR],
         DeviceState.REGISTERED: [DeviceState.READY, DeviceState.ERROR],

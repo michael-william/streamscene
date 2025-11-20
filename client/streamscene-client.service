@@ -17,7 +17,7 @@ Environment="STREAMSCENE_API_URL=https://streamscene.dataandstories.com"
 Environment="STREAMSCENE_DISPLAY_MODE=headless"
 Environment="PYTHONUNBUFFERED=1"
 # DEV/TESTING ONLY: Uncomment to enable ethernet detection (production uses WiFi only)
-Environment="STREAMSCENE_ALLOW_ETHERNET=true"
+#Environment="STREAMSCENE_ALLOW_ETHERNET=true"
 
 # Unblock WiFi on every boot (ensure WiFi adapter is available)
 ExecStartPre=/usr/bin/sudo /usr/sbin/rfkill unblock wifi

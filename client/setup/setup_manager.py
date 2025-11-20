@@ -74,11 +74,11 @@ class SetupManager:
         # Step 2: Start captive portal
         logger.info("[SetupManager] Step 2: Starting captive portal server")
 
-        portal = CaptivePortalServer()
+        portal = CaptivePortalServer(port=8080)
 
         try:
             portal.start()
-            logger.info(f"[SetupManager] Captive portal running on 192.168.4.1:80")
+            logger.info(f"[SetupManager] Captive portal running on 192.168.4.1:8080")
             logger.info(f"[SetupManager] Users can connect to: {self.network_manager.hotspot_ssid}")
             logger.info(f"[SetupManager] Password: {self.network_manager.hotspot_password}")
 
