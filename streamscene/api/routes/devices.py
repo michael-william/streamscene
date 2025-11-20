@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 from uuid import UUID
 import os
 
@@ -94,13 +95,16 @@ async def check_registration_status(
     transition to authenticated operation.
 
     Args:
-        device_id: Device UUID
+        device_id: Device UUID (device_uuid from SD card, not database id)
         db: Database session
 
     Returns:
         RegistrationStatusResponse: Registration status and API key if registered
     """
-    device = stream_ops.get_device_by_id(db, device_id)
+    # Look up by device_uuid (from SD card), not by database id
+    device = db.query(stream_ops.Device).filter(
+        stream_ops.Device.device_uuid == device_id
+    ).first()
 
     if not device:
         # Device UUID not found - not registered yet
@@ -117,6 +121,7 @@ async def check_registration_status(
         # First time device is retrieving the API key
         # Clear it from config after retrieval (one-time only)
         device.config.pop("pending_api_key", None)
+        flag_modified(device, "config")  # Mark JSON column as modified
         db.commit()
 
         return RegistrationStatusResponse(

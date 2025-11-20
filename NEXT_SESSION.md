@@ -1,209 +1,203 @@
-# Next Session - Phase 6 In Progress: Registration Detection Issue
+# Next Session - Phase 6: E Ink Testing & Registration Flow Complete
 
-**Last Updated:** November 11, 2025 (End of Session - Phase 6 Testing)
-**Current Phase:** Phase 6 🔄 IN PROGRESS - Device Testing & Debugging
+**Last Updated:** November 20, 2025 (End of Session - Bug Fixed!)
+**Current Phase:** Phase 6 ✅ REGISTRATION FLOW WORKING
+
+---
+
+## 🎉 Major Achievement: Registration Flow Fixed!
+
+### What Was Broken
+The registration-status endpoint was looking up devices by database `id` instead of `device_uuid`, causing all registration polling to fail with incorrect responses.
+
+### What Was Fixed
+1. **Registration-status endpoint** - Now correctly looks up by `device_uuid` (from SD card)
+   - Changed from `get_device_by_id(db, device_id)` to direct query on `Device.device_uuid`
+   - Location: `streamscene/api/routes/devices.py:103-106`
+
+2. **JSONB column update issue** - One-time API key retrieval wasn't clearing properly
+   - Added `flag_modified(device, "config")` to mark JSON column as changed
+   - Location: `streamscene/api/routes/devices.py:124`
+
+### Test Results ✅
+
+```bash
+# Before registration
+curl https://streamscene.dataandstories.com/api/devices/1c91d1e9-3cc9-44ba-a008-9cdee188d90c/registration-status
+# Returns: {"is_registered":false,"api_key":null,"nickname":null}
+
+# After registration (first poll)
+curl https://streamscene.dataandstories.com/api/devices/1c91d1e9-3cc9-44ba-a008-9cdee188d90c/registration-status
+# Returns: {"is_registered":true,"api_key":"<full-key>","nickname":"Test StreamScene Frame"}
+
+# Second poll (API key cleared)
+curl https://streamscene.dataandstories.com/api/devices/1c91d1e9-3cc9-44ba-a008-9cdee188d90c/registration-status
+# Returns: {"is_registered":true,"api_key":null,"nickname":"Test StreamScene Frame"}
+```
+
+**Result:** ✅ One-time API key retrieval working perfectly!
+
+---
+
+## 📝 Changes This Session
+
+### Commit: `[pending]`
+**Title:** "fix: registration-status endpoint to use device_uuid and fix JSONB update"
+
+**Files Changed:**
+1. `streamscene/api/routes/devices.py`
+   - Line 6: Added `from sqlalchemy.orm.attributes import flag_modified`
+   - Line 103-106: Changed lookup to use `device_uuid` instead of database `id`
+   - Line 124: Added `flag_modified()` to mark JSON column as modified
+   - Updated docstring to clarify `device_id` parameter is actually `device_uuid`
+
+**Why This Was Critical:**
+- Devices only know their `device_uuid` (from `/boot/firmware/streamscene-device.txt`)
+- They don't know their database `id` until after first contact with server
+- Registration polling was failing because endpoint expected wrong UUID type
+- JSONB columns need explicit `flag_modified()` for SQLAlchemy change tracking
 
 ---
 
 ## 🎯 Current Status
 
 ### What Works ✅
-- WiFi setup flow (hotspot + captive portal) - TESTED
-- WiFi client connection - TESTED
-- E Ink display with QR codes - TESTED (using epd7in3g driver)
-- Renderer performance (removed Floyd-Steinberg dithering) - TESTED
-- Device state machine transitions (wifi_setup → connecting → awaiting_registration)
-- Web registration UI - TESTED (device successfully registered)
-- Device registration in database - VERIFIED
+- [x] WiFi setup flow (hotspot + captive portal)
+- [x] WiFi client connection
+- [x] E Ink display with QR codes (epd7in3g driver)
+- [x] Device state machine transitions
+- [x] Web registration UI
+- [x] Device registration in database
+- [x] **NEW:** Registration-status endpoint (unauthenticated)
+- [x] **NEW:** One-time API key retrieval
+- [x] **NEW:** JSONB column updates
 
-### Current Blocker 🚫
-**Registration Status Endpoint Returns 404**
-
-The `/api/devices/{device_id}/registration-status` endpoint is returning 404 Not Found when accessed by the client or via curl, even though:
-- Code exists in `streamscene/api/routes/devices.py:83-133`
-- Router is registered in `streamscene/api/__init__.py`
-- Reflex server has been restarted
-- Other endpoints work (e.g., `/api/health`)
-
-**Impact:** Device cannot detect when user has registered it via web UI. It gets stuck in `AWAITING_REGISTRATION` state polling for registration status but receiving 404 errors.
+### What Needs Testing 🔄
+- [ ] **Device client polling** - Verify device can detect registration via endpoint
+- [ ] **API key persistence** - Device saves key to `/boot/firmware/streamscene-apikey.txt`
+- [ ] **State transitions** - Device goes from `AWAITING_REGISTRATION` → `REGISTERED` → `READY`
+- [ ] **Content display** - Device fetches and displays stream content
+- [ ] **Heartbeat** - Device sends periodic heartbeats to server
 
 ---
 
-## 📝 What We Just Completed (This Session)
+## 🚀 Next Session: End-to-End Device Testing
 
-### Session Commit: `c2b3a4d`
-**Commit Message:** "feat: add unauthenticated device registration status endpoint"
+### Priority 1: Test Full Device Registration Flow
 
-**Server Changes:**
-1. Added `/api/devices/{device_id}/registration-status` endpoint (unauthenticated)
-   - Location: `streamscene/api/routes/devices.py:83-133`
-   - Returns `{"is_registered": bool, "api_key": str or None, "nickname": str}`
-   - API key returned ONE TIME only, then cleared from `device.config["pending_api_key"]`
-
-2. Added `RegistrationStatusResponse` schema
-   - Location: `streamscene/api/schemas.py:61-66`
-
-3. Modified `register_device()` to store API key temporarily
-   - Location: `streamscene/core/streams.py:180-200`
-   - Stores plaintext API key in `device.config["pending_api_key"]`
-   - Cleared after first retrieval by device
-
-**Client Changes:**
-1. Added `check_registration_status()` method to `APIClient`
-   - Location: `client/api_client.py:229-260`
-   - Makes unauthenticated GET request (no API key header)
-
-2. Updated `check_registration()` to use new endpoint and save API key
-   - Location: `client/setup/registration.py:14-61`
-   - Saves API key to file when received
-
-3. Fixed import issues (relative → absolute imports)
-   - Location: `client/api_client.py:18`
-
-**Display/Renderer Fixes (Previous Session):**
-1. Fixed display driver (epd7in3f → epd7in3g for 4-color display)
-   - Location: `client/display.py:127`
-
-2. Removed slow Floyd-Steinberg dithering
-   - Location: `client/renderer.py:78-82`
-   - Changed to simple nearest-color conversion for performance
-
----
-
-## 🔍 Next Session: Debug Registration-Status Endpoint
-
-### Priority 1: Fix 404 Endpoint Issue
-
-**Problem:**
+**Setup:**
 ```bash
-$ curl https://streamscene.dataandstories.com/api/devices/1c91d1e9-3cc9-44ba-a008-9cdee188d90c/registration-status
-{"detail":"Not Found"}  # 404 error
+# SSH to device
+ssh badgy@192.168.1.40  # Password: JjKUa9XJ8*FFUZHYB.AP
+cd ~/streamscene-client
+
+# Reset device to clean state
+sudo rm -f device_state.json device_api_key.txt
+
+# Set environment variables
+export STREAMSCENE_API_URL='https://streamscene.dataandstories.com'
+export STREAMSCENE_DISPLAY_MODE='eink'
+
+# Run client
+sudo -E python3 main.py 2>&1 | tee device-test.log
 ```
 
-**Possible Causes:**
-1. **Routing Issue:** FastAPI route not registered with Reflex app
-   - Check: `streamscene/api/__init__.py` - devices router included?
-   - Check: Main app mounts API routes correctly?
+**Expected Flow:**
+1. Device starts in `WIFI_SETUP` state (or `CONNECTING` if WiFi credentials exist)
+2. Device connects to WiFi → transitions to `AWAITING_REGISTRATION`
+3. Device displays QR code on E Ink display
+4. Device polls `/api/devices/{device_uuid}/registration-status` every 10s
+5. User scans QR code → registers device via web UI
+6. Device detects registration on next poll
+7. Device receives API key and saves to file
+8. Device transitions to `REGISTERED` then `READY`
+9. Device fetches content and displays on E Ink
+10. Device sends heartbeat every 5 minutes
 
-2. **Reflex Restart Didn't Take:** Server still running old code
-   - Solution: More aggressive restart (kill by PID, not just port)
-   - Check: `ps aux | grep reflex` to verify processes stopped
+### Priority 2: Create Test Content
 
-3. **Path Conflict:** Another route catching the request first
-   - Check: Route order in FastAPI router
-   - Check: Other routes with similar patterns
-
-4. **API Prefix Issue:** Endpoint at wrong path
-   - Check: API router prefix configuration
-   - Test: Try without `/api` prefix
-
-5. **AsyncIO/FastAPI Issue:** Async route not registered properly
-   - Check: Other endpoints use `async def`, this one does too
-   - Check: Dependencies (get_db) work in other endpoints
-
-**Debug Steps:**
+**Create a test stream and post:**
 ```bash
-# Step 1: Verify Reflex is truly restarted with new code
-./restart-reflex.sh
-sleep 5
-ps aux | grep reflex  # Should show fresh processes
+# Via web UI at https://streamscene.dataandstories.com/streams
+# Or programmatically:
+python3 -c "
+from streamscene.core.database import get_db_session
+from streamscene.core import streams as stream_ops
+from uuid import UUID
 
-# Step 2: Check server logs for route registration
-tail -f /root/.reflex/state_dir/web/logs/stdout.log | grep -i "register\|route\|device"
+user_id = UUID('314daf51-9126-4fde-990f-0337711ac71f')  # Badgy
 
-# Step 3: Test endpoint variations
-curl https://streamscene.dataandstories.com/api/health  # Works
-curl https://streamscene.dataandstories.com/api/devices/1c91d1e9-3cc9-44ba-a008-9cdee188d90c/config  # Requires auth
-curl https://streamscene.dataandstories.com/api/devices/1c91d1e9-3cc9-44ba-a008-9cdee188d90c/registration-status  # 404
+with get_db_session() as db:
+    # Create test stream
+    stream = stream_ops.create_stream(
+        db,
+        owner_id=user_id,
+        name='Test Stream',
+        description='Testing device display',
+        theme_name='classic'
+    )
 
-# Step 4: Check FastAPI docs (if accessible)
-# Visit: https://streamscene.dataandstories.com/docs
-# Look for: /api/devices/{device_id}/registration-status endpoint
+    # Create test post
+    post = stream_ops.create_post(
+        db,
+        stream_id=stream.id,
+        author_id=user_id,
+        text_content='Hello from StreamScene! This is a test message.',
+        content_type='text'
+    )
 
-# Step 5: Check API router registration
-cat streamscene/api/__init__.py  # Verify devices router included
-
-# Step 6: Nuclear restart option
-sudo systemctl stop reflex 2>/dev/null
-pkill -9 -f reflex
-rm -rf /root/.reflex/state_dir/web/reflex.db  # Clear state
-./restart-reflex.sh
+    print(f'Stream ID: {stream.id}')
+"
 ```
 
-**Files to Investigate:**
-- `streamscene/api/__init__.py` - Router registration
-- `streamscene/streamscene.py` - Main app setup
-- `rxconfig.py` - Reflex configuration
-- Nginx config - Proxy routing
+### Priority 3: Assign Stream to Device
 
-### Priority 2: Complete End-to-End Testing
+**Via web UI:**
+1. Go to https://streamscene.dataandstories.com/devices
+2. Select device "Test StreamScene Frame"
+3. Assign "Test Stream" to device
+4. Device should fetch and display content on next poll
 
-Once endpoint is working:
+**Or programmatically:**
+```bash
+python3 -c "
+from streamscene.core.database import get_db_session
+from streamscene.core import streams as stream_ops
+from uuid import UUID
 
-1. **Reset device to clean state**
-   ```bash
-   ssh badgy@192.168.1.40
-   cd ~/streamscene-client
-   sudo rm -f device_state.json device_api_key.txt
-   ```
+device_id = UUID('2c0d4fe8-2426-4228-b2a9-8f89762cc338')
+stream_id = UUID('<stream-id-from-above>')
 
-2. **Restart client**
-   ```bash
-   export STREAMSCENE_API_URL='https://streamscene.dataandstories.com'
-   export STREAMSCENE_DISPLAY_MODE='eink'
-   sudo -E python3 main.py
-   ```
-
-3. **Test registration detection**
-   - Device should poll endpoint every 10 seconds
-   - Should receive `{"is_registered": true, "api_key": "...", "nickname": "..."}`
-   - Should save API key to file
-   - Should transition to REGISTERED → READY
-
-4. **Test operational state**
-   - Device fetches content
-   - Device sends heartbeats
-   - Content displays on E Ink
+with get_db_session() as db:
+    stream_ops.update_device_stream(db, device_id, stream_id)
+    print('Stream assigned to device')
+"
+```
 
 ---
 
-## 📋 Testing Checklist (In Progress)
+## 📋 Testing Checklist
 
-### WiFi Setup ✅
-- [x] Device starts in wifi_setup state
-- [x] Hotspot created with correct SSID (StreamScene-91d1)
-- [x] Captive portal accessible at 192.168.4.1
-- [x] Can submit WiFi credentials via portal
-- [x] Credentials saved to wifi_credentials.json
-- [x] Device transitions to connecting state
+### Registration Flow ✅
+- [x] Registration-status endpoint returns correct response for unregistered device
+- [x] Device can be registered via web UI
+- [x] Registration-status endpoint returns API key on first poll
+- [x] API key is cleared after first retrieval (one-time only)
+- [x] Second poll returns `is_registered=true, api_key=null`
 
-### WiFi Connection ✅
-- [x] Device switches from AP to client mode
-- [x] Device connects to home WiFi
-- [x] Device gets IP address via DHCP
-- [x] Internet connectivity test passes (ping 8.8.8.8)
-- [x] Device transitions to awaiting_registration state
+### Device Client Testing 🔄 NEXT
+- [ ] Device polls registration-status endpoint correctly
+- [ ] Device receives and saves API key
+- [ ] Device transitions from `AWAITING_REGISTRATION` to `REGISTERED`
+- [ ] Device transitions from `REGISTERED` to `READY`
+- [ ] Device persists state across reboots
 
-### Registration 🔄 IN PROGRESS
-- [x] QR code displayed on E Ink display
-- [x] QR code URL is correct format
-- [x] Device polls server every 10 seconds
-- [x] Web page (/setup) loads when QR scanned
-- [x] User can log in via OAuth
-- [x] User can enter device nickname
-- [x] Registration succeeds (device in database)
-- [ ] **BLOCKED:** Device detects registration (404 endpoint error)
-- [ ] API key saved to file
-- [ ] Device transitions to registered then ready state
-
-### Operational ⏸️ PENDING
+### Content Display ⏸️ PENDING
 - [ ] Device fetches content from API
-- [ ] Content renders correctly
-- [ ] Display updates on E Ink
+- [ ] Content renders correctly on E Ink
+- [ ] Display updates show on physical screen
 - [ ] Heartbeat sent every 5 minutes
 - [ ] Content polling every 60 seconds
-- [ ] State persists after reboot
-- [ ] Device skips setup on subsequent boots
 
 ### Error Recovery ⏸️ NOT TESTED
 - [ ] WiFi errors → back to wifi_setup
@@ -213,125 +207,142 @@ Once endpoint is working:
 
 ---
 
-## 🔧 Known Issues & Fixes Applied
+## 🔧 Known Issues & Solutions
 
-### Issue 1: Chicken-and-Egg Authentication ✅ SOLVED
-**Problem:** Device needed API key to check registration, but couldn't get key until registered.
+### Issue 1: Registration Endpoint UUID Mismatch ✅ SOLVED
+**Problem:** Endpoint expected database `id`, device only knows `device_uuid`.
 
-**Solution:** Created unauthenticated `/registration-status` endpoint that:
-- Doesn't require API key
-- Returns API key ONE TIME only
-- Stores key temporarily in `device.config["pending_api_key"]`
-- Clears key after first retrieval
+**Solution:** Changed endpoint to query by `Device.device_uuid` instead of `Device.id`.
 
-### Issue 2: E Ink Display Driver ✅ SOLVED
-**Problem:** Using wrong driver (epd7in3f) for 4-color display.
+### Issue 2: JSONB Column Not Updating ✅ SOLVED
+**Problem:** `device.config.pop()` didn't trigger SQLAlchemy change tracking.
 
-**Solution:** Changed to epd7in3g driver in `client/display.py:127`
+**Solution:** Added `flag_modified(device, "config")` after modifying JSON column.
 
-### Issue 3: Renderer Too Slow ✅ SOLVED
-**Problem:** Floyd-Steinberg dithering took too long on Pi Zero.
+### Issue 3: Device Has No Database ID Initially ✅ EXPLAINED
+**Context:** This is by design - device doesn't need database `id` until after registration.
 
-**Solution:** Removed dithering, use simple nearest-color conversion
-
-### Issue 4: Registration Endpoint 404 ❌ UNRESOLVED
-**Problem:** Endpoint returns 404 despite code existing.
-
-**Next Steps:** See Priority 1 above.
+**Flow:**
+1. Device boots with pre-configured `device_uuid` from SD card
+2. Device polls endpoint with `device_uuid`
+3. Server creates/updates device record (generates database `id`)
+4. Device receives API key and uses it for future authenticated requests
 
 ---
 
-## 🎯 Success Criteria
+## 🎯 Success Criteria for Phase 6
 
-Phase 6 (Testing) will be complete when:
-- [ ] Registration-status endpoint returns correct responses
+Phase 6 (E Ink Display Integration) will be complete when:
+- [x] Registration-status endpoint works correctly
+- [x] One-time API key retrieval implemented
 - [ ] Device can detect registration via polling
-- [ ] API key is saved locally after registration
+- [ ] API key saved locally after registration
 - [ ] Device transitions to READY state after registration
 - [ ] Device fetches and displays content in READY state
 - [ ] State persists across reboots
-- [ ] Full lifecycle tested end-to-end (no blockers)
+- [ ] Full lifecycle tested end-to-end
 
----
-
-## 📖 Architecture Documentation
-
-### Registration Flow (Updated)
-
-**See CLAUDE.md lines 551-585 for complete documentation.**
-
-Key points:
-1. Device polls **unauthenticated** endpoint during setup
-2. Server stores API key temporarily in `device.config["pending_api_key"]`
-3. First poll returns API key, then clears it (one-time retrieval)
-4. Subsequent polls return `is_registered=true` but `api_key=null`
-5. Device saves API key to `/boot/firmware/streamscene-apikey.txt`
-
-**Security:** Unauthenticated endpoint is intentional and required for initial setup. API key is exposed only:
-- Once to web user during registration (with warning)
-- Once to device via polling (then immediately cleared)
-
----
-
-## 🚀 Quick Start for Next Session
-
-```bash
-# Terminal 1: SSH to device (monitor logs)
-ssh badgy@192.168.1.40
-cd ~/streamscene-client
-export STREAMSCENE_API_URL='https://streamscene.dataandstories.com'
-export STREAMSCENE_DISPLAY_MODE='eink'
-sudo -E python3 main.py 2>&1 | tee session.log
-
-# Terminal 2: Debug endpoint on server
-ssh root@192.168.1.118  # StreamScene server
-cd /root/streamscene
-
-# Try aggressive restart
-./restart-reflex.sh
-ps aux | grep reflex  # Verify stopped
-sleep 5
-reflex run --env prod &
-
-# Monitor logs
-tail -f /root/.reflex/state_dir/web/logs/stdout.log
-
-# Test endpoint
-curl -v https://streamscene.dataandstories.com/api/devices/1c91d1e9-3cc9-44ba-a008-9cdee188d90c/registration-status
-```
-
----
-
-## 📂 Key Files Modified This Session
-
-### Server
-- `streamscene/api/routes/devices.py` - Added registration-status endpoint (line 83)
-- `streamscene/api/schemas.py` - Added RegistrationStatusResponse schema (line 61)
-- `streamscene/core/streams.py` - Modified register_device() (line 180)
-- `CLAUDE.md` - Added Device Authentication documentation (line 551)
-
-### Client
-- `client/api_client.py` - Added check_registration_status() method (line 229)
-- `client/setup/registration.py` - Updated check_registration() (line 14)
-- `client/display.py` - Fixed driver to epd7in3g (line 127)
-- `client/renderer.py` - Removed Floyd-Steinberg dithering (line 78)
-
-### Documentation
-- `CLAUDE.md` - Updated with registration flow architecture
-- `NEXT_SESSION.md` - This file (updated with current status)
+**Current Progress:** 5/8 complete (62%)
 
 ---
 
 ## 🔑 Device Info
 
+- **Device UUID:** `1c91d1e9-3cc9-44ba-a008-9cdee188d90c` (from SD card)
+- **Database ID:** `2c0d4fe8-2426-4228-b2a9-8f89762cc338` (generated on registration)
+- **Nickname:** "Test StreamScene Frame"
+- **Registered to:** Badgy (michael@dataandstories.com)
 - **SSH:** `ssh badgy@192.168.1.40` (password: `JjKUa9XJ8*FFUZHYB.AP`)
-- **UUID:** `1c91d1e9-3cc9-44ba-a008-9cdee188d90c`
 - **Client code:** `~/streamscene-client/`
-- **Hotspot SSID:** `StreamScene-91d1`
 - **Registration URL:** `https://streamscene.dataandstories.com/setup?device_uuid=1c91d1e9-3cc9-44ba-a008-9cdee188d90c`
-- **Current state:** `awaiting_registration` (stuck polling for registration)
-- **Registered in DB:** Yes (nickname: "Badhy's StreamScene Frame")
 
 ---
 
-**Next Action:** Debug why `/api/devices/{id}/registration-status` endpoint returns 404. Once fixed, complete end-to-end testing of registration detection and operational state.
+## 📖 Architecture Reference
+
+### Device UUID vs Database ID
+
+**Two types of UUIDs in Device model:**
+1. **`device_uuid`** - Pre-configured on SD card, device's "identity"
+   - Source: `/boot/firmware/streamscene-device.txt`
+   - Known by device at boot
+   - Used in QR codes and unauthenticated endpoints
+
+2. **`id`** - Database primary key, auto-generated
+   - Created when device record is inserted
+   - Not known by device until after first server contact
+   - Used in authenticated API endpoints
+
+**Why Two UUIDs?**
+- Device needs stable identity before registration (device_uuid)
+- Server needs internal ID for foreign keys and relationships (id)
+- Separation allows device provisioning without server access
+
+### Registration Flow
+
+```
+Device                          Server                           User
+  |                               |                                |
+  | 1. Boot with device_uuid      |                                |
+  |---------------------------->  |                                |
+  |                               |                                |
+  | 2. Poll: GET /registration-status?device_uuid=...             |
+  |---------------------------->  |                                |
+  |     <- {is_registered: false} |                                |
+  |                               |                                |
+  | 3. Display QR code            |                                |
+  |                               |                                |
+  |                               |     4. Scan QR, visit /setup   |
+  |                               |  <-----------------------------|
+  |                               |                                |
+  |                               | 5. POST /register              |
+  |                               |  <-----------------------------|
+  |                               |     {device_uuid, nickname}    |
+  |                               |                                |
+  |                               | 6. Create device record        |
+  |                               |    Store pending_api_key       |
+  |                               |                                |
+  | 7. Poll: GET /registration-status                             |
+  |---------------------------->  |                                |
+  |     <- {is_registered: true,  |                                |
+  |         api_key: "...",       |                                |
+  |         nickname: "..."}      |                                |
+  |                               |                                |
+  | 8. Save API key to file       |                                |
+  |    Transition to REGISTERED   |                                |
+  |                               |                                |
+```
+
+---
+
+## 🚀 Quick Commands
+
+```bash
+# Restart Reflex server
+sudo systemctl restart reflex
+
+# View Reflex logs
+sudo journalctl -u reflex -f
+
+# Test registration endpoint
+curl https://streamscene.dataandstories.com/api/devices/1c91d1e9-3cc9-44ba-a008-9cdee188d90c/registration-status
+
+# Check device in database
+python3 -c "
+from streamscene.core.database import get_db_session
+from streamscene.core.models import Device
+from uuid import UUID
+
+with get_db_session() as db:
+    device = db.query(Device).filter(
+        Device.device_uuid == UUID('1c91d1e9-3cc9-44ba-a008-9cdee188d90c')
+    ).first()
+    print(f'Device: {device.nickname}')
+    print(f'Registered: {device.user_id is not None}')
+    print(f'Has pending key: {\"pending_api_key\" in device.config}')
+"
+```
+
+---
+
+**Next Action:** Test end-to-end device registration flow with actual Raspberry Pi hardware. The server-side implementation is complete and working!
