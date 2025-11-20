@@ -1,333 +1,288 @@
-# Next Session - Phase 6: E Ink Testing & Registration Flow Complete
+# Next Session - Phase 6: E Ink Hardware Working! Final Authentication Fix Needed
 
-**Last Updated:** November 20, 2025 (End of Session - Bug Fixed!)
-**Current Phase:** Phase 6 ✅ REGISTRATION FLOW WORKING
-
----
-
-## 🎉 Major Achievement: Registration Flow Fixed!
-
-### What Was Broken
-The registration-status endpoint was looking up devices by database `id` instead of `device_uuid`, causing all registration polling to fail with incorrect responses.
-
-### What Was Fixed
-1. **Registration-status endpoint** - Now correctly looks up by `device_uuid` (from SD card)
-   - Changed from `get_device_by_id(db, device_id)` to direct query on `Device.device_uuid`
-   - Location: `streamscene/api/routes/devices.py:103-106`
-
-2. **JSONB column update issue** - One-time API key retrieval wasn't clearing properly
-   - Added `flag_modified(device, "config")` to mark JSON column as changed
-   - Location: `streamscene/api/routes/devices.py:124`
-
-### Test Results ✅
-
-```bash
-# Before registration
-curl https://streamscene.dataandstories.com/api/devices/1c91d1e9-3cc9-44ba-a008-9cdee188d90c/registration-status
-# Returns: {"is_registered":false,"api_key":null,"nickname":null}
-
-# After registration (first poll)
-curl https://streamscene.dataandstories.com/api/devices/1c91d1e9-3cc9-44ba-a008-9cdee188d90c/registration-status
-# Returns: {"is_registered":true,"api_key":"<full-key>","nickname":"Test StreamScene Frame"}
-
-# Second poll (API key cleared)
-curl https://streamscene.dataandstories.com/api/devices/1c91d1e9-3cc9-44ba-a008-9cdee188d90c/registration-status
-# Returns: {"is_registered":true,"api_key":null,"nickname":"Test StreamScene Frame"}
-```
-
-**Result:** ✅ One-time API key retrieval working perfectly!
+**Last Updated:** November 20, 2025 (End of Session - E Ink Display Working!)
+**Current Phase:** Phase 6 🎨 E INK HARDWARE CONFIRMED WORKING
 
 ---
 
-## 📝 Changes This Session
+## 🎉 MAJOR WIN: E Ink Display Hardware Working!
 
-### Commit: `[pending]`
-**Title:** "fix: registration-status endpoint to use device_uuid and fix JSONB update"
+The E Ink display successfully initialized and rendered a "Registration Success" message to the physical screen. Hardware confirmed working!
+
+**Proof:** Display updated twice showing registration success message (~30 second refresh each time).
+
+---
+
+## ✅ Completed This Session
+
+### 1. Fixed Registration Endpoint (Server)
+**Problem:** Endpoint was looking up devices by database `id` instead of `device_uuid`
+
+**Solution:**
+- Updated `/api/devices/{device_id}/registration-status` to query by `Device.device_uuid`
+- Added `flag_modified(device, "config")` for JSONB column updates
+- One-time API key retrieval working perfectly
 
 **Files Changed:**
-1. `streamscene/api/routes/devices.py`
-   - Line 6: Added `from sqlalchemy.orm.attributes import flag_modified`
-   - Line 103-106: Changed lookup to use `device_uuid` instead of database `id`
-   - Line 124: Added `flag_modified()` to mark JSON column as modified
-   - Updated docstring to clarify `device_id` parameter is actually `device_uuid`
+- `streamscene/api/routes/devices.py` - Lines 103-106, 124
+- Added `from sqlalchemy.orm.attributes import flag_modified`
 
-**Why This Was Critical:**
-- Devices only know their `device_uuid` (from `/boot/firmware/streamscene-device.txt`)
-- They don't know their database `id` until after first contact with server
-- Registration polling was failing because endpoint expected wrong UUID type
-- JSONB columns need explicit `flag_modified()` for SQLAlchemy change tracking
+**Commit:** `09f0229` - "fix: registration-status endpoint to use device_uuid and fix JSONB update"
+
+### 2. Implemented Ethernet-First Networking (Client)
+**What:** Device automatically detects and uses ethernet, only falls back to WiFi if needed
+
+**Changes:**
+
+**NetworkManager (`client/setup/network_manager.py`):**
+- Added `NetworkMode.ETHERNET` constant
+- Added `is_ethernet_available()` - Check eth0 interface and IP
+- Added `get_ethernet_ip()` - Get ethernet IP address
+- Added `test_ethernet_connectivity()` - Verify internet access (ping 8.8.8.8)
+- Added `get_ethernet_status()` - Return tuple (connected, ip)
+- Updated `get_current_mode()` to check ethernet first
+
+**Main Client (`client/main.py`):**
+- Added `_check_initial_network_status()` method called after state machine init
+- Detects ethernet at startup, skips WiFi setup if internet available
+- Updated `_handle_wifi_setup()` to always check ethernet (removed env var requirement)
+- Uses NetworkManager methods instead of raw shell commands
+
+**Config (`client/config.py`):**
+- Added `ETHERNET_ENABLED` (default: true)
+- Added `PREFER_ETHERNET` (default: true)
+- Added `ETHERNET_CHECK_TIMEOUT` (default: 10s)
+
+**Commit:** `564d41c` - "feat: implement ethernet-first network detection"
+
+### 3. Installed E Ink Dependencies (Pi Hardware)
+
+**Approach:** InkyPi-style lightweight installation
+- Downloaded only needed files (not 20k+ file repo)
+- Installed system GPIO packages via apt (not pip compilation)
+- Created venv with `--system-site-packages` flag
+
+**Installed:**
+- System packages: `python3-spidev`, `python3-rpi.gpio`, `python3-gpiozero` (via apt)
+- Python packages: `pillow`, `requests`, `qrcode` (in venv)
+- Waveshare library: Downloaded `epd7in3e.py`, `epdconfig.py` to `~/streamscene-client/waveshare_epd/`
+
+**Enabled SPI:**
+- Added `dtparam=spi=on` to `/boot/firmware/config.txt`
+- Rebooted Pi
+- Verified `/dev/spidev0.0` and `/dev/spidev0.1` exist
+
+### 4. Created Test Content
+
+**Test Stream:**
+- Stream ID: `7b9f9ab1-09f4-4812-b628-44810a3547f6`
+- Name: "Test Stream"
+- Theme: "classic"
+
+**Test Posts (5 total):**
+1. "Hello from StreamScene!"
+2. "The E Ink display is working beautifully."
+3. "This is a test of the content rotation system."
+4. "StreamScene makes staying connected easy!"
+5. "Family updates at a glance"
+
+**Device Assignment:**
+- Device: "Test StreamScene Frame" (database ID: `2c0d4fe8-2426-4228-b2a9-8f89762cc338`)
+- Assigned stream: Test Stream
+- API key regenerated and available for retrieval
 
 ---
 
-## 🎯 Current Status
+## 🚧 Remaining Issue: 403 Forbidden on Content Endpoint
 
-### What Works ✅
-- [x] WiFi setup flow (hotspot + captive portal)
-- [x] WiFi client connection
-- [x] E Ink display with QR codes (epd7in3g driver)
-- [x] Device state machine transitions
-- [x] Web registration UI
-- [x] Device registration in database
-- [x] **NEW:** Registration-status endpoint (unauthenticated)
-- [x] **NEW:** One-time API key retrieval
-- [x] **NEW:** JSONB column updates
+### Problem
+Device successfully:
+- ✅ Detects ethernet connection
+- ✅ Retrieves API key via registration-status endpoint
+- ✅ Transitions to READY state
+- ✅ Initializes E Ink display
 
-### What Needs Testing 🔄
-- [ ] **Device client polling** - Verify device can detect registration via endpoint
-- [ ] **API key persistence** - Device saves key to `/boot/firmware/streamscene-apikey.txt`
-- [ ] **State transitions** - Device goes from `AWAITING_REGISTRATION` → `REGISTERED` → `READY`
-- [ ] **Content display** - Device fetches and displays stream content
-- [ ] **Heartbeat** - Device sends periodic heartbeats to server
+But fails when fetching content:
+```
+[API Client] Fetching content from https://streamscene.dataandstories.com/api/devices/1c91d1e9-3cc9-44ba-a008-9cdee188d90c/content
+[API Client] Error fetching content: 403 Client Error: Forbidden
+```
+
+### Root Cause (Likely)
+
+The `/api/devices/{device_id}/content` endpoint uses `device_id` (database primary key) but the client is sending `device_uuid` (from SD card).
+
+**Endpoint definition:** `streamscene/api/routes/devices.py:136`
+```python
+@router.get("/{device_id}/content", response_model=DeviceContentResponse)
+async def get_device_content(
+    device_id: UUID,
+    verified_device_id: str = Depends(verify_device_api_key),
+    db: Session = Depends(get_db)
+):
+```
+
+The `verify_device_api_key` dependency likely:
+1. Validates the API key
+2. Returns the device's database ID
+3. Compares it to the `device_id` in the URL path
+4. Returns 403 if mismatch (device trying to access another device's content)
+
+**Client is using `device_uuid` in URL:**
+```python
+# client/api_client.py
+url = f"{self.api_url}/api/devices/{self.device_id}/content"
+# self.device_id = 1c91d1e9-3cc9-44ba-a008-9cdee188d90c (device_uuid)
+```
+
+But the API expects database `id` (`2c0d4fe8-2426-4228-b2a9-8f89762cc338`).
+
+### Solution Options
+
+**Option 1: Update client to use database ID (NOT RECOMMENDED)**
+- Client would need to know its database ID
+- Violates the design principle that device only knows its UUID from SD card
+
+**Option 2: Update API to accept device_uuid in URL (RECOMMENDED)**
+- Change endpoint from `/api/devices/{device_id}/content` to use `device_uuid`
+- Look up device by `device_uuid` instead of `id`
+- Verify API key still matches the found device
+- Consistent with registration-status endpoint
+
+**Option 3: Add separate endpoint (MIDDLE GROUND)**
+- Keep existing endpoint for backward compatibility
+- Add `/api/devices/by-uuid/{device_uuid}/content` endpoint
+- Update client to use new endpoint
+
+**RECOMMENDED:** Option 2 - Make all device endpoints use `device_uuid` for consistency.
 
 ---
 
-## 🚀 Next Session: End-to-End Device Testing
+## 🔧 Next Session Action Plan
 
-### Priority 1: Test Full Device Registration Flow
+### Priority 1: Fix Content Endpoint Authentication
 
-**Setup:**
+**File:** `streamscene/api/routes/devices.py`
+
+**Changes needed:**
+1. Update `get_device_content()` endpoint (line 136)
+   - Look up device by `device_uuid` instead of `id`
+   - Keep API key verification working
+
+2. Update `send_heartbeat()` endpoint (line 159)
+   - Same change for consistency
+
+3. Update `get_device_config()` endpoint (line 42)
+   - Same change for consistency
+
+**Test:**
 ```bash
-# SSH to device
-ssh badgy@192.168.1.40  # Password: JjKUa9XJ8*FFUZHYB.AP
+# On Pi
 cd ~/streamscene-client
+export STREAMSCENE_API_URL="https://streamscene.dataandstories.com"
+export STREAMSCENE_DISPLAY_MODE="eink"
+sudo -E venv/bin/python3 main.py
 
-# Reset device to clean state
-sudo rm -f device_state.json device_api_key.txt
-
-# Set environment variables
-export STREAMSCENE_API_URL='https://streamscene.dataandstories.com'
-export STREAMSCENE_DISPLAY_MODE='eink'
-
-# Run client
-sudo -E python3 main.py 2>&1 | tee device-test.log
+# Watch for:
+# - API key retrieved successfully
+# - Content fetched from server (should work after fix)
+# - First post rendered on E Ink display
+# - Display shows "Hello from StreamScene!"
 ```
 
-**Expected Flow:**
-1. Device starts in `WIFI_SETUP` state (or `CONNECTING` if WiFi credentials exist)
-2. Device connects to WiFi → transitions to `AWAITING_REGISTRATION`
-3. Device displays QR code on E Ink display
-4. Device polls `/api/devices/{device_uuid}/registration-status` every 10s
-5. User scans QR code → registers device via web UI
-6. Device detects registration on next poll
-7. Device receives API key and saves to file
-8. Device transitions to `REGISTERED` then `READY`
-9. Device fetches content and displays on E Ink
-10. Device sends heartbeat every 5 minutes
+### Priority 2: Verify Full Display Flow
 
-### Priority 2: Create Test Content
+Once content endpoint works:
+1. Watch physical E Ink display show first post
+2. Verify content rotation (should cycle through 5 posts)
+3. Test heartbeat (device should send every 5 minutes)
+4. Verify state persistence (stop/restart should resume)
 
-**Create a test stream and post:**
-```bash
-# Via web UI at https://streamscene.dataandstories.com/streams
-# Or programmatically:
-python3 -c "
-from streamscene.core.database import get_db_session
-from streamscene.core import streams as stream_ops
-from uuid import UUID
+### Priority 3: Clean Up and Document
 
-user_id = UUID('314daf51-9126-4fde-990f-0337711ac71f')  # Badgy
-
-with get_db_session() as db:
-    # Create test stream
-    stream = stream_ops.create_stream(
-        db,
-        owner_id=user_id,
-        name='Test Stream',
-        description='Testing device display',
-        theme_name='classic'
-    )
-
-    # Create test post
-    post = stream_ops.create_post(
-        db,
-        stream_id=stream.id,
-        author_id=user_id,
-        text_content='Hello from StreamScene! This is a test message.',
-        content_type='text'
-    )
-
-    print(f'Stream ID: {stream.id}')
-"
-```
-
-### Priority 3: Assign Stream to Device
-
-**Via web UI:**
-1. Go to https://streamscene.dataandstories.com/devices
-2. Select device "Test StreamScene Frame"
-3. Assign "Test Stream" to device
-4. Device should fetch and display content on next poll
-
-**Or programmatically:**
-```bash
-python3 -c "
-from streamscene.core.database import get_db_session
-from streamscene.core import streams as stream_ops
-from uuid import UUID
-
-device_id = UUID('2c0d4fe8-2426-4228-b2a9-8f89762cc338')
-stream_id = UUID('<stream-id-from-above>')
-
-with get_db_session() as db:
-    stream_ops.update_device_stream(db, device_id, stream_id)
-    print('Stream assigned to device')
-"
-```
+1. Update CLAUDE.md with ethernet-first architecture
+2. Add E Ink setup documentation
+3. Test SD card image build with new changes
+4. Update TROUBLESHOOTING.md with today's lessons
 
 ---
 
 ## 📋 Testing Checklist
 
-### Registration Flow ✅
-- [x] Registration-status endpoint returns correct response for unregistered device
-- [x] Device can be registered via web UI
-- [x] Registration-status endpoint returns API key on first poll
-- [x] API key is cleared after first retrieval (one-time only)
-- [x] Second poll returns `is_registered=true, api_key=null`
+### Networking ✅
+- [x] Ethernet detection at startup
+- [x] Skip WiFi setup when ethernet available
+- [x] WiFi fallback when ethernet unavailable
+- [x] Internet connectivity test
+- [x] State persistence
 
-### Device Client Testing 🔄 NEXT
-- [ ] Device polls registration-status endpoint correctly
-- [ ] Device receives and saves API key
-- [ ] Device transitions from `AWAITING_REGISTRATION` to `REGISTERED`
-- [ ] Device transitions from `REGISTERED` to `READY`
-- [ ] Device persists state across reboots
+### Registration ✅
+- [x] Registration-status endpoint works with device_uuid
+- [x] One-time API key retrieval
+- [x] API key saved to file
+- [x] Device transitions to REGISTERED then READY
 
-### Content Display ⏸️ PENDING
-- [ ] Device fetches content from API
-- [ ] Content renders correctly on E Ink
-- [ ] Display updates show on physical screen
-- [ ] Heartbeat sent every 5 minutes
-- [ ] Content polling every 60 seconds
+### E Ink Display ✅
+- [x] SPI enabled on Pi
+- [x] Waveshare library installed
+- [x] Display initializes successfully
+- [x] Display renders content (confirmed: registration success message)
+- [x] ~30 second refresh time observed
+
+### Content Display 🔄 BLOCKED
+- [x] Device reaches READY state
+- [x] API key available
+- [ ] **BLOCKED:** Content fetch returns 403 Forbidden
+- [ ] Content renders on display
+- [ ] Content rotation works
+- [ ] Heartbeat sent
 
 ### Error Recovery ⏸️ NOT TESTED
 - [ ] WiFi errors → back to wifi_setup
-- [ ] Registration timeout → error state with retry
-- [ ] Server errors → stay in ready, show error
-- [ ] Generic errors → attempt to continue
-
----
-
-## 🔧 Known Issues & Solutions
-
-### Issue 1: Registration Endpoint UUID Mismatch ✅ SOLVED
-**Problem:** Endpoint expected database `id`, device only knows `device_uuid`.
-
-**Solution:** Changed endpoint to query by `Device.device_uuid` instead of `Device.id`.
-
-### Issue 2: JSONB Column Not Updating ✅ SOLVED
-**Problem:** `device.config.pop()` didn't trigger SQLAlchemy change tracking.
-
-**Solution:** Added `flag_modified(device, "config")` after modifying JSON column.
-
-### Issue 3: Device Has No Database ID Initially ✅ EXPLAINED
-**Context:** This is by design - device doesn't need database `id` until after registration.
-
-**Flow:**
-1. Device boots with pre-configured `device_uuid` from SD card
-2. Device polls endpoint with `device_uuid`
-3. Server creates/updates device record (generates database `id`)
-4. Device receives API key and uses it for future authenticated requests
-
----
-
-## 🎯 Success Criteria for Phase 6
-
-Phase 6 (E Ink Display Integration) will be complete when:
-- [x] Registration-status endpoint works correctly
-- [x] One-time API key retrieval implemented
-- [ ] Device can detect registration via polling
-- [ ] API key saved locally after registration
-- [ ] Device transitions to READY state after registration
-- [ ] Device fetches and displays content in READY state
-- [ ] State persists across reboots
-- [ ] Full lifecycle tested end-to-end
-
-**Current Progress:** 5/8 complete (62%)
+- [ ] Content fetch errors → show error, retry
+- [ ] Display errors → log and continue
+- [ ] State recovery after restart
 
 ---
 
 ## 🔑 Device Info
 
-- **Device UUID:** `1c91d1e9-3cc9-44ba-a008-9cdee188d90c` (from SD card)
-- **Database ID:** `2c0d4fe8-2426-4228-b2a9-8f89762cc338` (generated on registration)
+- **Device UUID (from SD card):** `1c91d1e9-3cc9-44ba-a008-9cdee188d90c`
+- **Database ID (server-assigned):** `2c0d4fe8-2426-4228-b2a9-8f89762cc338`
 - **Nickname:** "Test StreamScene Frame"
 - **Registered to:** Badgy (michael@dataandstories.com)
-- **SSH:** `ssh badgy@192.168.1.40` (password: `JjKUa9XJ8*FFUZHYB.AP`)
-- **Client code:** `~/streamscene-client/`
-- **Registration URL:** `https://streamscene.dataandstories.com/setup?device_uuid=1c91d1e9-3cc9-44ba-a008-9cdee188d90c`
+- **Assigned Stream:** "Test Stream" (`7b9f9ab1-09f4-4812-b628-44810a3547f6`)
+- **SSH:** `ssh pi@192.168.1.40` (password: `JjKUa9XJ8*FFUZHYB.AP`)
+- **IP Address:** 192.168.1.40 (ethernet)
+- **E Ink Display:** Waveshare 7.3" 4-color (epd7in3g driver)
 
 ---
 
-## 📖 Architecture Reference
+## 🎨 What's Working Right Now
 
-### Device UUID vs Database ID
+**Hardware:**
+- ✅ Raspberry Pi Zero 2 WH
+- ✅ Ethernet connection (192.168.1.40)
+- ✅ SPI interface enabled
+- ✅ E Ink display initialized
+- ✅ Display can render and refresh (~30s)
 
-**Two types of UUIDs in Device model:**
-1. **`device_uuid`** - Pre-configured on SD card, device's "identity"
-   - Source: `/boot/firmware/streamscene-device.txt`
-   - Known by device at boot
-   - Used in QR codes and unauthenticated endpoints
+**Software:**
+- ✅ Ethernet-first networking
+- ✅ Device registration flow
+- ✅ API key retrieval
+- ✅ State machine transitions
+- ✅ Content rendering (PIL → E Ink)
 
-2. **`id`** - Database primary key, auto-generated
-   - Created when device record is inserted
-   - Not known by device until after first server contact
-   - Used in authenticated API endpoints
-
-**Why Two UUIDs?**
-- Device needs stable identity before registration (device_uuid)
-- Server needs internal ID for foreign keys and relationships (id)
-- Separation allows device provisioning without server access
-
-### Registration Flow
-
-```
-Device                          Server                           User
-  |                               |                                |
-  | 1. Boot with device_uuid      |                                |
-  |---------------------------->  |                                |
-  |                               |                                |
-  | 2. Poll: GET /registration-status?device_uuid=...             |
-  |---------------------------->  |                                |
-  |     <- {is_registered: false} |                                |
-  |                               |                                |
-  | 3. Display QR code            |                                |
-  |                               |                                |
-  |                               |     4. Scan QR, visit /setup   |
-  |                               |  <-----------------------------|
-  |                               |                                |
-  |                               | 5. POST /register              |
-  |                               |  <-----------------------------|
-  |                               |     {device_uuid, nickname}    |
-  |                               |                                |
-  |                               | 6. Create device record        |
-  |                               |    Store pending_api_key       |
-  |                               |                                |
-  | 7. Poll: GET /registration-status                             |
-  |---------------------------->  |                                |
-  |     <- {is_registered: true,  |                                |
-  |         api_key: "...",       |                                |
-  |         nickname: "..."}      |                                |
-  |                               |                                |
-  | 8. Save API key to file       |                                |
-  |    Transition to REGISTERED   |                                |
-  |                               |                                |
-```
+**Blocked:**
+- ❌ Content fetch (403 Forbidden - UUID mismatch)
 
 ---
 
-## 🚀 Quick Commands
+## 🚀 Quick Commands for Next Session
 
 ```bash
-# Restart Reflex server
-sudo systemctl restart reflex
-
-# View Reflex logs
-sudo journalctl -u reflex -f
-
-# Test registration endpoint
-curl https://streamscene.dataandstories.com/api/devices/1c91d1e9-3cc9-44ba-a008-9cdee188d90c/registration-status
-
-# Check device in database
+# Server: Check device info
 python3 -c "
 from streamscene.core.database import get_db_session
 from streamscene.core.models import Device
@@ -337,12 +292,64 @@ with get_db_session() as db:
     device = db.query(Device).filter(
         Device.device_uuid == UUID('1c91d1e9-3cc9-44ba-a008-9cdee188d90c')
     ).first()
-    print(f'Device: {device.nickname}')
-    print(f'Registered: {device.user_id is not None}')
-    print(f'Has pending key: {\"pending_api_key\" in device.config}')
+    print(f'Database ID: {device.id}')
+    print(f'Device UUID: {device.device_uuid}')
+    print(f'Stream: {device.current_stream_id}')
 "
+
+# Server: Fix and restart
+sudo systemctl restart reflex
+
+# Pi: Stop any running clients
+ssh pi@192.168.1.40 'sudo pkill -9 python3'
+
+# Pi: Run client (after endpoint fix)
+ssh pi@192.168.1.40 'cd ~/streamscene-client && \
+  export STREAMSCENE_API_URL="https://streamscene.dataandstories.com" && \
+  export STREAMSCENE_DISPLAY_MODE="eink" && \
+  sudo -E venv/bin/python3 main.py'
 ```
 
 ---
 
-**Next Action:** Test end-to-end device registration flow with actual Raspberry Pi hardware. The server-side implementation is complete and working!
+## 📖 Key Learnings
+
+### InkyPi-Style Installation Works Great
+- Downloading specific driver files >> cloning entire repo
+- System packages (apt) >> pip compilation for GPIO libraries
+- `--system-site-packages` venv gives best of both worlds
+
+### Ethernet-First is Essential
+- Many users will have wired connections
+- WiFi setup is slow and error-prone
+- Ethernet detection should be default, not opt-in
+
+### UUID Architecture Matters
+- Devices only know `device_uuid` from SD card
+- All unauthenticated endpoints must use `device_uuid`
+- Database `id` is internal, devices shouldn't need it
+
+### E Ink Refresh is Slow
+- ~30 seconds for full display update
+- UI must account for this (show "updating..." messages)
+- Content rotation minimum 60 seconds makes sense
+
+---
+
+## 🎯 Session Goals Met
+
+**Today's Goals:**
+1. ✅ Fix registration endpoint bug
+2. ✅ Implement ethernet-first networking
+3. ✅ Install E Ink dependencies
+4. ✅ Initialize E Ink display hardware
+5. ✅ Create test content
+6. 🔄 Display content on E Ink (blocked by 403 error)
+
+**Progress:** 5/6 complete (83%)
+
+---
+
+**Next Action:** Fix `/api/devices/{device_id}/content` endpoint to accept `device_uuid` instead of database `id`. Then run full end-to-end test to see content display on physical E Ink screen!
+
+The hardware works! Just one endpoint authentication fix away from seeing your test posts on the E Ink display. 🎨✨

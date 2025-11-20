@@ -28,14 +28,14 @@ async def verify_device_api_key(
     db: Session = Depends(get_db),
 ) -> str:
     """
-    Verify device API key and return device ID.
+    Verify device API key and return device UUID.
 
     Args:
         x_device_api_key: API key from X-Device-Api-Key header
         db: Database session
 
     Returns:
-        str: Device ID if authentication successful
+        str: Device UUID if authentication successful
 
     Raises:
         HTTPException: 401 if API key is invalid
@@ -45,7 +45,7 @@ async def verify_device_api_key(
 
     for device in devices:
         if verify_api_key(x_device_api_key, device.api_key_hash):
-            return str(device.id)
+            return str(device.device_uuid)
 
     raise HTTPException(
         status_code=401,

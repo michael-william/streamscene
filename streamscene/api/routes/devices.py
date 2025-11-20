@@ -150,8 +150,8 @@ async def get_device_content(
     Requires device API key authentication via X-Device-Api-Key header.
 
     Args:
-        device_id: Device UUID
-        verified_device_id: Device ID from API key verification
+        device_id: Device UUID (device_uuid, not database id)
+        verified_device_id: Device UUID from API key verification
         db: Database session
 
     Returns:
@@ -161,14 +161,23 @@ async def get_device_content(
         HTTPException: 403 if device_id doesn't match authenticated device
         HTTPException: 404 if device not found
     """
+    # Look up device by device_uuid (from SD card), not database id
+    device = db.query(stream_ops.Device).filter(
+        stream_ops.Device.device_uuid == device_id
+    ).first()
+
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+
     # Verify the device owns this ID
-    if str(device_id) != verified_device_id:
+    if str(device.device_uuid) != verified_device_id:
         raise HTTPException(
             status_code=403,
             detail="Device ID mismatch - you can only access your own content",
         )
 
-    content = stream_ops.get_device_content(db, device_id)
+    # Get content using database id
+    content = stream_ops.get_device_content(db, device.id)
     if content is None:
         raise HTTPException(status_code=404, detail="Device not found")
 
@@ -187,8 +196,8 @@ async def device_heartbeat(
     Devices should call this endpoint periodically to indicate they are online.
 
     Args:
-        device_id: Device UUID
-        verified_device_id: Device ID from API key verification
+        device_id: Device UUID (device_uuid, not database id)
+        verified_device_id: Device UUID from API key verification
         db: Database session
 
     Returns:
@@ -198,10 +207,20 @@ async def device_heartbeat(
         HTTPException: 403 if device_id doesn't match authenticated device
         HTTPException: 404 if device not found
     """
-    if str(device_id) != verified_device_id:
+    # Look up device by device_uuid (from SD card), not database id
+    device = db.query(stream_ops.Device).filter(
+        stream_ops.Device.device_uuid == device_id
+    ).first()
+
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    # Verify the device owns this ID
+    if str(device.device_uuid) != verified_device_id:
         raise HTTPException(status_code=403, detail="Device ID mismatch")
 
-    success = stream_ops.update_device_heartbeat(db, device_id)
+    # Update heartbeat using database id
+    success = stream_ops.update_device_heartbeat(db, device.id)
     if not success:
         raise HTTPException(status_code=404, detail="Device not found")
 
@@ -223,8 +242,8 @@ async def get_device_config(
     Get device configuration settings.
 
     Args:
-        device_id: Device UUID
-        verified_device_id: Device ID from API key verification
+        device_id: Device UUID (device_uuid, not database id)
+        verified_device_id: Device UUID from API key verification
         db: Database session
 
     Returns:
@@ -234,12 +253,17 @@ async def get_device_config(
         HTTPException: 403 if device_id doesn't match authenticated device
         HTTPException: 404 if device not found
     """
-    if str(device_id) != verified_device_id:
-        raise HTTPException(status_code=403, detail="Device ID mismatch")
+    # Look up device by device_uuid (from SD card), not database id
+    device = db.query(stream_ops.Device).filter(
+        stream_ops.Device.device_uuid == device_id
+    ).first()
 
-    device = stream_ops.get_device_by_id(db, device_id)
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
+
+    # Verify the device owns this ID
+    if str(device.device_uuid) != verified_device_id:
+        raise HTTPException(status_code=403, detail="Device ID mismatch")
 
     return DeviceConfigResponse(
         device_id=device.id,
@@ -262,8 +286,8 @@ async def check_for_updates(
     Check if there are available updates for the device.
 
     Args:
-        device_id: Device UUID
-        verified_device_id: Device ID from API key verification
+        device_id: Device UUID (device_uuid, not database id)
+        verified_device_id: Device UUID from API key verification
         db: Database session
 
     Returns:
@@ -273,10 +297,20 @@ async def check_for_updates(
         HTTPException: 403 if device_id doesn't match authenticated device
         HTTPException: 404 if device not found
     """
-    if str(device_id) != verified_device_id:
+    # Look up device by device_uuid (from SD card), not database id
+    device = db.query(stream_ops.Device).filter(
+        stream_ops.Device.device_uuid == device_id
+    ).first()
+
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    # Verify the device owns this ID
+    if str(device.device_uuid) != verified_device_id:
         raise HTTPException(status_code=403, detail="Device ID mismatch")
 
-    update_info = ota_ops.check_for_updates(db, device_id)
+    # Check for updates using database id
+    update_info = ota_ops.check_for_updates(db, device.id)
     if update_info is None:
         raise HTTPException(status_code=404, detail="Device not found")
 
@@ -284,7 +318,7 @@ async def check_for_updates(
     if update_info.get("update_available") and "update_id" in update_info:
         ota_ops.create_update_deployment(
             db,
-            device_id=device_id,
+            device_id=device.id,
             update_id=update_info["update_id"],
         )
         db.commit()
@@ -303,10 +337,10 @@ async def download_update(
     Download an update package.
 
     Args:
-        device_id: Device UUID
+        device_id: Device UUID (device_uuid, not database id)
         version: Version to download
-        verified_device_id: Device ID from API key verification
-        db: Database session
+        verified_device_id: Device UUID from API key verification
+        db: Session session
 
     Returns:
         FileResponse: Update package file
@@ -315,7 +349,16 @@ async def download_update(
         HTTPException: 403 if device_id doesn't match authenticated device
         HTTPException: 404 if update not found
     """
-    if str(device_id) != verified_device_id:
+    # Look up device by device_uuid (from SD card), not database id
+    device = db.query(stream_ops.Device).filter(
+        stream_ops.Device.device_uuid == device_id
+    ).first()
+
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    # Verify the device owns this ID
+    if str(device.device_uuid) != verified_device_id:
         raise HTTPException(status_code=403, detail="Device ID mismatch")
 
     # Get update by version
@@ -351,9 +394,9 @@ async def report_update_status(
     Devices should call this endpoint to report progress during update installation.
 
     Args:
-        device_id: Device UUID
+        device_id: Device UUID (device_uuid, not database id)
         request: Update status report
-        verified_device_id: Device ID from API key verification
+        verified_device_id: Device UUID from API key verification
         db: Database session
 
     Returns:
@@ -362,13 +405,22 @@ async def report_update_status(
     Raises:
         HTTPException: 403 if device_id doesn't match authenticated device
     """
-    if str(device_id) != verified_device_id:
+    # Look up device by device_uuid (from SD card), not database id
+    device = db.query(stream_ops.Device).filter(
+        stream_ops.Device.device_uuid == device_id
+    ).first()
+
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    # Verify the device owns this ID
+    if str(device.device_uuid) != verified_device_id:
         raise HTTPException(status_code=403, detail="Device ID mismatch")
 
-    # Update deployment status
+    # Update deployment status using database id
     deployment = ota_ops.update_deployment_status(
         db,
-        device_id=device_id,
+        device_id=device.id,
         update_id=request.update_id,
         status=request.status,
         download_progress=request.download_progress,
