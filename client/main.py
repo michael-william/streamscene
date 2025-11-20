@@ -139,7 +139,7 @@ class StreamSceneClient:
                 # Transition directly to registration
                 if self.state_machine.transition_to(
                     DeviceState.AWAITING_REGISTRATION,
-                    data={
+                    state_data={
                         "connection_type": "ethernet",
                         "ip_address": ethernet_ip
                     }
@@ -238,7 +238,7 @@ class StreamSceneClient:
                 wifi_logger.info("Ethernet has internet connectivity")
                 wifi_logger.info("Skipping WiFi setup, using ethernet connection")
                 state_logger.info("Transitioning to AWAITING_REGISTRATION via ethernet")
-                self.state_machine.transition_to(DeviceState.AWAITING_REGISTRATION, {
+                self.state_machine.transition_to(DeviceState.AWAITING_REGISTRATION, state_data={
                     "connection_type": "ethernet",
                     "ip_address": ethernet_ip
                 })
