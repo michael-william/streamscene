@@ -55,3 +55,7 @@ pi ALL=(ALL) NOPASSWD: /usr/bin/mkdir -p /etc/dnsmasq.d
 
 # Allow pi user to check system logs for troubleshooting
 pi ALL=(ALL) NOPASSWD: /usr/bin/journalctl *
+
+# Allow pi user to manage iptables for captive portal redirect
+pi ALL=(ALL) NOPASSWD: /usr/sbin/iptables *
+pi ALL=(ALL) NOPASSWD: /sbin/iptables *
