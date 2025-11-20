@@ -309,12 +309,31 @@ def create_hotspot(ssid: str, password: str = "streamscene") -> bool:
             return False
         hotspot_logger.info("dnsmasq is running and active")
 
+        # Step 8: Configure iptables to redirect port 80 → 8080 for captive portal
+        hotspot_logger.info("Step 8: Configuring iptables redirect for captive portal")
+        hotspot_logger.info("Redirecting port 80 → 8080 for automatic captive portal detection")
+
+        try:
+            # Redirect incoming TCP port 80 to 8080
+            result = subprocess.run(
+                ["sudo", "iptables", "-t", "nat", "-A", "PREROUTING", "-i", "wlan0",
+                 "-p", "tcp", "--dport", "80", "-j", "REDIRECT", "--to-port", "8080"],
+                check=True,
+                capture_output=True,
+                timeout=5
+            )
+            log_subprocess_output(hotspot_logger, result, "iptables port 80→8080 redirect")
+            hotspot_logger.info("Captive portal auto-redirect configured successfully")
+        except subprocess.CalledProcessError as e:
+            hotspot_logger.warning(f"iptables redirect failed (portal still accessible on :8080): {e}")
+            # Non-fatal error - portal still works on port 8080
+
         hotspot_logger.info("=" * 60)
         hotspot_logger.info(f"Hotspot created successfully!")
         hotspot_logger.info(f"SSID: {ssid}")
         hotspot_logger.info(f"Password: {password}")
         hotspot_logger.info(f"IP Address: 192.168.4.1")
-        hotspot_logger.info(f"Portal URL: http://192.168.4.1")
+        hotspot_logger.info(f"Portal URL: http://192.168.4.1 (auto-redirects)")
         hotspot_logger.info("=" * 60)
         return True
 
@@ -367,6 +386,16 @@ def stop_hotspot() -> bool:
             timeout=10
         )
         log_subprocess_output(hotspot_logger, result, "systemctl stop dnsmasq")
+
+        # Clean up iptables redirect rule
+        hotspot_logger.info("Removing iptables port redirect rule")
+        result = subprocess.run(
+            ["sudo", "iptables", "-t", "nat", "-F", "PREROUTING"],
+            check=False,
+            capture_output=True,
+            timeout=5
+        )
+        log_subprocess_output(hotspot_logger, result, "iptables flush PREROUTING chain")
 
         # Step 2: Bring down wlan0
         hotspot_logger.info("Step 2: Bringing down wlan0 interface")
