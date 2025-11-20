@@ -237,6 +237,16 @@ MAX_RETRIES = int(os.getenv("STREAMSCENE_MAX_RETRIES", "3"))
 # Retry backoff multiplier
 RETRY_BACKOFF = float(os.getenv("STREAMSCENE_RETRY_BACKOFF", "2.0"))
 
+# Ethernet configuration
+# Enable ethernet connectivity detection (default: True)
+ETHERNET_ENABLED = os.getenv("STREAMSCENE_ETHERNET_ENABLED", "true").lower() == "true"
+
+# Prefer ethernet over WiFi when both are available (default: True)
+PREFER_ETHERNET = os.getenv("STREAMSCENE_PREFER_ETHERNET", "true").lower() == "true"
+
+# Ethernet connectivity check timeout in seconds (default: 10)
+ETHERNET_CHECK_TIMEOUT = int(os.getenv("STREAMSCENE_ETHERNET_TIMEOUT", "10"))
+
 # ============================================================================
 # Validation
 # ============================================================================
@@ -266,6 +276,12 @@ def validate_config(require_api_key: bool = False):
 
     if DISPLAY_MODE not in ["headless", "eink"]:
         errors.append(f"DISPLAY_MODE must be 'headless' or 'eink' (got {DISPLAY_MODE})")
+
+    if not ETHERNET_ENABLED:
+        warnings.append("Ethernet detection is disabled - device will only use WiFi")
+
+    if ETHERNET_CHECK_TIMEOUT < 5:
+        warnings.append(f"ETHERNET_CHECK_TIMEOUT is very low ({ETHERNET_CHECK_TIMEOUT}s) - may cause false negatives")
 
     if warnings:
         logger.warning("Configuration warnings:\n" + "\n".join(f"  - {w}" for w in warnings))

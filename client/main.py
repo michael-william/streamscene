@@ -105,6 +105,62 @@ class StreamSceneClient:
 
         main_logger.info("Initialization complete")
 
+        # Check initial network status and skip WiFi setup if ethernet is available
+        self._check_initial_network_status()
+
+    def _check_initial_network_status(self):
+        """
+        Check network status at startup and skip WiFi setup if ethernet is available.
+
+        This method runs after state machine initialization to detect if ethernet
+        is already connected. If ethernet has internet access, the device skips
+        WiFi setup entirely and moves directly to registration.
+        """
+        current_state = self.state_machine.current_state
+
+        # Only check network if currently in WIFI_SETUP or CONNECTING state
+        if current_state not in [DeviceState.WIFI_SETUP, DeviceState.CONNECTING]:
+            main_logger.debug("[Network] Skipping initial network check (not in setup state)")
+            return
+
+        main_logger.info("[Network] Checking initial network status...")
+
+        # Check if ethernet is available and has internet
+        ethernet_available, ethernet_ip = self.network_manager.get_ethernet_status()
+
+        if ethernet_available and ethernet_ip:
+            main_logger.info(f"[Network] Ethernet detected with IP: {ethernet_ip}")
+
+            # Test internet connectivity
+            if self.network_manager.test_ethernet_connectivity(timeout=10):
+                main_logger.info("[Network] Ethernet has internet connectivity")
+                main_logger.info("[Network] Skipping WiFi setup, transitioning to AWAITING_REGISTRATION")
+
+                # Transition directly to registration
+                if self.state_machine.transition_to(
+                    DeviceState.AWAITING_REGISTRATION,
+                    data={
+                        "connection_type": "ethernet",
+                        "ip_address": ethernet_ip
+                    }
+                ):
+                    main_logger.info("[Network] Successfully transitioned to AWAITING_REGISTRATION via ethernet")
+                else:
+                    main_logger.warning("[Network] Failed to transition state, will continue normally")
+            else:
+                main_logger.warning("[Network] Ethernet available but no internet connectivity")
+                main_logger.info("[Network] Will attempt WiFi setup")
+        else:
+            main_logger.info("[Network] No ethernet connection detected")
+
+            # Check for saved WiFi credentials as fallback
+            if self.setup_manager.has_saved_credentials():
+                ssid = self.setup_manager.get_saved_ssid()
+                main_logger.info(f"[Network] Found saved WiFi credentials for: {ssid}")
+                main_logger.info("[Network] Will attempt WiFi connection")
+            else:
+                main_logger.info("[Network] No saved WiFi credentials, will start hotspot for setup")
+
     def run(self):
         """Run the state-driven main loop."""
         # Set up signal handlers for graceful shutdown
@@ -167,38 +223,31 @@ class StreamSceneClient:
     def _handle_wifi_setup(self):
         """Handle WIFI_SETUP state - create hotspot and run captive portal."""
         from logging_config import wifi_logger
-        import subprocess
 
         wifi_logger.info("Starting WiFi credential capture")
         state_logger.info("Entering WIFI_SETUP state")
 
-        # DEV MODE: Check if ethernet is connected (only if explicitly enabled)
-        if os.getenv('STREAMSCENE_ALLOW_ETHERNET') == 'true':
-            wifi_logger.info("[DEV MODE] Ethernet detection enabled")
-            try:
-                result = subprocess.run(
-                    ['ip', 'addr', 'show', 'eth0'],
-                    capture_output=True,
-                    text=True,
-                    timeout=5
-                )
-                # Check if eth0 exists and has an inet address
-                if result.returncode == 0 and 'inet ' in result.stdout:
-                    for line in result.stdout.split('\n'):
-                        if 'inet ' in line and '127.0.0.1' not in line:
-                            eth_ip = line.strip().split()[1].split('/')[0]
-                            wifi_logger.info(f"[DEV MODE] Ethernet connected with IP: {eth_ip}")
-                            wifi_logger.info("[DEV MODE] Skipping WiFi setup, using ethernet connection")
-                            state_logger.info("Transitioning to AWAITING_REGISTRATION via ethernet")
-                            self.state_machine.transition_to(DeviceState.AWAITING_REGISTRATION, {
-                                "connection_type": "ethernet",
-                                "ip_address": eth_ip
-                            })
-                            return
-            except Exception as e:
-                wifi_logger.warning(f"[DEV MODE] Ethernet check failed: {e}")
+        # ALWAYS check if ethernet is connected (ethernet-first strategy)
+        ethernet_available, ethernet_ip = self.network_manager.get_ethernet_status()
 
-        # First check if we already have saved credentials
+        if ethernet_available and ethernet_ip:
+            wifi_logger.info(f"Ethernet detected with IP: {ethernet_ip}")
+
+            # Test internet connectivity before skipping WiFi setup
+            if self.network_manager.test_ethernet_connectivity(timeout=10):
+                wifi_logger.info("Ethernet has internet connectivity")
+                wifi_logger.info("Skipping WiFi setup, using ethernet connection")
+                state_logger.info("Transitioning to AWAITING_REGISTRATION via ethernet")
+                self.state_machine.transition_to(DeviceState.AWAITING_REGISTRATION, {
+                    "connection_type": "ethernet",
+                    "ip_address": ethernet_ip
+                })
+                return
+            else:
+                wifi_logger.warning("Ethernet available but no internet connectivity")
+                wifi_logger.info("Falling back to WiFi setup")
+
+        # Check if we already have saved WiFi credentials
         saved_credentials = self.setup_manager.check_saved_credentials()
 
         if saved_credentials:

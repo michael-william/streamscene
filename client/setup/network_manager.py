@@ -1,11 +1,12 @@
 """
 Network Manager
 
-Manages WiFi network mode switching between Access Point (hotspot) and Client modes.
-Coordinates with existing hotspot.py and wifi_client.py modules.
+Manages network connectivity across Ethernet, WiFi Client, and WiFi Access Point modes.
+Prefers Ethernet when available, falls back to WiFi, and provides AP mode for setup.
 """
 
 import logging
+import subprocess
 import time
 from typing import Optional, Tuple
 
@@ -27,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 class NetworkMode:
     """Network mode constants."""
+    ETHERNET = "ethernet"
     AP = "access_point"
     CLIENT = "client"
     UNKNOWN = "unknown"
@@ -60,10 +62,16 @@ class NetworkManager:
         Detect current network mode.
 
         Returns:
+            NetworkMode.ETHERNET if ethernet is connected
             NetworkMode.AP if hotspot is active
             NetworkMode.CLIENT if connected to WiFi
-            NetworkMode.UNKNOWN if neither
+            NetworkMode.UNKNOWN if none of the above
         """
+        # Check ethernet first (preferred)
+        if self.is_ethernet_available():
+            logger.debug("[NetworkManager] Current mode: Ethernet")
+            return NetworkMode.ETHERNET
+
         if is_hotspot_active():
             logger.debug("[NetworkManager] Current mode: Access Point")
             return NetworkMode.AP
@@ -74,6 +82,101 @@ class NetworkManager:
 
         logger.debug("[NetworkManager] Current mode: Unknown")
         return NetworkMode.UNKNOWN
+
+    def is_ethernet_available(self) -> bool:
+        """
+        Check if ethernet interface is available and has an IP address.
+
+        Returns:
+            True if eth0 exists and has a non-localhost IP address
+        """
+        try:
+            result = subprocess.run(
+                ["ip", "-4", "addr", "show", "eth0"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+
+            if result.returncode != 0:
+                return False
+
+            # Check for inet address (but not 127.x.x.x)
+            for line in result.stdout.split('\n'):
+                if 'inet ' in line and '127.' not in line:
+                    return True
+
+            return False
+
+        except (subprocess.TimeoutExpired, subprocess.SubprocessError, FileNotFoundError) as e:
+            logger.debug(f"[NetworkManager] Ethernet check failed: {e}")
+            return False
+
+    def get_ethernet_ip(self) -> Optional[str]:
+        """
+        Get ethernet interface IP address.
+
+        Returns:
+            IP address string or None if not available
+        """
+        try:
+            result = subprocess.run(
+                ["ip", "-4", "addr", "show", "eth0"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+
+            if result.returncode != 0:
+                return None
+
+            # Parse IP address from output
+            for line in result.stdout.split('\n'):
+                if 'inet ' in line and '127.' not in line:
+                    # Line format: "    inet 192.168.1.40/24 brd ..."
+                    parts = line.strip().split()
+                    if len(parts) >= 2:
+                        # Remove /24 suffix
+                        ip_addr = parts[1].split('/')[0]
+                        return ip_addr
+
+            return None
+
+        except (subprocess.TimeoutExpired, subprocess.SubprocessError, FileNotFoundError) as e:
+            logger.debug(f"[NetworkManager] Failed to get ethernet IP: {e}")
+            return None
+
+    def test_ethernet_connectivity(self, timeout: int = 10) -> bool:
+        """
+        Test if ethernet has internet connectivity.
+
+        Uses the same method as WiFi connectivity test (ping 8.8.8.8).
+
+        Args:
+            timeout: Timeout in seconds (default: 10)
+
+        Returns:
+            True if internet is reachable
+        """
+        if not self.is_ethernet_available():
+            return False
+
+        # Use the same internet connectivity test as WiFi
+        # This tests by pinging 8.8.8.8
+        return test_internet_connectivity(timeout=timeout)
+
+    def get_ethernet_status(self) -> Tuple[bool, Optional[str]]:
+        """
+        Get comprehensive ethernet status.
+
+        Returns:
+            Tuple of (connected: bool, ip_address: Optional[str])
+        """
+        if not self.is_ethernet_available():
+            return False, None
+
+        ip_address = self.get_ethernet_ip()
+        return True, ip_address
 
     def is_in_ap_mode(self) -> bool:
         """Check if currently in Access Point mode."""
