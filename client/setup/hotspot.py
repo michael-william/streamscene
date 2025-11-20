@@ -60,6 +60,7 @@ driver=nl80211
 ssid={ssid}
 hw_mode=g
 channel=7
+country_code=US
 wmm_enabled=0
 macaddr_acl=0
 auth_algs=1
@@ -190,13 +191,13 @@ def create_hotspot(ssid: str, password: str = "streamscene") -> bool:
         with open("/tmp/hostapd.conf", "w") as f:
             f.write(hostapd_content)
 
-        hotspot_logger.info(f"Moving hostapd config to {HOSTAPD_CONF}")
+        hotspot_logger.info(f"Copying hostapd config to {HOSTAPD_CONF}")
         result = subprocess.run(
-            ["sudo", "mv", "/tmp/hostapd.conf", HOSTAPD_CONF],
+            ["sudo", "cp", "/tmp/hostapd.conf", HOSTAPD_CONF],
             check=True,
             capture_output=True
         )
-        log_subprocess_output(hotspot_logger, result, f"mv /tmp/hostapd.conf {HOSTAPD_CONF}")
+        log_subprocess_output(hotspot_logger, result, f"cp /tmp/hostapd.conf {HOSTAPD_CONF}")
 
         hotspot_logger.info("Setting hostapd config permissions to 600")
         result = subprocess.run(
@@ -222,13 +223,13 @@ def create_hotspot(ssid: str, password: str = "streamscene") -> bool:
         )
         log_subprocess_output(hotspot_logger, result, "mkdir -p /etc/dnsmasq.d")
 
-        hotspot_logger.info(f"Moving dnsmasq config to {DNSMASQ_CONF}")
+        hotspot_logger.info(f"Copying dnsmasq config to {DNSMASQ_CONF}")
         result = subprocess.run(
-            ["sudo", "mv", "/tmp/dnsmasq_streamscene.conf", DNSMASQ_CONF],
+            ["sudo", "cp", "/tmp/dnsmasq_streamscene.conf", DNSMASQ_CONF],
             check=True,
             capture_output=True
         )
-        log_subprocess_output(hotspot_logger, result, f"mv /tmp/dnsmasq_streamscene.conf {DNSMASQ_CONF}")
+        log_subprocess_output(hotspot_logger, result, f"cp /tmp/dnsmasq_streamscene.conf {DNSMASQ_CONF}")
 
         # Step 6: Start hostapd
         hotspot_logger.info("Step 6: Starting hostapd service")
@@ -278,21 +279,31 @@ def create_hotspot(ssid: str, password: str = "streamscene") -> bool:
             timeout=10
         )
         log_subprocess_output(hotspot_logger, result, "systemctl start dnsmasq")
-        hotspot_logger.info("Waiting 1 second for dnsmasq to stabilize")
-        time.sleep(1)
+        hotspot_logger.info("Waiting 3 seconds for dnsmasq to stabilize")
+        time.sleep(3)
 
-        # Verify dnsmasq is running
+        # Verify dnsmasq is running (with retry logic)
         hotspot_logger.info("Verifying dnsmasq is active")
-        result = subprocess.run(
-            ["sudo", "systemctl", "is-active", "dnsmasq"],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        log_subprocess_output(hotspot_logger, result, "systemctl is-active dnsmasq")
+        dnsmasq_active = False
+        for attempt in range(3):  # Try up to 3 times
+            result = subprocess.run(
+                ["sudo", "systemctl", "is-active", "dnsmasq"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            log_subprocess_output(hotspot_logger, result, f"systemctl is-active dnsmasq (attempt {attempt+1}/3)")
 
-        if result.stdout.strip() != "active":
-            hotspot_logger.error("dnsmasq failed to start - service is not active")
+            if result.stdout.strip() == "active":
+                dnsmasq_active = True
+                break
+
+            if attempt < 2:  # Don't sleep on last attempt
+                hotspot_logger.warning(f"dnsmasq not active yet, retrying in 2 seconds... (attempt {attempt+1}/3)")
+                time.sleep(2)
+
+        if not dnsmasq_active:
+            hotspot_logger.error("dnsmasq failed to start after 3 attempts - service is not active")
             hotspot_logger.error("Check dnsmasq service status: sudo systemctl status dnsmasq")
             hotspot_logger.error("Check dnsmasq logs: sudo journalctl -u dnsmasq -n 50")
             return False

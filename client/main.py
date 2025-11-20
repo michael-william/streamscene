@@ -23,6 +23,7 @@ Environment Variables (optional):
     STREAMSCENE_DISPLAY_MODE - "eink" or "headless" (default: headless)
 """
 
+import os
 import sys
 import time
 import signal
@@ -166,9 +167,36 @@ class StreamSceneClient:
     def _handle_wifi_setup(self):
         """Handle WIFI_SETUP state - create hotspot and run captive portal."""
         from logging_config import wifi_logger
+        import subprocess
 
         wifi_logger.info("Starting WiFi credential capture")
         state_logger.info("Entering WIFI_SETUP state")
+
+        # DEV MODE: Check if ethernet is connected (only if explicitly enabled)
+        if os.getenv('STREAMSCENE_ALLOW_ETHERNET') == 'true':
+            wifi_logger.info("[DEV MODE] Ethernet detection enabled")
+            try:
+                result = subprocess.run(
+                    ['ip', 'addr', 'show', 'eth0'],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                # Check if eth0 exists and has an inet address
+                if result.returncode == 0 and 'inet ' in result.stdout:
+                    for line in result.stdout.split('\n'):
+                        if 'inet ' in line and '127.0.0.1' not in line:
+                            eth_ip = line.strip().split()[1].split('/')[0]
+                            wifi_logger.info(f"[DEV MODE] Ethernet connected with IP: {eth_ip}")
+                            wifi_logger.info("[DEV MODE] Skipping WiFi setup, using ethernet connection")
+                            state_logger.info("Transitioning to AWAITING_REGISTRATION via ethernet")
+                            self.state_machine.transition_to(DeviceState.AWAITING_REGISTRATION, {
+                                "connection_type": "ethernet",
+                                "ip_address": eth_ip
+                            })
+                            return
+            except Exception as e:
+                wifi_logger.warning(f"[DEV MODE] Ethernet check failed: {e}")
 
         # First check if we already have saved credentials
         saved_credentials = self.setup_manager.check_saved_credentials()

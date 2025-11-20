@@ -120,7 +120,7 @@ def main():
     # Add parent directory to path for imports
     sys.path.insert(0, str(Path(__file__).parent.parent))
 
-    from api_client import APIClient
+    from api_client import StreamSceneAPIClient
     import config
 
     # Configure logging

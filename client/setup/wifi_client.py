@@ -7,12 +7,13 @@ import subprocess
 import json
 import time
 from typing import Optional, Dict
+from pathlib import Path
 import logging
 import os
 
 logger = logging.getLogger(__name__)
 
-WIFI_CONFIG_FILE = "/home/badgy/streamscene-client/wifi_credentials.json"
+WIFI_CONFIG_FILE = Path.home() / "streamscene-client" / "wifi_credentials.json"
 WPA_SUPPLICANT_CONF = "/etc/wpa_supplicant/wpa_supplicant.conf"
 
 
@@ -181,18 +182,23 @@ def connect_to_wifi(ssid: str, password: str, timeout: int = 30) -> bool:
         # Wait for wpa_supplicant to initialize
         time.sleep(3)
 
-        # Step 3: Request DHCP lease
-        logger.debug("Requesting DHCP lease...")
+        # Step 3: Request DHCP lease using dhcpcd (Raspberry Pi OS default)
+        logger.debug("Requesting DHCP lease with dhcpcd...")
+
+        # Release any existing lease
         subprocess.run(
-            ["sudo", "dhclient", "-r", "wlan0"],
+            ["sudo", "dhcpcd", "-k", "wlan0"],
             check=False,
             capture_output=True,
-            timeout=10
+            timeout=5
         )
         time.sleep(1)
+
+        # Request new lease (dhcpcd daemon manages this automatically)
+        # Just need to restart dhcpcd or trigger it for wlan0
         subprocess.run(
-            ["sudo", "dhclient", "wlan0"],
-            check=True,
+            ["sudo", "dhcpcd", "-n", "wlan0"],
+            check=False,
             capture_output=True,
             timeout=15
         )
@@ -370,7 +376,7 @@ def disconnect_wifi() -> bool:
 
         # Release DHCP lease
         subprocess.run(
-            ["sudo", "dhclient", "-r", "wlan0"],
+            ["sudo", "dhcpcd", "-k", "wlan0"],
             check=False,
             capture_output=True
         )

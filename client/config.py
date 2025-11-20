@@ -5,6 +5,7 @@ Configuration is loaded from environment variables and boot partition files.
 
 import os
 import logging
+import uuid
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -13,8 +14,9 @@ logger = logging.getLogger(__name__)
 # Device UUID Loading
 # ============================================================================
 
-# Device UUID file location (Raspberry Pi boot partition)
-DEVICE_UUID_FILE = Path("/boot/firmware/streamscene-device.txt")
+# Device UUID file locations
+DEVICE_UUID_FILE = Path("/boot/firmware/streamscene-device.txt")  # Primary (read-only after boot)
+DEVICE_UUID_FALLBACK = Path.home() / "streamscene-client" / ".device-uuid"  # Fallback (writable)
 
 
 def load_device_uuid() -> str:
@@ -22,12 +24,13 @@ def load_device_uuid() -> str:
     Load device UUID from boot partition file.
 
     Falls back to environment variable for development.
+    If UUID doesn't exist, generates a new one and saves it.
 
     Returns:
         Device UUID string
 
     Raises:
-        ValueError: If UUID cannot be loaded from file or environment
+        ValueError: If UUID cannot be loaded or generated
     """
     # Try loading from boot partition file (production)
     if DEVICE_UUID_FILE.exists():
@@ -43,9 +46,9 @@ def load_device_uuid() -> str:
                 for line in content.split('\n'):
                     line = line.strip()
                     if line.startswith('DEVICE_UUID='):
-                        uuid = line.split('=', 1)[1].strip()
+                        device_uuid = line.split('=', 1)[1].strip()
                         logger.info(f"[Config] Loaded device UUID from {DEVICE_UUID_FILE}")
-                        return uuid
+                        return device_uuid
             else:
                 # Plain UUID format
                 logger.info(f"[Config] Loaded device UUID from {DEVICE_UUID_FILE}")
@@ -55,27 +58,59 @@ def load_device_uuid() -> str:
 
         except Exception as e:
             logger.warning(f"[Config] Error reading UUID file: {e}")
-            # Fall through to environment variable
+            # Fall through to environment variable or generation
 
     # Fallback to environment variable (development)
-    uuid = os.getenv("STREAMSCENE_DEVICE_ID", "")
+    env_uuid = os.getenv("STREAMSCENE_DEVICE_ID", "")
 
-    if uuid:
+    if env_uuid:
         logger.info("[Config] Loaded device UUID from environment variable (development mode)")
-        return uuid
+        return env_uuid
 
-    # No UUID found anywhere
-    raise ValueError(
-        "Device UUID not found. Expected file at /boot/firmware/streamscene-device.txt "
-        "or STREAMSCENE_DEVICE_ID environment variable"
-    )
+    # Check fallback location before generating new UUID
+    if DEVICE_UUID_FALLBACK.exists():
+        try:
+            with open(DEVICE_UUID_FALLBACK, 'r') as f:
+                fallback_uuid = f.read().strip()
+            logger.info(f"[Config] Loaded device UUID from fallback location: {DEVICE_UUID_FALLBACK}")
+            return fallback_uuid
+        except Exception as e:
+            logger.warning(f"[Config] Error reading fallback UUID file: {e}")
+
+    # Generate new UUID if none exists (first boot)
+    logger.info("[Config] No UUID found - generating new device UUID")
+    new_uuid = str(uuid.uuid4())
+
+    # Try to save to boot partition file (primary location)
+    try:
+        DEVICE_UUID_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(DEVICE_UUID_FILE, 'w') as f:
+            f.write(new_uuid + '\n')
+        os.chmod(DEVICE_UUID_FILE, 0o644)
+        logger.info(f"[Config] Generated and saved new device UUID to {DEVICE_UUID_FILE}")
+        return new_uuid
+    except Exception as e:
+        logger.warning(f"[Config] Could not write to {DEVICE_UUID_FILE}: {e}")
+
+    # Fall back to user-writable location
+    try:
+        DEVICE_UUID_FALLBACK.parent.mkdir(parents=True, exist_ok=True)
+        with open(DEVICE_UUID_FALLBACK, 'w') as f:
+            f.write(new_uuid + '\n')
+        os.chmod(DEVICE_UUID_FALLBACK, 0o600)
+        logger.info(f"[Config] Saved device UUID to fallback location: {DEVICE_UUID_FALLBACK}")
+        return new_uuid
+    except Exception as e:
+        logger.error(f"[Config] Failed to save UUID to fallback location: {e}")
+        logger.warning("[Config] UUID will not persist across reboots!")
+        return new_uuid
 
 
 # ============================================================================
 # API Configuration
 # ============================================================================
 
-API_BASE_URL = os.getenv("STREAMSCENE_API_URL", "http://localhost:8000")
+API_BASE_URL = os.getenv("STREAMSCENE_API_URL", "https://streamscene.dataandstories.com")
 BASE_URL = API_BASE_URL  # Alias for compatibility
 
 # Load device UUID (with error handling for import-time)

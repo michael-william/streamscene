@@ -2,6 +2,7 @@
 
 # Image processing and E Ink display
 pillow>=10.0.0
+waveshare-epd
 
 # HTTP client for API communication
 requests>=2.31.0

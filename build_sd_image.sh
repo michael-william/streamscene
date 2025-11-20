@@ -163,9 +163,30 @@ configure_system() {
 
     MOUNT_DIR="$WORK_DIR/mount"
 
-    # Enable SSH
+    # Enable SSH (dual mechanism for reliability)
     log_info "Enabling SSH..."
+
+    # Method 1: Create boot trigger file (enables via sshswitch.service)
     sudo touch "$MOUNT_DIR/boot/firmware/ssh"
+
+    # Method 2: Enable via systemd symlink (defense in depth)
+    log_info "Enabling SSH service via systemd symlink..."
+    sudo mkdir -p "$MOUNT_DIR/etc/systemd/system/multi-user.target.wants"
+    sudo ln -sf /lib/systemd/system/ssh.service \
+        "$MOUNT_DIR/etc/systemd/system/multi-user.target.wants/ssh.service"
+
+    # Create sshd.service alias for compatibility
+    sudo ln -sf /lib/systemd/system/ssh.service \
+        "$MOUNT_DIR/etc/systemd/system/sshd.service"
+
+    log_info "SSH enabled via dual mechanisms (boot file + systemd)"
+
+    # Generate unique device UUID
+    log_info "Generating unique device UUID..."
+    DEVICE_UUID=$(python3 -c 'import uuid; print(str(uuid.uuid4()))')
+    echo "$DEVICE_UUID" | sudo tee "$MOUNT_DIR/boot/firmware/streamscene-device.txt" > /dev/null
+    sudo chmod 644 "$MOUNT_DIR/boot/firmware/streamscene-device.txt"
+    log_info "Device UUID: $DEVICE_UUID"
 
     # Set default password for pi user
     log_info "Setting default password (pi:$DEFAULT_PASSWORD)..."
@@ -211,11 +232,26 @@ apt-get install -y -qq \
     python3-pip \
     python3-venv \
     python3-dev \
-    git
+    git \
+    libjpeg-dev \
+    zlib1g-dev \
+    libfreetype6-dev \
+    libtiff-dev \
+    libwebp-dev \
+    liblcms2-dev \
+    libopenjp2-7 \
+    rfkill
 
 echo "Disabling hostapd and dnsmasq auto-start..."
 systemctl disable hostapd
 systemctl disable dnsmasq
+
+echo "Disabling NetworkManager (conflicts with manual network control)..."
+systemctl disable NetworkManager 2>/dev/null || true
+systemctl mask NetworkManager 2>/dev/null || true
+
+echo "Setting Python capabilities for port 80 binding..."
+setcap 'cap_net_bind_service=+ep' /usr/bin/python3.11 || setcap 'cap_net_bind_service=+ep' /usr/bin/python3 || true
 
 echo "Package installation complete"
 EOF
@@ -251,8 +287,21 @@ install_client() {
     log_info "Copying client code..."
     sudo cp -r "$CLIENT_DIR"/* "$CLIENT_INSTALL_DIR/"
 
-    # Create virtual environment placeholder (will be created on first boot)
-    sudo mkdir -p "$CLIENT_INSTALL_DIR/venv"
+    # Create virtual environment and install Python dependencies in chroot
+    log_info "Creating Python virtual environment and installing dependencies..."
+    log_info "This may take 5-10 minutes (compiling Pillow, etc.)..."
+
+    sudo chroot "$MOUNT_DIR" /bin/bash -c "
+        cd /home/pi/streamscene-client
+        python3 -m venv venv
+        source venv/bin/activate
+        pip install --upgrade pip
+        pip install -r requirements.txt
+        deactivate
+    " || {
+        log_warn "Python venv setup failed in chroot - will retry on first boot"
+        sudo mkdir -p "$CLIENT_INSTALL_DIR/venv"
+    }
 
     # Make scripts executable
     sudo chmod +x "$CLIENT_INSTALL_DIR"/*.sh 2>/dev/null || true
@@ -289,38 +338,16 @@ install_systemd_services() {
 
     MOUNT_DIR="$WORK_DIR/mount"
 
-    # Install StreamScene client service (disabled - will be enabled on first boot)
+    # Install StreamScene client service
     log_info "Installing streamscene-client.service..."
     sudo cp "$CLIENT_DIR/streamscene-client.service" "$MOUNT_DIR/etc/systemd/system/"
 
-    # Create first-boot service
-    log_info "Creating first-boot provisioning service..."
-    cat > "$WORK_DIR/streamscene-firstboot.service" << 'EOF'
-[Unit]
-Description=StreamScene First Boot Provisioning
-After=local-fs.target
-Before=streamscene-client.service
-ConditionPathExists=!/var/lib/streamscene-firstboot-complete
+    # Enable StreamScene client service (will start on boot)
+    log_info "Enabling streamscene-client.service..."
+    sudo ln -s /etc/systemd/system/streamscene-client.service \
+        "$MOUNT_DIR/etc/systemd/system/multi-user.target.wants/streamscene-client.service"
 
-[Service]
-Type=oneshot
-ExecStart=/home/pi/streamscene-client/first_boot.sh
-ExecStartPost=/usr/bin/touch /var/lib/streamscene-firstboot-complete
-RemainAfterExit=yes
-StandardOutput=journal+console
-StandardError=journal+console
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-    sudo cp "$WORK_DIR/streamscene-firstboot.service" "$MOUNT_DIR/etc/systemd/system/"
-
-    # Enable first-boot service
-    sudo ln -s /etc/systemd/system/streamscene-firstboot.service \
-        "$MOUNT_DIR/etc/systemd/system/multi-user.target.wants/streamscene-firstboot.service"
-
-    log_info "Systemd services installed"
+    log_info "Systemd services installed and enabled"
 }
 
 finalize_image() {

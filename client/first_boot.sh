@@ -28,39 +28,73 @@ echo "Start time: $(date)"
 echo ""
 
 # Step 1: Generate unique device UUID
-echo "[1/5] Generating unique device UUID..."
+echo "[1/9] Generating unique device UUID..."
 DEVICE_UUID=$(python3 -c 'import uuid; print(str(uuid.uuid4()))')
 echo "Generated UUID: $DEVICE_UUID"
 echo ""
 
-# Step 2: Write device UUID to /boot/firmware/
-echo "[2/5] Writing device UUID to $DEVICE_ID_FILE..."
+# Step 2: Unblock WiFi (remove any rfkill blocks)
+echo "[2/9] Unblocking WiFi..."
+sudo rfkill unblock wifi 2>/dev/null || true
+sudo rfkill unblock all 2>/dev/null || true
+echo "WiFi unblocked"
+echo ""
+
+# Step 3: Write device UUID to /boot/firmware/
+echo "[3/9] Writing device UUID to $DEVICE_ID_FILE..."
 echo "$DEVICE_UUID" | sudo tee "$DEVICE_ID_FILE" > /dev/null
 sudo chmod 644 "$DEVICE_ID_FILE"
 echo "Device ID file created successfully"
 echo ""
 
-# Step 3: Create log directory with correct permissions
-echo "[3/5] Creating log directory: $LOG_DIR..."
+# Step 4: Disable NetworkManager (prevents conflicts with manual network control)
+echo "[4/9] Disabling NetworkManager..."
+sudo systemctl disable NetworkManager 2>/dev/null || true
+sudo systemctl mask NetworkManager 2>/dev/null || true
+sudo systemctl stop NetworkManager 2>/dev/null || true
+echo "NetworkManager disabled"
+echo ""
+
+# Step 5: Set Python capabilities for port 80 binding
+echo "[5/9] Setting Python capabilities for captive portal..."
+sudo setcap 'cap_net_bind_service=+ep' /usr/bin/python3.11 2>/dev/null || \
+sudo setcap 'cap_net_bind_service=+ep' /usr/bin/python3 || true
+echo "Python capabilities configured"
+echo ""
+
+# Step 6: Create log directory with correct permissions
+echo "[6/9] Creating log directory: $LOG_DIR..."
 sudo mkdir -p "$LOG_DIR"
 sudo chown pi:pi "$LOG_DIR"
 sudo chmod 755 "$LOG_DIR"
 echo "Log directory created successfully"
 echo ""
 
-# Step 4: Enable and start StreamScene client service
-echo "[4/5] Enabling StreamScene client service..."
+# Step 7: Verify virtual environment exists (pre-installed during image build)
+echo "[7/7] Verifying Python virtual environment..."
+if [ -d /home/pi/streamscene-client/venv ] && [ -f /home/pi/streamscene-client/venv/bin/python3 ]; then
+    echo "✓ Virtual environment found (pre-installed in image)"
+else
+    echo "✗ Warning: Virtual environment not found or incomplete!"
+    echo "  This should have been created during image build"
+    echo "  Attempting to create venv now..."
+    cd /home/pi/streamscene-client
+    python3 -m venv venv
+    /home/pi/streamscene-client/venv/bin/pip install --upgrade pip --quiet
+    /home/pi/streamscene-client/venv/bin/pip install -r requirements.txt --quiet || echo "Failed to install dependencies"
+fi
+echo ""
+
+# Step 8: Enable and start StreamScene client service
+echo "[7/7] Enabling StreamScene client service..."
 sudo systemctl enable "$CLIENT_SERVICE"
 echo "Service enabled"
 echo ""
 
-echo "[4/5] Starting StreamScene client service..."
-sudo systemctl start "$CLIENT_SERVICE"
-echo "Service started"
 echo ""
 
-# Step 5: Verify service is running
-echo "[5/5] Verifying service status..."
+# Verify service is running
+echo "[7/7] Verifying service status..."
 if sudo systemctl is-active --quiet "$CLIENT_SERVICE"; then
     echo "✓ StreamScene client service is running!"
 else

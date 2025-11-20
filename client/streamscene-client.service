@@ -1,8 +1,10 @@
 [Unit]
 Description=StreamScene E Ink Client
 Documentation=https://github.com/yourusername/streamscene
-After=local-fs.target
-# DO NOT wait for network - device creates hotspot if no network available
+After=local-fs.target network-online.target
+Wants=network-online.target
+StartLimitBurst=5
+StartLimitIntervalSec=60
 
 [Service]
 Type=simple
@@ -12,8 +14,14 @@ WorkingDirectory=/home/pi/streamscene-client
 Environment="PATH=/home/pi/streamscene-client/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 Environment="VIRTUAL_ENV=/home/pi/streamscene-client/venv"
 Environment="STREAMSCENE_API_URL=https://streamscene.dataandstories.com"
-Environment="STREAMSCENE_DISPLAY_MODE=eink"
+Environment="STREAMSCENE_DISPLAY_MODE=headless"
 Environment="PYTHONUNBUFFERED=1"
+# DEV/TESTING ONLY: Uncomment to enable ethernet detection (production uses WiFi only)
+Environment="STREAMSCENE_ALLOW_ETHERNET=true"
+
+# Unblock WiFi on every boot (ensure WiFi adapter is available)
+ExecStartPre=/usr/bin/sudo /usr/sbin/rfkill unblock wifi
+ExecStartPre=/usr/bin/sudo /usr/sbin/rfkill unblock all
 
 # Start the client
 ExecStart=/home/pi/streamscene-client/venv/bin/python3 main.py
@@ -21,8 +29,6 @@ ExecStart=/home/pi/streamscene-client/venv/bin/python3 main.py
 # Restart policy - always restart on failure
 Restart=always
 RestartSec=10s
-StartLimitBurst=5
-StartLimitIntervalSec=60
 
 # Logging - send to both journal and files
 StandardOutput=journal
@@ -35,9 +41,13 @@ KillSignal=SIGTERM
 TimeoutStopSec=30
 
 # Security settings (optional - can be tightened further)
-PrivateTmp=true
-ProtectSystem=strict
-ReadWritePaths=/var/log/streamscene /boot/firmware /home/pi/streamscene-client
+# TODO: Re-enable security hardening after refactoring network configuration setup
+# The service needs to write to /etc/hostapd/, /etc/dnsmasq.d/, and /etc/wpa_supplicant/
+# for WiFi hotspot and client mode configuration. ProtectSystem=strict makes /etc read-only.
+# Solution: Either pre-create config templates during image build, or use specific file permissions.
+# PrivateTmp=true
+# ProtectSystem=strict
+# ReadWritePaths=/var/log/streamscene /boot/firmware /home/pi/streamscene-client
 
 [Install]
 WantedBy=multi-user.target

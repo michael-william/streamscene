@@ -6,6 +6,7 @@ NO JAVASCRIPT - pure HTML forms for maximum compatibility.
 
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
+from pathlib import Path
 import json
 import os
 import logging
@@ -14,7 +15,7 @@ import threading
 logger = logging.getLogger(__name__)
 
 # Where to save WiFi credentials
-WIFI_CONFIG_FILE = "/home/badgy/streamscene-client/wifi_credentials.json"
+WIFI_CONFIG_FILE = Path.home() / "streamscene-client" / "wifi_credentials.json"
 
 
 class PortalHandler(BaseHTTPRequestHandler):
