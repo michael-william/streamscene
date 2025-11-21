@@ -14,7 +14,7 @@ WorkingDirectory=/home/pi/streamscene-client
 Environment="PATH=/home/pi/streamscene-client/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 Environment="VIRTUAL_ENV=/home/pi/streamscene-client/venv"
 Environment="STREAMSCENE_API_URL=https://streamscene.dataandstories.com"
-Environment="STREAMSCENE_DISPLAY_MODE=headless"
+Environment="STREAMSCENE_DISPLAY_MODE=eink"
 Environment="PYTHONUNBUFFERED=1"
 # DEV/TESTING ONLY: Uncomment to enable ethernet detection (production uses WiFi only)
 #Environment="STREAMSCENE_ALLOW_ETHERNET=true"
