@@ -663,13 +663,14 @@ def register_device(
     return device, api_key
 
 
-def get_device_content(session: Session, device_id: UUID) -> Optional[dict]:
+def get_device_content(session: Session, device_id: UUID, rotation_index: int = 0) -> Optional[dict]:
     """
-    Get the latest content for a device to display.
+    Get content for a device to display, with optional rotation support.
 
     Args:
         session: Database session
         device_id: Device UUID
+        rotation_index: Index for content rotation (0-based)
 
     Returns:
         Optional[dict]: Content dictionary or None if no content available
@@ -701,27 +702,51 @@ def get_device_content(session: Session, device_id: UUID) -> Optional[dict]:
             "posted_at": utc_now(),
         }
 
-    # Get the latest post from the stream
-    latest_post = get_latest_stream_post(session, device.current_stream_id)
-    if not latest_post:
-        return {
-            "has_content": False,
-            "content_type": "text",
-            "text_content": "No posts yet in this stream.",
-            "post_id": None,
-            "stream_name": stream.name,
-            "posted_at": utc_now(),
-        }
+    # Determine which post to return based on rotation settings
+    if device.rotation_enabled:
+        # Rotation mode: get multiple posts and return one by index
+        posts = (
+            session.query(Post)
+            .filter(Post.stream_id == device.current_stream_id)
+            .order_by(Post.created_at.desc())
+            .limit(device.rotation_post_count)
+            .all()
+        )
+
+        if not posts:
+            return {
+                "has_content": False,
+                "content_type": "text",
+                "text_content": "No posts yet in this stream.",
+                "post_id": None,
+                "stream_name": stream.name,
+                "posted_at": utc_now(),
+            }
+
+        # Get post at rotation_index (wrapping around if needed)
+        post = posts[rotation_index % len(posts)]
+    else:
+        # Static mode: get latest post only
+        post = get_latest_stream_post(session, device.current_stream_id)
+        if not post:
+            return {
+                "has_content": False,
+                "content_type": "text",
+                "text_content": "No posts yet in this stream.",
+                "post_id": None,
+                "stream_name": stream.name,
+                "posted_at": utc_now(),
+            }
 
     return {
         "has_content": True,
-        "content_type": latest_post.content_type,
-        "text_content": latest_post.text_content,
-        "image_url": latest_post.processed_image_path,
-        "post_id": str(latest_post.id),
+        "content_type": post.content_type,
+        "text_content": post.text_content,
+        "image_url": post.processed_image_path,
+        "post_id": str(post.id),
         "stream_name": stream.name,
         "theme_name": stream.theme_name,
-        "posted_at": latest_post.created_at,
+        "posted_at": post.created_at,
     }
 
 

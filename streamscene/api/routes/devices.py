@@ -141,6 +141,7 @@ async def check_registration_status(
 @router.get("/{device_id}/content", response_model=DeviceContentResponse)
 async def get_device_content(
     device_id: UUID,
+    rotation_index: int = 0,
     verified_device_id: str = Depends(verify_device_api_key),
     db: Session = Depends(get_db),
 ):
@@ -151,6 +152,7 @@ async def get_device_content(
 
     Args:
         device_id: Device UUID (device_uuid, not database id)
+        rotation_index: Index for content rotation (0-based), default 0
         verified_device_id: Device UUID from API key verification
         db: Database session
 
@@ -176,8 +178,8 @@ async def get_device_content(
             detail="Device ID mismatch - you can only access your own content",
         )
 
-    # Get content using database id
-    content = stream_ops.get_device_content(db, device.id)
+    # Get content using database id and rotation index
+    content = stream_ops.get_device_content(db, device.id, rotation_index=rotation_index)
     if content is None:
         raise HTTPException(status_code=404, detail="Device not found")
 
@@ -271,6 +273,7 @@ async def get_device_config(
         current_stream_id=device.current_stream_id,
         rotation_enabled=device.rotation_enabled,
         rotation_interval=device.rotation_interval,
+        rotation_post_count=device.rotation_post_count,
         current_version=device.current_version,
         config=device.config,
     )

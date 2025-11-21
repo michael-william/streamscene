@@ -48,6 +48,7 @@ class DeviceConfigResponse(BaseModel):
     current_stream_id: Optional[UUID]
     rotation_enabled: bool
     rotation_interval: int
+    rotation_post_count: int
     current_version: str
     config: dict
 
