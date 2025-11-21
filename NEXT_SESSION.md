@@ -1,11 +1,11 @@
-# Next Session - Phase 7: Content Rotation COMPLETE! 🎉
+# Next Session - Phase 7+8: Production Ready System! 🎉
 
-**Last Updated:** November 21, 2025 (End of Session - Smart Refresh & Rotation Working!)
-**Current Phase:** Phase 7 ✅ COMPLETE - CONTENT ROTATION WITH SMART REFRESH
+**Last Updated:** November 21, 2025 (End of Session - Production Deployment Complete!)
+**Current Phase:** Phase 7 ✅ COMPLETE - Phase 8 ✅ PARTIAL (Production Deployment)
 
 ---
 
-## 🎉 THIS SESSION: Smart Refresh & Rotation Mode Implemented!
+## 🎉 THIS SESSION: Production-Ready E Ink Display System!
 
 **Date:** November 21, 2025
 
@@ -36,6 +36,33 @@
 
 **Testing:** ✅ Verified device cycles through posts correctly (rotation_index: 0→1→2→3→4...)
 
+#### 3. Periodic Config Refresh
+**Problem:** When rotation settings changed via web app, device required restart to pick up new configuration.
+
+**Solution:** Implemented periodic config refresh with change detection
+- **Client:** Added `_refresh_config_if_needed()` method that runs every 120 seconds
+- **Client:** Detects changes to `rotation_enabled`, `rotation_interval`, and `rotation_post_count`
+- **Client:** Automatically resets `rotation_index` when rotation mode or post count changes
+- **Client:** Logs all configuration changes for debugging
+
+**Testing:** ✅ Verified device detects rotation mode toggle (True→False) within 2 minutes without restart
+
+**Commit:** `3d7baef` - "feat: implement periodic config refresh for runtime updates"
+
+#### 4. SystemD Service Production Deployment
+**Problem:** Device required manual start after power cycles and didn't survive reboots.
+
+**Solution:** Configured production systemd service
+- Updated `client/streamscene-client.service` to use `STREAMSCENE_DISPLAY_MODE=eink`
+- Installed service to `/etc/systemd/system/streamscene-client.service` on Pi
+- Configured passwordless sudo for rfkill commands via `/etc/sudoers.d/streamscene-rfkill`
+- Enabled service for auto-start on boot
+- Service includes auto-restart on failure with 10-second delay
+
+**Testing:** ✅ Verified device auto-starts on boot and survives full power cycle (reboot test passed)
+
+**Commit:** `97c597a` - "feat: configure systemd service for production E Ink display mode"
+
 ### Files Changed
 
 **Server:**
@@ -44,10 +71,14 @@
 - `streamscene/core/streams.py` - Modified `get_device_content()` to support rotation mode
 
 **Client (deployed to Pi):**
-- `client/main.py` - Added config fetching, post_id tracking, rotation logic
+- `client/main.py` - Added config fetching, post_id tracking, rotation logic, periodic config refresh
 - `client/api_client.py` - Modified `fetch_content()` to accept `rotation_index` parameter
+- `client/streamscene-client.service` - Changed display mode from headless to eink for production
 
-**Commit:** `24cbf91` - "feat: implement content rotation mode for devices"
+**Commits:**
+- `24cbf91` - "feat: implement content rotation mode for devices"
+- `3d7baef` - "feat: implement periodic config refresh for runtime updates"
+- `97c597a` - "feat: configure systemd service for production E Ink display mode"
 
 ### How It Works
 
@@ -177,20 +208,18 @@ The StreamScene E Ink display system is now fully operational! The device succes
 
 ## 🔧 Next Session Priorities
 
-### Priority 1: Test Content Rotation
-The device fetches content every 60 seconds. With 5 test posts in the stream, verify:
-1. Content cycles through all 5 posts
-2. Display updates correctly each time
-3. No memory leaks or errors over extended run
-4. Posts display in correct order
+### Priority 1: Long-Running Stability Test
+Run device for 24+ hours to verify:
+1. No memory leaks or resource exhaustion
+2. Smart refresh working correctly over extended time
+3. Heartbeat signals maintained
+4. Config refresh detecting changes reliably
+5. Display quality remains consistent
 
 **Test Command:**
 ```bash
-# On Pi - run for 10 minutes (10 content rotations)
-ssh pi@192.168.1.40 'cd ~/streamscene-client && \
-  export STREAMSCENE_API_URL="https://streamscene.dataandstories.com" && \
-  export STREAMSCENE_DISPLAY_MODE="eink" && \
-  timeout 10m sudo -E venv/bin/python3 main.py'
+# Monitor service logs for 24 hours
+ssh pi@192.168.1.40 'sudo journalctl -u streamscene-client -f'
 ```
 
 ### Priority 2: Test Error Recovery
@@ -200,44 +229,19 @@ Simulate failures to verify error handling:
 3. **No stream assigned**: Remove stream assignment, verify error display
 4. **Invalid content**: Post with malformed data, verify fallback
 
-### Priority 3: Implement Systemd Service (Production Deployment)
-The device should run as a system service that:
-- Starts automatically on boot
-- Restarts on failure
-- Logs to /var/log/streamscene/
-- Runs with appropriate permissions
-
-**Create:** `/etc/systemd/system/streamscene-client.service`
-
-**Example Service File:**
-```ini
-[Unit]
-Description=StreamScene E Ink Display Client
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=pi
-WorkingDirectory=/home/pi/streamscene-client
-Environment="STREAMSCENE_API_URL=https://streamscene.dataandstories.com"
-Environment="STREAMSCENE_DISPLAY_MODE=eink"
-ExecStart=/home/pi/streamscene-client/venv/bin/python3 main.py
-Restart=always
-RestartSec=10
-StandardOutput=journal
-StandardError=journal
-
-[Install]
-WantedBy=multi-user.target
-```
-
-### Priority 4: SD Card Image Creation
+### Priority 3: SD Card Image Creation
 Now that everything works, create production SD card image:
 1. Update `build_sd_image.sh` with latest client code
-2. Include systemd service file
+2. Include systemd service file (already configured)
 3. Test fresh image deployment on clean Pi
 4. Document image flashing process
+
+### Priority 4: OTA Update Client
+Implement Phase 9 - device-side OTA update capability:
+1. Check for updates on startup and periodically
+2. Download update packages
+3. Apply updates with rollback on failure
+4. Report update status to server
 
 ### Priority 5: Clean Up and Document
 1. Update CLAUDE.md with Phase 6 completion
@@ -268,8 +272,10 @@ Now that everything works, create production SD card image:
 - [ ] OTA update flow
 - [ ] Multi-device scenarios
 
-### Production Readiness ⏸️
-- [ ] Systemd service configured
+### Production Readiness 🚀
+- [x] Systemd service configured
+- [x] Auto-start on boot enabled
+- [x] Reboot survival tested
 - [ ] Log rotation configured
 - [ ] Error monitoring setup
 - [ ] SD card image tested
@@ -332,17 +338,29 @@ sudo systemctl status reflex
 # Server: View reflex logs
 sudo journalctl -u reflex -f
 
-# Pi: Run client for testing
+# Pi: Check systemd service status
+ssh pi@192.168.1.40 'sudo systemctl status streamscene-client'
+
+# Pi: View live service logs (systemd journal)
+ssh pi@192.168.1.40 'sudo journalctl -u streamscene-client -f'
+
+# Pi: View recent service logs
+ssh pi@192.168.1.40 'sudo journalctl -u streamscene-client -n 50 --no-pager'
+
+# Pi: Restart service
+ssh pi@192.168.1.40 'sudo systemctl restart streamscene-client'
+
+# Pi: Stop service
+ssh pi@192.168.1.40 'sudo systemctl stop streamscene-client'
+
+# Pi: Start service
+ssh pi@192.168.1.40 'sudo systemctl start streamscene-client'
+
+# Pi: Run client manually for testing (ONLY when service is stopped)
 ssh pi@192.168.1.40 'cd ~/streamscene-client && \
   export STREAMSCENE_API_URL="https://streamscene.dataandstories.com" && \
   export STREAMSCENE_DISPLAY_MODE="eink" && \
   sudo -E venv/bin/python3 main.py'
-
-# Pi: Check client logs
-ssh pi@192.168.1.40 'tail -f ~/streamscene-client/logs/streamscene-client.log'
-
-# Pi: Stop running client
-ssh pi@192.168.1.40 'sudo pkill -9 python3'
 ```
 
 ---
@@ -408,12 +426,16 @@ ssh pi@192.168.1.40 'sudo pkill -9 python3'
 - ✅ Content rendering (PIL → E Ink)
 - ✅ Heartbeat signals
 - ✅ Content rotation loop
+- ✅ Smart refresh (post_id comparison)
+- ✅ Periodic config refresh (every 2 minutes)
 
 **System:**
 - ✅ All API endpoints using device_uuid architecture
 - ✅ Complete client → server → display pipeline
 - ✅ 60 second content rotation cycle
 - ✅ Automatic retry on transient errors
+- ✅ SystemD service auto-start on boot
+- ✅ Reboot survival (tested and verified)
 
 ---
 
@@ -426,15 +448,16 @@ ssh pi@192.168.1.40 'sudo pkill -9 python3'
 - ✅ Phase 4: WiFi Setup System
 - ✅ Phase 5: Device State Machine & Registration
 - ✅ Phase 6: E Ink Display Integration
-- ✅ **Phase 7: Content Display & Rotation** ← WE ARE HERE
+- ✅ Phase 7: Content Display & Rotation
+- 🔄 **Phase 8: Production Deployment** (SystemD ✅, SD Card Image ⏸️) ← WE ARE HERE
 
 ### Next Phases
-- Phase 8: OTA Update Client
-- Phase 9: Production Deployment & Documentation (systemd service, SD card image)
+- Phase 8b: Complete Production Deployment (SD card image, log rotation)
+- Phase 9: OTA Update Client
 - Phase 10: Multi-Device Testing & Optimization
 
 ---
 
-**Next Action:** Move to production deployment setup (systemd service + SD card image) or begin OTA update client implementation.
+**Next Action:** Complete production deployment (SD card image with systemd service) or begin OTA update client implementation.
 
-The core system is WORKING! Now it's time to harden it for production. 🎉✨
+The system is PRODUCTION READY! 🎉 Device auto-starts on boot, survives reboots, smart refresh extends display lifetime, rotation mode works beautifully, and config updates apply automatically. Next steps: SD card image for easy deployment or OTA updates for remote management. ✨
