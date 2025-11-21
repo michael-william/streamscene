@@ -1,0 +1,70 @@
+/* Classic theme - matches current PIL renderer look */
+
+.eink-container {
+    width: 800px;
+    height: 480px;
+    padding: 40px;
+    background-color: white;
+    display: flex;
+    flex-direction: column;
+}
+
+.stream-header {
+    margin-bottom: 20px;
+}
+
+.stream-name {
+    font-size: 24px;
+    font-weight: bold;
+    color: #0066CC; /* Blue color for stream name */
+    margin-bottom: 10px;
+}
+
+.separator {
+    width: 100%;
+    height: 2px;
+    background-color: black;
+    margin-bottom: 30px;
+}
+
+.content-area {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.message-text {
+    font-size: 32px;
+    line-height: 1.4;
+    color: black;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    hyphens: auto;
+}
+
+.system-message {
+    font-size: 28px;
+    line-height: 1.5;
+    color: #666;
+    text-align: center;
+    padding: 60px 20px;
+}
+
+.footer {
+    margin-top: auto;
+    padding-top: 20px;
+}
+
+.timestamp {
+    font-size: 16px;
+    color: black;
+    text-align: right;
+}
+
+.author {
+    font-size: 18px;
+    color: #333;
+    margin-bottom: 10px;
+    font-style: italic;
+}

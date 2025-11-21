@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=800, height=480">
+    <title>StreamScene E Ink Display</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            width: 800px;
+            height: 480px;
+            overflow: hidden;
+            font-family: 'DejaVu Sans', Arial, sans-serif;
+            background-color: white;
+            color: black;
+        }
+
+        /* Theme stylesheet will be injected here */
+        {% block theme_styles %}{% endblock %}
+    </style>
+</head>
+<body>
+    {% block content %}{% endblock %}
+</body>
+</html>

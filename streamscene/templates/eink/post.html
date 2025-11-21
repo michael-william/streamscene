@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block theme_styles %}
+<link rel="stylesheet" href="themes/{{ theme }}.css">
+{% endblock %}
+
+{% block content %}
+<div class="eink-container">
+    {% if has_content %}
+        <div class="stream-header">
+            <div class="stream-name">{{ stream_name }}</div>
+        </div>
+
+        <div class="separator"></div>
+
+        <div class="content-area">
+            {% if author_name %}
+            <div class="author">— {{ author_name }}</div>
+            {% endif %}
+
+            <div class="message-text">
+                {{ text_content }}
+            </div>
+        </div>
+
+        <div class="footer">
+            <div class="timestamp">{{ timestamp }}</div>
+        </div>
+    {% else %}
+        <div class="content-area">
+            <div class="system-message">
+                {{ text_content|default("No content available") }}
+            </div>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

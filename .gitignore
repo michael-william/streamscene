@@ -15,3 +15,6 @@ CREDENTIALS.md
 htmlcov/
 .tox/
 usertesting/
+
+# Cached rendered images
+cache/

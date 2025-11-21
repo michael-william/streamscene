@@ -6,6 +6,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 from uuid import UUID
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 from streamscene.api.dependencies import get_db, verify_device_api_key
 from streamscene.api.schemas import (
@@ -21,6 +24,7 @@ from streamscene.api.schemas import (
 )
 from streamscene.core import streams as stream_ops
 from streamscene.core import ota as ota_ops
+from streamscene.core import rendering as rendering_ops
 from streamscene.core.streams import utc_now
 
 router = APIRouter()
@@ -183,7 +187,78 @@ async def get_device_content(
     if content is None:
         raise HTTPException(status_code=404, detail="Device not found")
 
+    # Add URL to server-rendered image
+    content["rendered_image_url"] = f"/api/devices/{device_id}/content/image?rotation_index={rotation_index}"
+
     return DeviceContentResponse(**content)
+
+
+@router.get("/{device_id}/content/image")
+async def get_device_content_image(
+    device_id: UUID,
+    rotation_index: int = 0,
+    theme: str = "classic",
+    verified_device_id: str = Depends(verify_device_api_key),
+    db: Session = Depends(get_db),
+):
+    """
+    Get the current content as a rendered PNG image.
+
+    This endpoint renders the device's current content using HTML/CSS templates
+    and returns a pre-rendered PNG image optimized for E Ink display.
+
+    Requires device API key authentication via X-Device-Api-Key header.
+
+    Args:
+        device_id: Device UUID (device_uuid, not database id)
+        rotation_index: Index for content rotation (0-based), default 0
+        theme: Theme name for rendering (default: "classic")
+        verified_device_id: Device UUID from API key verification
+        db: Database session
+
+    Returns:
+        FileResponse: PNG image (800x480 pixels)
+
+    Raises:
+        HTTPException: 403 if device_id doesn't match authenticated device
+        HTTPException: 404 if device not found
+    """
+    # Look up device by device_uuid (from SD card), not database id
+    device = db.query(stream_ops.Device).filter(
+        stream_ops.Device.device_uuid == device_id
+    ).first()
+
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    # Verify the device owns this ID
+    if str(device.device_uuid) != verified_device_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Device ID mismatch - you can only access your own content",
+        )
+
+    # Get content using database id and rotation index
+    content = stream_ops.get_device_content(db, device.id, rotation_index=rotation_index)
+    if content is None:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    # Render content to PNG using the rendering service
+    try:
+        image_path = rendering_ops.render_device_content(content, theme=theme)
+
+        # Return the rendered image
+        return FileResponse(
+            path=str(image_path),
+            media_type="image/png",
+            filename=f"content-{device_id}.png",
+        )
+    except Exception as e:
+        logger.error(f"Error rendering image for device {device_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to render image: {str(e)}"
+        )
 
 
 @router.post("/{device_id}/heartbeat", response_model=DeviceHeartbeatResponse)
