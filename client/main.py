@@ -103,10 +103,50 @@ class StreamSceneClient:
         self.loop_count = 0
         self.last_heartbeat = 0
 
+        # Content tracking for smart refresh
+        self.device_config = None
+        self.last_displayed_post_id = None
+        self.rotation_index = 0
+        self.last_config_fetch = 0
+
         main_logger.info("Initialization complete")
+
+        # Fetch device configuration if registered (has API key)
+        self._fetch_initial_config()
 
         # Check initial network status and skip WiFi setup if ethernet is available
         self._check_initial_network_status()
+
+    def _fetch_initial_config(self):
+        """
+        Fetch device configuration on startup if device is registered.
+
+        This loads rotation settings and other config from the server.
+        Config is refreshed periodically in the main loop.
+        """
+        # Only fetch config if device has API key (is registered)
+        api_key = load_api_key()
+        if not api_key:
+            main_logger.debug("[Config] Skipping config fetch (device not registered yet)")
+            return
+
+        main_logger.info("[Config] Fetching device configuration...")
+        try:
+            self.device_config = self.api_client.get_config()
+            self.last_config_fetch = time.time()
+
+            if self.device_config:
+                rotation_enabled = self.device_config.get("rotation_enabled", False)
+                rotation_interval = self.device_config.get("rotation_interval", 60)
+                rotation_count = self.device_config.get("rotation_post_count", 10)
+
+                main_logger.info(f"[Config] Rotation enabled: {rotation_enabled}")
+                if rotation_enabled:
+                    main_logger.info(f"[Config] Rotation interval: {rotation_interval}s, Post count: {rotation_count}")
+            else:
+                main_logger.warning("[Config] Failed to fetch device configuration")
+        except Exception as e:
+            main_logger.error(f"[Config] Error fetching configuration: {e}")
 
     def _check_initial_network_status(self):
         """
@@ -409,9 +449,8 @@ class StreamSceneClient:
         })
 
     def _handle_ready(self):
-        """Handle READY state - normal operation."""
+        """Handle READY state - normal operation with smart refresh."""
         state_logger.info("Entering READY state")
-        api_logger.info("Fetching and displaying content")
 
         # Validate that we have API key
         if not API_KEY and not load_api_key():
@@ -423,20 +462,61 @@ class StreamSceneClient:
             return
 
         try:
-            # Fetch content from API
+            # Refresh config periodically (every 5 minutes)
+            if time.time() - self.last_config_fetch >= 300:  # 5 minutes
+                api_logger.info("Refreshing device configuration...")
+                try:
+                    self.device_config = self.api_client.get_config()
+                    self.last_config_fetch = time.time()
+                    api_logger.info("Configuration refreshed")
+                except Exception as e:
+                    api_logger.warning(f"Failed to refresh config: {e}")
+
+            # Determine operation mode from config
+            rotation_enabled = False
+            rotation_interval = 60
+            rotation_count = 10
+
+            if self.device_config:
+                rotation_enabled = self.device_config.get("rotation_enabled", False)
+                rotation_interval = self.device_config.get("rotation_interval", 60)
+                rotation_count = self.device_config.get("rotation_post_count", 10)
+
+            # Fetch content
             api_logger.info("Fetching content from server...")
             content = self.api_client.fetch_content()
 
             if content:
-                # Render content to image
-                display_logger.info("Rendering fetched content to image")
-                image = self.renderer.render_content(content)
+                # Determine if display refresh is needed
+                current_post_id = content.get("post_id")
+                should_refresh = False
 
-                # Display image
-                display_logger.info("Displaying image on E Ink display")
-                self.display.show(image)
+                if rotation_enabled:
+                    # Rotation mode: always refresh to show next post
+                    should_refresh = True
+                    api_logger.info(f"[Rotation] Displaying post (mode: rotating)")
+                else:
+                    # Static mode: only refresh if content changed
+                    if current_post_id != self.last_displayed_post_id:
+                        should_refresh = True
+                        api_logger.info(f"[Static] New content detected (post_id: {current_post_id})")
+                    else:
+                        api_logger.info("[Static] Content unchanged, skipping display refresh")
 
-                api_logger.info("Content update complete")
+                # Refresh display if needed
+                if should_refresh:
+                    display_logger.info("Rendering fetched content to image")
+                    image = self.renderer.render_content(content)
+
+                    display_logger.info("Displaying image on E Ink display")
+                    self.display.show(image)
+
+                    # Update tracking
+                    self.last_displayed_post_id = current_post_id
+                    api_logger.info("Content update complete")
+                else:
+                    display_logger.info("Display refresh skipped (content unchanged)")
+
             else:
                 # Failed to fetch content - render error
                 api_logger.warning("Failed to fetch content from server")
@@ -455,16 +535,22 @@ class StreamSceneClient:
                 else:
                     api_logger.warning("Heartbeat failed - server may be unreachable")
 
-            # Sleep until next poll
-            main_logger.info(f"Sleeping for {POLL_INTERVAL}s until next poll")
-            time.sleep(POLL_INTERVAL)
+            # Sleep until next poll (use rotation_interval if rotating, else 60s)
+            if rotation_enabled:
+                poll_interval = rotation_interval
+                main_logger.info(f"Sleeping for {poll_interval}s (rotation mode)")
+            else:
+                poll_interval = 60  # Always check every minute in static mode
+                main_logger.info(f"Sleeping for {poll_interval}s (static mode)")
+
+            time.sleep(poll_interval)
 
         except Exception as e:
             api_logger.error(f"Error during content fetch/display: {e}", exc_info=True)
             # Don't transition to error state for transient failures
             # Just log and retry on next loop
-            main_logger.info(f"Retrying in {POLL_INTERVAL}s")
-            time.sleep(POLL_INTERVAL)
+            main_logger.info("Retrying in 60s")
+            time.sleep(60)
 
     def _handle_error(self):
         """Handle ERROR state - display error and attempt recovery."""
