@@ -244,8 +244,12 @@ async def get_device_content_image(
         raise HTTPException(status_code=404, detail="Device not found")
 
     # Render content to PNG using the rendering service
+    # Run sync rendering in thread pool to avoid blocking asyncio loop
     try:
-        image_path = rendering_ops.render_device_content(content, theme=theme)
+        import asyncio
+        image_path = await asyncio.to_thread(
+            rendering_ops.render_device_content, content, theme
+        )
 
         # Return the rendered image
         return FileResponse(
