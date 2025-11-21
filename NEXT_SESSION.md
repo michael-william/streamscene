@@ -1,7 +1,77 @@
-# Next Session - Phase 6: E Ink Display FULLY WORKING! 🎉
+# Next Session - Phase 7: Content Rotation COMPLETE! 🎉
 
-**Last Updated:** November 20, 2025 (End of Session - Content Display Working!)
-**Current Phase:** Phase 6 ✅ COMPLETE - E INK DISPLAY FULLY OPERATIONAL
+**Last Updated:** November 21, 2025 (End of Session - Smart Refresh & Rotation Working!)
+**Current Phase:** Phase 7 ✅ COMPLETE - CONTENT ROTATION WITH SMART REFRESH
+
+---
+
+## 🎉 THIS SESSION: Smart Refresh & Rotation Mode Implemented!
+
+**Date:** November 21, 2025
+
+### Completed Features
+
+#### 1. Smart Refresh (Static Mode)
+**Problem:** Device was unnecessarily refreshing E Ink display every 60 seconds even when content hadn't changed, causing excessive wear on the display.
+
+**Solution:** Implemented smart refresh using `post_id` tracking
+- Server now returns `post_id` (UUID) in content responses
+- Client tracks `last_displayed_post_id`
+- In static mode (`rotation_enabled=False`): Only refresh E Ink if `post_id` changed
+- Logs show: "Content unchanged, skipping display refresh"
+
+**Testing:** ✅ Verified device polls every 60s but skips refresh when content unchanged
+
+#### 2. Content Rotation Mode
+**Problem:** Users want ability to cycle through multiple recent posts automatically.
+
+**Solution:** Implemented full rotation support
+- **Server:** Added `rotation_index` query parameter to `/devices/{id}/content` endpoint
+- **Server:** `get_device_content()` returns different posts based on index and rotation settings
+- **Server:** Added `rotation_post_count` field to `DeviceConfigResponse` schema
+- **Client:** Fetches device config on startup to check rotation settings
+- **Client:** Tracks `rotation_index` and increments after each display
+- **Client:** Passes `rotation_index` to content endpoint
+- **Client:** In rotation mode: Always refreshes, cycles through posts
+
+**Testing:** ✅ Verified device cycles through posts correctly (rotation_index: 0→1→2→3→4...)
+
+### Files Changed
+
+**Server:**
+- `streamscene/api/schemas.py` - Added `rotation_post_count` to DeviceConfigResponse
+- `streamscene/api/routes/devices.py` - Added `rotation_index` parameter to content endpoint, return `rotation_post_count` in config
+- `streamscene/core/streams.py` - Modified `get_device_content()` to support rotation mode
+
+**Client (deployed to Pi):**
+- `client/main.py` - Added config fetching, post_id tracking, rotation logic
+- `client/api_client.py` - Modified `fetch_content()` to accept `rotation_index` parameter
+
+**Commit:** `24cbf91` - "feat: implement content rotation mode for devices"
+
+### How It Works
+
+**Static Mode (rotation_enabled=False):**
+1. Device polls every 60 seconds
+2. Compares `post_id` with last displayed post
+3. Only refreshes E Ink if content changed
+4. Extends display lifetime by avoiding unnecessary refreshes
+
+**Rotation Mode (rotation_enabled=True):**
+1. Device polls at `rotation_interval` (e.g., 30 seconds)
+2. Fetches content with current `rotation_index`
+3. Always refreshes E Ink (different post each time)
+4. Increments index and wraps around after `rotation_post_count` posts
+
+### Log Evidence
+```
+[2025-11-21 17:28:53] [INFO] [Config] Rotation enabled: True
+[2025-11-21 17:28:53] [INFO] [Config] Rotation interval: 30s, Post count: 3
+[2025-11-21 17:28:53] [INFO] [API] Fetching content from server (rotation index: 0)...
+[2025-11-21 17:28:54] [INFO] [API] Rotation index advanced to 1
+[2025-11-21 17:29:24] [INFO] [API] Fetching content from server (rotation index: 1)...
+[2025-11-21 17:29:24] [INFO] [API] Rotation index advanced to 2
+```
 
 ---
 
@@ -355,16 +425,16 @@ ssh pi@192.168.1.40 'sudo pkill -9 python3'
 - ✅ Phase 2-3: OTA Update Infrastructure (server-side)
 - ✅ Phase 4: WiFi Setup System
 - ✅ Phase 5: Device State Machine & Registration
-- ✅ **Phase 6: E Ink Display Integration** ← WE ARE HERE
+- ✅ Phase 6: E Ink Display Integration
+- ✅ **Phase 7: Content Display & Rotation** ← WE ARE HERE
 
 ### Next Phases
-- Phase 7: Content Display & Rotation (MOSTLY DONE - just testing needed)
 - Phase 8: OTA Update Client
-- Phase 9: Production Deployment & Documentation
+- Phase 9: Production Deployment & Documentation (systemd service, SD card image)
 - Phase 10: Multi-Device Testing & Optimization
 
 ---
 
-**Next Action:** Test content rotation over extended period to verify stability, then move to production deployment setup (systemd service + SD card image).
+**Next Action:** Move to production deployment setup (systemd service + SD card image) or begin OTA update client implementation.
 
 The core system is WORKING! Now it's time to harden it for production. 🎉✨
