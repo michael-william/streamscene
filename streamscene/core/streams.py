@@ -684,6 +684,7 @@ def get_device_content(session: Session, device_id: UUID) -> Optional[dict]:
             "has_content": False,
             "content_type": "text",
             "text_content": "No stream configured. Please configure via web app.",
+            "post_id": None,
             "stream_name": "System",
             "posted_at": utc_now(),
         }
@@ -695,6 +696,7 @@ def get_device_content(session: Session, device_id: UUID) -> Optional[dict]:
             "has_content": False,
             "content_type": "text",
             "text_content": "Configured stream not found.",
+            "post_id": None,
             "stream_name": "System",
             "posted_at": utc_now(),
         }
@@ -706,6 +708,7 @@ def get_device_content(session: Session, device_id: UUID) -> Optional[dict]:
             "has_content": False,
             "content_type": "text",
             "text_content": "No posts yet in this stream.",
+            "post_id": None,
             "stream_name": stream.name,
             "posted_at": utc_now(),
         }
@@ -715,6 +718,7 @@ def get_device_content(session: Session, device_id: UUID) -> Optional[dict]:
         "content_type": latest_post.content_type,
         "text_content": latest_post.text_content,
         "image_url": latest_post.processed_image_path,
+        "post_id": str(latest_post.id),
         "stream_name": stream.name,
         "theme_name": stream.theme_name,
         "posted_at": latest_post.created_at,

@@ -34,6 +34,7 @@ class DeviceContentResponse(BaseModel):
     content_type: str = Field(..., description="Content type: text, image, or mixed")
     text_content: Optional[str] = Field(None, description="Text content to display")
     image_url: Optional[str] = Field(None, description="URL to image to display")
+    post_id: Optional[str] = Field(None, description="Unique post ID for comparison (None for system messages)")
     posted_at: datetime = Field(..., description="When the content was posted")
     stream_name: str = Field(..., description="Name of the stream")
     has_content: bool = Field(..., description="Whether there is content to display")
