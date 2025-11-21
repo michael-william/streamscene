@@ -148,6 +148,75 @@ class StreamSceneClient:
         except Exception as e:
             main_logger.error(f"[Config] Error fetching configuration: {e}")
 
+    def _refresh_config_if_needed(self):
+        """
+        Refresh device configuration periodically (every 2 minutes max).
+
+        Detects and applies config changes like rotation settings without requiring restart.
+        """
+        # Config refresh interval: 120 seconds (2 minutes)
+        CONFIG_REFRESH_INTERVAL = 120
+
+        # Check if it's time to refresh config
+        time_since_last_fetch = time.time() - self.last_config_fetch
+        if time_since_last_fetch < CONFIG_REFRESH_INTERVAL:
+            return  # Not time yet
+
+        # Only refresh if device is registered
+        if not load_api_key():
+            return
+
+        main_logger.debug(f"[Config] Refreshing configuration (last fetch: {int(time_since_last_fetch)}s ago)")
+
+        try:
+            # Store old config for comparison
+            old_config = self.device_config.copy() if self.device_config else {}
+
+            # Fetch new config
+            new_config = self.api_client.get_config()
+            if not new_config:
+                main_logger.warning("[Config] Failed to refresh configuration")
+                return
+
+            # Update config and timestamp
+            self.device_config = new_config
+            self.last_config_fetch = time.time()
+
+            # Detect and log changes
+            if old_config:
+                # Check rotation_enabled change
+                old_rotation = old_config.get("rotation_enabled", False)
+                new_rotation = new_config.get("rotation_enabled", False)
+                if old_rotation != new_rotation:
+                    main_logger.info(f"[Config] Rotation mode changed: {old_rotation} → {new_rotation}")
+                    # Reset rotation index when mode changes
+                    self.rotation_index = 0
+
+                # Check rotation_interval change
+                old_interval = old_config.get("rotation_interval", 60)
+                new_interval = new_config.get("rotation_interval", 60)
+                if old_interval != new_interval:
+                    main_logger.info(f"[Config] Rotation interval changed: {old_interval}s → {new_interval}s")
+
+                # Check rotation_post_count change
+                old_count = old_config.get("rotation_post_count", 10)
+                new_count = new_config.get("rotation_post_count", 10)
+                if old_count != new_count:
+                    main_logger.info(f"[Config] Rotation post count changed: {old_count} → {new_count}")
+                    # Reset rotation index when count changes
+                    self.rotation_index = 0
+
+                # If no rotation settings changed
+                if (old_rotation == new_rotation and
+                    old_interval == new_interval and
+                    old_count == new_count):
+                    main_logger.debug("[Config] No changes detected")
+            else:
+                main_logger.info("[Config] Configuration refreshed successfully")
+
+        except Exception as e:
+            main_logger.error(f"[Config] Error refreshing configuration: {e}")
+
     def _check_initial_network_status(self):
         """
         Check network status at startup and skip WiFi setup if ethernet is available.
@@ -461,17 +530,10 @@ class StreamSceneClient:
             })
             return
 
-        try:
-            # Refresh config periodically (every 5 minutes)
-            if time.time() - self.last_config_fetch >= 300:  # 5 minutes
-                api_logger.info("Refreshing device configuration...")
-                try:
-                    self.device_config = self.api_client.get_config()
-                    self.last_config_fetch = time.time()
-                    api_logger.info("Configuration refreshed")
-                except Exception as e:
-                    api_logger.warning(f"Failed to refresh config: {e}")
+        # Refresh config periodically (every 2 minutes max)
+        self._refresh_config_if_needed()
 
+        try:
             # Determine operation mode from config
             rotation_enabled = False
             rotation_interval = 60
@@ -482,9 +544,13 @@ class StreamSceneClient:
                 rotation_interval = self.device_config.get("rotation_interval", 60)
                 rotation_count = self.device_config.get("rotation_post_count", 10)
 
-            # Fetch content
-            api_logger.info("Fetching content from server...")
-            content = self.api_client.fetch_content()
+            # Fetch content (with rotation_index if in rotation mode)
+            if rotation_enabled:
+                api_logger.info(f"Fetching content from server (rotation index: {self.rotation_index})...")
+                content = self.api_client.fetch_content(rotation_index=self.rotation_index)
+            else:
+                api_logger.info("Fetching content from server...")
+                content = self.api_client.fetch_content()
 
             if content:
                 # Determine if display refresh is needed
@@ -513,6 +579,12 @@ class StreamSceneClient:
 
                     # Update tracking
                     self.last_displayed_post_id = current_post_id
+
+                    # Increment rotation index for next cycle (wraps automatically on server)
+                    if rotation_enabled:
+                        self.rotation_index = (self.rotation_index + 1) % rotation_count
+                        api_logger.info(f"Rotation index advanced to {self.rotation_index}")
+
                     api_logger.info("Content update complete")
                 else:
                     display_logger.info("Display refresh skipped (content unchanged)")
