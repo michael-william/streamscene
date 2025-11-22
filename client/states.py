@@ -45,8 +45,8 @@ class StateMachine:
         DeviceState.CONNECTING: [DeviceState.AWAITING_REGISTRATION, DeviceState.WIFI_SETUP, DeviceState.ERROR],
         DeviceState.AWAITING_REGISTRATION: [DeviceState.REGISTERED, DeviceState.ERROR],
         DeviceState.REGISTERED: [DeviceState.READY, DeviceState.ERROR],
-        DeviceState.READY: [DeviceState.ERROR],  # Can transition to error from ready
-        DeviceState.ERROR: [DeviceState.WIFI_SETUP, DeviceState.CONNECTING, DeviceState.AWAITING_REGISTRATION],  # Recovery paths
+        DeviceState.READY: [DeviceState.ERROR],  # Can only transition to ERROR - NEVER back to setup states (preserves registration)
+        DeviceState.ERROR: [DeviceState.WIFI_SETUP, DeviceState.CONNECTING, DeviceState.AWAITING_REGISTRATION, DeviceState.READY],  # Recovery paths
     }
 
     def __init__(self, device_uuid: str, state_file: Optional[Path] = None):

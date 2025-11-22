@@ -145,7 +145,7 @@ class TestSetupService(unittest.TestCase):
         # Mock successful connection
         self.mock_network_manager.switch_to_client_mode.return_value = (True, "192.168.1.50")
 
-        success, ip = self.service.connect_to_wifi("TestNetwork", "testpass123", timeout=30)
+        success, ip = self.service.connect_to_wifi("TestNetwork", "testpass123", timeout=45)
 
         # Should succeed
         self.assertTrue(success)
@@ -153,7 +153,7 @@ class TestSetupService(unittest.TestCase):
         self.mock_network_manager.switch_to_client_mode.assert_called_once_with(
             ssid="TestNetwork",
             password="testpass123",
-            timeout=30
+            timeout=45
         )
 
     def test_connect_to_wifi_failure(self):

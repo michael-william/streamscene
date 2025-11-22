@@ -88,9 +88,12 @@ class StreamSceneAPIClient:
 
         return session
 
-    def fetch_content(self) -> Optional[Dict[str, Any]]:
+    def fetch_content(self, rotation_index: Optional[int] = None) -> Optional[Dict[str, Any]]:
         """
         Fetch current content to display from the API.
+
+        Args:
+            rotation_index: Optional rotation index for content rotation mode
 
         Returns:
             Dict with content data, or None if request fails
@@ -107,9 +110,15 @@ class StreamSceneAPIClient:
         """
         url = f"{self.base_url}/api/devices/{self.device_id}/content"
 
+        # Add rotation_index as query parameter if provided
+        params = {}
+        if rotation_index is not None:
+            params['rotation_index'] = rotation_index
+            print(f"[API Client] Fetching content (rotation_index={rotation_index})")
+
         try:
             print(f"[API Client] Fetching content from {url}")
-            response = self.session.get(url, timeout=config.REQUEST_TIMEOUT)
+            response = self.session.get(url, params=params, timeout=config.REQUEST_TIMEOUT)
             response.raise_for_status()
 
             data = response.json()

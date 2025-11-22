@@ -178,6 +178,19 @@ class NetworkManager:
         ip_address = self.get_ethernet_ip()
         return True, ip_address
 
+    def get_wifi_status(self) -> Tuple[bool, Optional[str]]:
+        """
+        Get comprehensive WiFi status.
+
+        Returns:
+            Tuple of (connected: bool, ip_address: Optional[str])
+        """
+        if not is_connected():
+            return False, None
+
+        ip_address = get_ip_address()
+        return True, ip_address
+
     def is_in_ap_mode(self) -> bool:
         """Check if currently in Access Point mode."""
         return is_hotspot_active()
@@ -213,7 +226,7 @@ class NetworkManager:
 
         return success
 
-    def switch_to_client_mode(self, ssid: str, password: str, timeout: int = 30) -> Tuple[bool, Optional[str]]:
+    def switch_to_client_mode(self, ssid: str, password: str, timeout: int = 45) -> Tuple[bool, Optional[str], Optional[str]]:
         """
         Switch to Client (WiFi) mode.
 
@@ -222,10 +235,11 @@ class NetworkManager:
         Args:
             ssid: WiFi network SSID
             password: WiFi network password
-            timeout: Connection timeout in seconds (default: 30)
+            timeout: Connection timeout in seconds (default: 45s for carrier establishment)
 
         Returns:
-            Tuple of (success: bool, ip_address: Optional[str])
+            Tuple of (success: bool, ip_address: Optional[str], error_reason: Optional[str])
+            error_reason can be: "wrong_credentials", "network_not_found", "timeout", "exception", or None
         """
         logger.info(f"[NetworkManager] Switching to Client mode (Network: {ssid})")
 
@@ -242,11 +256,11 @@ class NetworkManager:
 
         # Connect to WiFi
         logger.info(f"[NetworkManager] Connecting to WiFi network: {ssid}")
-        success = connect_to_wifi(ssid, password, timeout=timeout)
+        success, error_reason = connect_to_wifi(ssid, password, timeout=timeout)
 
         if not success:
-            logger.error(f"[NetworkManager] Failed to connect to {ssid}")
-            return False, None
+            logger.error(f"[NetworkManager] Failed to connect to {ssid} (reason: {error_reason})")
+            return False, None, error_reason
 
         # Get IP address
         ip_address = get_ip_address()
@@ -263,7 +277,7 @@ class NetworkManager:
         else:
             logger.warning(f"[NetworkManager] No internet connectivity (may be behind captive portal)")
 
-        return success, ip_address
+        return success, ip_address, None  # None = no error
 
     def cleanup_all_services(self) -> bool:
         """

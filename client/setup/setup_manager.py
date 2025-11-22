@@ -8,7 +8,7 @@ Coordinates device setup flows:
 
 import logging
 import time
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 
 from .network_manager import NetworkManager
 from .portal_server import CaptivePortalServer
@@ -128,29 +128,30 @@ class SetupManager:
 
         return credentials
 
-    def attempt_wifi_connection(self, ssid: str, password: str, timeout: int = 30) -> bool:
+    def attempt_wifi_connection(self, ssid: str, password: str, timeout: int = 45) -> Tuple[bool, Optional[str]]:
         """
         Attempt to connect to WiFi network.
 
         Args:
             ssid: WiFi network SSID
             password: WiFi network password
-            timeout: Connection timeout in seconds (default: 30)
+            timeout: Connection timeout in seconds (default: 45s for carrier establishment)
 
         Returns:
-            True if connected successfully
+            Tuple of (success: bool, error_reason: Optional[str])
+            error_reason can be: "wrong_credentials", "network_not_found", "timeout", "exception", or None
         """
         logger.info(f"[SetupManager] Attempting to connect to WiFi: {ssid}")
 
-        success, ip_address = self.network_manager.switch_to_client_mode(ssid, password, timeout)
+        success, ip_address, error_reason = self.network_manager.switch_to_client_mode(ssid, password, timeout)
 
         if success:
             logger.info(f"[SetupManager] Successfully connected to {ssid}")
             logger.info(f"[SetupManager] IP Address: {ip_address}")
         else:
-            logger.error(f"[SetupManager] Failed to connect to {ssid}")
+            logger.error(f"[SetupManager] Failed to connect to {ssid} (reason: {error_reason})")
 
-        return success
+        return success, error_reason
 
     def check_saved_credentials(self) -> Optional[Dict[str, str]]:
         """
@@ -169,6 +170,55 @@ class SetupManager:
             logger.info("[SetupManager] No saved credentials found")
 
         return credentials
+
+    def has_saved_credentials(self) -> bool:
+        """
+        Check if WiFi credentials are saved.
+
+        Returns:
+            True if credentials exist, False otherwise
+        """
+        credentials = load_credentials()
+        return credentials is not None
+
+    def get_saved_ssid(self) -> Optional[str]:
+        """
+        Get SSID from saved credentials.
+
+        Returns:
+            SSID string if credentials exist, None otherwise
+        """
+        credentials = load_credentials()
+        return credentials.get("ssid") if credentials else None
+
+    def clear_saved_credentials(self) -> bool:
+        """
+        Clear saved WiFi credentials.
+
+        Used when WiFi connection fails and we need to prompt for new credentials.
+
+        Returns:
+            True if successfully cleared or no credentials exist, False on error
+        """
+        from pathlib import Path
+        import os
+
+        logger.info("[SetupManager] Clearing saved WiFi credentials")
+
+        creds_file = Path.home() / "streamscene-client" / "wifi_credentials.json"
+
+        try:
+            if creds_file.exists():
+                os.remove(creds_file)
+                logger.info(f"[SetupManager] Credentials file removed: {creds_file}")
+            else:
+                logger.info("[SetupManager] No credentials file to clear")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"[SetupManager] Error clearing credentials: {e}")
+            return False
 
     def run_registration_flow(self, api_client, poll_interval: int = 10, timeout: int = 1800) -> bool:
         """

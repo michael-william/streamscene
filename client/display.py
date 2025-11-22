@@ -40,10 +40,16 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+import signal
+import time
+import logging
 
 from PIL import Image
 
 import config
+
+# Get logger for display operations
+display_logger = logging.getLogger("streamscene.display")
 
 
 class DisplayAdapter(ABC):
@@ -121,6 +127,16 @@ class HeadlessDisplay(DisplayAdapter):
 # E INK DISPLAY ADAPTER (FOR HARDWARE)
 # ============================================================================
 
+class TimeoutError(Exception):
+    """Raised when operation times out."""
+    pass
+
+
+def timeout_handler(signum, frame):
+    """Signal handler for timeout."""
+    raise TimeoutError("Operation timed out")
+
+
 class EInkDisplay(DisplayAdapter):
     """
     E Ink display adapter for Waveshare 7.3" 7-color E-Paper HAT.
@@ -134,24 +150,104 @@ class EInkDisplay(DisplayAdapter):
     """
 
     def __init__(self):
-        """Initialize E Ink display."""
+        """Initialize E Ink display with timeout and retry logic."""
         try:
             # Import Waveshare library (only when this class is used)
             from waveshare_epd import epd7in3e
             self.epd = epd7in3e.EPD()
 
+            display_logger.info("Initializing Waveshare 7.3\" E Ink display (E variant - 7 colors)")
             print("[Display] Initializing Waveshare 7.3\" E Ink display (E variant - 7 colors)...")
-            self.epd.init()
-            self.epd.Clear()
+
+            # Initialize display with timeout and retry
+            self._init_with_retry(max_attempts=3, timeout_seconds=60)
+
+            display_logger.info("E Ink display initialized successfully")
             print("[Display] E Ink display ready")
 
         except ImportError:
-            raise ImportError(
-                "waveshare-epd library not installed. "
-                "Install with: pip install waveshare-epd"
-            )
+            error_msg = "waveshare-epd library not installed. Install with: pip install waveshare-epd"
+            display_logger.error(error_msg)
+            raise ImportError(error_msg)
         except Exception as e:
-            raise RuntimeError(f"Failed to initialize E Ink display: {e}")
+            error_msg = f"Failed to initialize E Ink display: {e}"
+            display_logger.error(error_msg)
+            raise RuntimeError(error_msg)
+
+    def _init_with_retry(self, max_attempts: int = 3, timeout_seconds: int = 60):
+        """
+        Initialize E Ink display with timeout and retry logic.
+
+        Args:
+            max_attempts: Maximum number of initialization attempts
+            timeout_seconds: Timeout for each attempt in seconds
+
+        Raises:
+            TimeoutError: If initialization times out on all attempts
+            RuntimeError: If initialization fails on all attempts
+        """
+        for attempt in range(1, max_attempts + 1):
+            try:
+                display_logger.info(f"Initialization attempt {attempt}/{max_attempts}")
+
+                # Set up timeout alarm
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(timeout_seconds)
+
+                try:
+                    # Initialize display (this can hang without network/NTP)
+                    display_logger.debug("Calling epd.init()...")
+                    self.epd.init()
+                    display_logger.debug("epd.init() completed")
+
+                    # Clear display (takes ~30 seconds)
+                    display_logger.debug("Calling epd.Clear()...")
+                    self.epd.Clear()
+                    display_logger.debug("epd.Clear() completed")
+
+                    # Success - cancel alarm and return
+                    signal.alarm(0)
+                    display_logger.info(f"Display initialized successfully on attempt {attempt}")
+                    return
+
+                finally:
+                    # Always cancel alarm
+                    signal.alarm(0)
+
+            except TimeoutError:
+                display_logger.warning(
+                    f"Display initialization timed out after {timeout_seconds}s "
+                    f"(attempt {attempt}/{max_attempts})"
+                )
+
+                if attempt < max_attempts:
+                    # Wait before retry with exponential backoff
+                    wait_time = 2 ** attempt
+                    display_logger.info(f"Waiting {wait_time}s before retry...")
+                    time.sleep(wait_time)
+                else:
+                    # Final attempt failed
+                    error_msg = (
+                        f"E Ink display initialization failed after {max_attempts} attempts. "
+                        "This may be caused by missing network connection (NTP time sync required). "
+                        "Ensure network is available or check hardware connections."
+                    )
+                    display_logger.error(error_msg)
+                    raise RuntimeError(error_msg)
+
+            except Exception as e:
+                display_logger.warning(
+                    f"Display initialization error on attempt {attempt}/{max_attempts}: {e}"
+                )
+
+                if attempt < max_attempts:
+                    wait_time = 2 ** attempt
+                    display_logger.info(f"Waiting {wait_time}s before retry...")
+                    time.sleep(wait_time)
+                else:
+                    error_msg = f"E Ink display initialization failed after {max_attempts} attempts: {e}"
+                    display_logger.error(error_msg)
+                    raise RuntimeError(error_msg)
 
     def show(self, image: Image.Image) -> None:
         """Display image on E Ink screen."""

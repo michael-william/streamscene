@@ -155,7 +155,7 @@ class SetupService(BaseService):
         ssid: str,
         password: str,
         timeout: int = 30
-    ) -> Tuple[bool, Optional[str]]:
+    ) -> Tuple[bool, Optional[str], Optional[str]]:
         """Connect to WiFi network.
 
         Args:
@@ -164,12 +164,13 @@ class SetupService(BaseService):
             timeout: Connection timeout in seconds (default: 30)
 
         Returns:
-            Tuple of (success: bool, ip_address: Optional[str])
+            Tuple of (success: bool, ip_address: Optional[str], error_reason: Optional[str])
+            error_reason can be: "wrong_credentials", "network_not_found", "timeout", "exception", or None
         """
         self.logger.info(f"Connecting to WiFi network: {ssid}")
 
         try:
-            success, ip_address = self.network_manager.switch_to_client_mode(
+            success, ip_address, error_reason = self.network_manager.switch_to_client_mode(
                 ssid=ssid,
                 password=password,
                 timeout=timeout
@@ -177,14 +178,14 @@ class SetupService(BaseService):
 
             if success:
                 self.logger.info(f"Successfully connected! IP address: {ip_address}")
-                return (True, ip_address)
+                return (True, ip_address, None)
             else:
-                self.logger.error(f"Failed to connect to {ssid}")
-                return (False, None)
+                self.logger.error(f"Failed to connect to {ssid} (reason: {error_reason})")
+                return (False, None, error_reason)
 
         except Exception as e:
             self.logger.error(f"Error connecting to WiFi: {e}")
-            return (False, None)
+            return (False, None, "exception")
 
     def get_registration_url(self) -> str:
         """Get registration URL for this device.
