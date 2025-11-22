@@ -130,6 +130,44 @@ class StreamSceneAPIClient:
             print(f"[API Client] Error fetching content: {e}")
             return None
 
+    def fetch_content_image(self, rotation_index: Optional[int] = None) -> Optional['Image.Image']:
+        """
+        Fetch pre-rendered content image from the API.
+
+        Args:
+            rotation_index: Optional rotation index for content rotation mode
+
+        Returns:
+            PIL Image object, or None if request fails
+        """
+        from PIL import Image
+        import io
+
+        url = f"{self.base_url}/api/devices/{self.device_id}/content/image"
+
+        # Add rotation_index as query parameter if provided
+        params = {}
+        if rotation_index is not None:
+            params['rotation_index'] = rotation_index
+
+        try:
+            print(f"[API Client] Fetching rendered image from {url}")
+            response = self.session.get(url, params=params, timeout=config.REQUEST_TIMEOUT)
+            response.raise_for_status()
+
+            # Load image from response bytes
+            image = Image.open(io.BytesIO(response.content))
+            print(f"[API Client] Image received ({image.width}x{image.height}, {image.mode})")
+
+            return image
+
+        except requests.exceptions.RequestException as e:
+            print(f"[API Client] Error fetching image: {e}")
+            return None
+        except Exception as e:
+            print(f"[API Client] Error loading image: {e}")
+            return None
+
     def send_heartbeat(self) -> bool:
         """
         Send heartbeat to indicate device is online.

@@ -506,11 +506,23 @@ class StreamSceneClient:
 
                 # Refresh display if needed
                 if should_refresh:
-                    display_logger.info("Rendering fetched content to image")
-                    image = self.renderer.render_content(content)
-
-                    display_logger.info("Displaying image on E Ink display")
-                    self.display.show(image)
+                    # Check if we have a pre-rendered image from the server
+                    if content.get("rendered_image_url"):
+                        display_logger.info("Downloading pre-rendered image from server")
+                        image = self.api_client.fetch_content_image()
+                        if image:
+                            display_logger.info("Displaying server-rendered image on E Ink display")
+                            self.display.show(image)
+                        else:
+                            display_logger.warning("Failed to download rendered image, falling back to local rendering")
+                            image = self.renderer.render_content(content)
+                            self.display.show(image)
+                    else:
+                        # Fallback to local rendering for legacy content
+                        display_logger.info("Rendering fetched content to image (local)")
+                        image = self.renderer.render_content(content)
+                        display_logger.info("Displaying image on E Ink display")
+                        self.display.show(image)
 
                     # Update tracking
                     self.last_displayed_post_id = current_post_id

@@ -5,6 +5,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 from uuid import UUID
+from pathlib import Path
 import os
 import logging
 
@@ -243,8 +244,15 @@ async def get_device_content_image(
     if content is None:
         raise HTTPException(status_code=404, detail="Device not found")
 
-    # Render content to PNG using the rendering service
-    # Run sync rendering in thread pool to avoid blocking asyncio loop
+    # Return pre-rendered PIL image if available
+    if content.get("image_url") and Path(content["image_url"]).exists():
+        return FileResponse(
+            path=content["image_url"],
+            media_type="image/png",
+            filename=f"content-{device_id}.png",
+        )
+
+    # Fallback to old Playwright rendering for legacy posts without processed_image_path
     try:
         import asyncio
         image_path = await asyncio.to_thread(

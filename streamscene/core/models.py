@@ -123,10 +123,13 @@ class Post(Base):
     author_id: Mapped[uuid.UUID] = Column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete=("CASCADE")), nullable=False, index=True
     )
-    content_type: Mapped[str] = Column(String(20), default="text", nullable=False)  # 'text', 'image', 'mixed'
+    content_type: Mapped[str] = Column(String(20), default="meme", nullable=False)  # 'picture', 'meme'
     text_content: Mapped[str] = Column(Text, nullable=True)
-    image_path: Mapped[str] = Column(String(500), nullable=True)  # Defer to Phase 5
-    processed_image_path: Mapped[str] = Column(String(500), nullable=True)  # Defer to Phase 5
+    image_path: Mapped[str] = Column(String(500), nullable=True)  # For 'picture' posts - uploaded image
+    background_name: Mapped[str] = Column(String(100), nullable=True)  # For 'meme' posts - background filename
+    text_color: Mapped[str] = Column(String(7), default="#000000", nullable=False)  # Hex color (e.g., #FFFFFF)
+    outline_color: Mapped[str] = Column(String(7), default="#FFFFFF", nullable=False)  # Hex outline color
+    processed_image_path: Mapped[str] = Column(String(500), nullable=True)  # Server-rendered 800x480 PNG
     created_at: Mapped[datetime] = Column(DateTime(timezone=True), default=utc_now, nullable=False, index=True)
     updated_at: Mapped[datetime] = Column(
         DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
@@ -144,6 +147,24 @@ class Post(Base):
 
     def __repr__(self):
         return f"<Post(id={self.id}, stream_id={self.stream_id}, author_id={self.author_id})>"
+
+
+class BackgroundImage(Base):
+    """BackgroundImage model - Available backgrounds for 'Meme It' posts."""
+
+    __tablename__ = "background_images"
+
+    id: Mapped[uuid.UUID] = Column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    filename: Mapped[str] = Column(String(255), unique=True, nullable=False, index=True)
+    display_name: Mapped[str] = Column(String(100), nullable=False)  # Human-readable name
+    is_active: Mapped[bool] = Column(Boolean, default=True, nullable=False)  # Can be disabled
+    sort_order: Mapped[int] = Column(Integer, default=0, nullable=False)  # Display order in UI
+    created_at: Mapped[datetime] = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+    def __repr__(self):
+        return f"<BackgroundImage(id={self.id}, filename={self.filename}, display_name={self.display_name})>"
 
 
 class StreamSubscription(Base):

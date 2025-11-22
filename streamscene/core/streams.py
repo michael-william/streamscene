@@ -1,19 +1,166 @@
 """Business logic for streams, posts, and subscriptions."""
 
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import List, Optional, BinaryIO
 from uuid import UUID
+from pathlib import Path
+import hashlib
+import io
 
+from PIL import Image
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_, or_, desc
 
 from .models import Stream, Post, StreamSubscription, User, Device
 from .utils import generate_slug, ensure_unique_slug
+from .image_renderer import ImageRenderer, hex_to_rgb
+from .backgrounds import get_background_path, get_default_background
 
 
 def utc_now():
     """Return current UTC datetime."""
     return datetime.now(timezone.utc)
+
+
+# ============================================================================
+# IMAGE STORAGE CONSTANTS
+# ============================================================================
+
+UPLOADS_DIR = Path("/root/streamscene/uploads/posts")
+RENDERED_DIR = Path("/root/streamscene/cache/rendered")
+
+# Ensure directories exist
+UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+RENDERED_DIR.mkdir(parents=True, exist_ok=True)
+
+# Initialize renderer (shared instance)
+_renderer = None
+
+
+def get_renderer() -> ImageRenderer:
+    """Get shared ImageRenderer instance."""
+    global _renderer
+    if _renderer is None:
+        _renderer = ImageRenderer()
+    return _renderer
+
+
+# ============================================================================
+# IMAGE HANDLING HELPERS
+# ============================================================================
+
+
+def save_uploaded_image(image_bytes: bytes, post_id: UUID) -> str:
+    """
+    Save uploaded image to disk.
+
+    Args:
+        image_bytes: Image file bytes
+        post_id: Post UUID (used in filename)
+
+    Returns:
+        Relative path to saved image
+
+    Raises:
+        ValueError: If image format is invalid
+    """
+    # Open and validate image
+    try:
+        img = Image.open(io.BytesIO(image_bytes))
+        img.verify()  # Verify it's a valid image
+    except Exception as e:
+        raise ValueError(f"Invalid image file: {e}")
+
+    # Re-open image (verify() closes it)
+    img = Image.open(io.BytesIO(image_bytes))
+
+    # Convert RGBA to RGB if needed
+    if img.mode == "RGBA":
+        # Create white background
+        background = Image.new("RGB", img.size, (255, 255, 255))
+        background.paste(img, mask=img.split()[3])  # Use alpha channel as mask
+        img = background
+    elif img.mode != "RGB":
+        img = img.convert("RGB")
+
+    # Save with post ID as filename
+    filename = f"{post_id}.jpg"
+    filepath = UPLOADS_DIR / filename
+    img.save(filepath, "JPEG", quality=90, optimize=True)
+
+    return str(filepath)
+
+
+def render_and_cache_post(
+    post: Post,
+    stream_name: str,
+    author_name: str
+) -> str:
+    """
+    Render post to 800x480 PNG and cache it.
+
+    Args:
+        post: Post object
+        stream_name: Stream display name
+        author_name: Author display name
+
+    Returns:
+        Path to rendered PNG file
+
+    Raises:
+        ValueError: If post type is invalid or required fields missing
+    """
+    renderer = get_renderer()
+
+    # Parse colors
+    text_color = hex_to_rgb(post.text_color)
+    outline_color = hex_to_rgb(post.outline_color)
+
+    # Determine post type and render
+    if post.content_type == "picture":
+        if not post.image_path:
+            raise ValueError("Picture posts require image_path")
+
+        rendered_img = renderer.render_picture_post(
+            image_path=post.image_path,
+            text_content=post.text_content or "",
+            stream_name=stream_name,
+            author_name=author_name,
+            post_date=post.created_at,
+            text_color=text_color,
+            outline_color=outline_color
+        )
+
+    elif post.content_type == "meme":
+        if not post.background_name:
+            raise ValueError("Meme posts require background_name")
+
+        background_path = str(get_background_path(post.background_name))
+
+        rendered_img = renderer.render_meme_post(
+            background_image_path=background_path,
+            text_content=post.text_content or "",
+            stream_name=stream_name,
+            author_name=author_name,
+            post_date=post.created_at,
+            text_color=text_color,
+            outline_color=outline_color
+        )
+
+    else:
+        raise ValueError(f"Unknown content_type: {post.content_type}")
+
+    # Generate cache key (hash of post content)
+    cache_key = hashlib.sha256(
+        f"{post.id}{post.content_type}{post.text_content}{post.text_color}{post.outline_color}".encode()
+    ).hexdigest()[:16]
+
+    # Save rendered image
+    filename = f"{post.id}_{cache_key}.png"
+    filepath = RENDERED_DIR / filename
+    rendered_img.save(filepath, "PNG", optimize=True)
+
+    return str(filepath)
 
 
 # ============================================================================
@@ -208,28 +355,82 @@ def create_post(
     stream_id: UUID,
     author_id: UUID,
     text_content: str,
-    content_type: str = "text",
+    content_type: str = "meme",
+    image_bytes: Optional[bytes] = None,
+    background_name: Optional[str] = None,
+    text_color: str = "#000000",
+    outline_color: str = "#FFFFFF",
 ) -> Post:
     """
-    Create a new text post in a stream.
+    Create a new post in a stream (picture or meme).
 
     Args:
         session: Database session
         stream_id: Stream UUID
         author_id: Author's user UUID
-        text_content: The text content of the post
-        content_type: Type of content (default: "text")
+        text_content: The text content (max 160 chars)
+        content_type: "picture" or "meme" (default: "meme")
+        image_bytes: Image file bytes (required for picture posts)
+        background_name: Background filename (required for meme posts)
+        text_color: Hex color code for text (default: black)
+        outline_color: Hex color code for outline (default: white)
 
     Returns:
         Post: The created post instance
+
+    Raises:
+        ValueError: If required fields are missing or invalid
     """
+    # Validate text length
+    if text_content and len(text_content) > 160:
+        raise ValueError("Text content must be 160 characters or less")
+
+    # Validate content_type
+    if content_type not in ["picture", "meme"]:
+        raise ValueError(f"Invalid content_type: {content_type}")
+
+    # Validate required fields per content type
+    if content_type == "picture" and not image_bytes:
+        raise ValueError("Picture posts require image_bytes")
+    if content_type == "meme" and not background_name:
+        # Use default white background if not specified
+        default_bg = get_default_background(session)
+        if default_bg:
+            background_name = default_bg.filename
+        else:
+            raise ValueError("Meme posts require background_name and no default available")
+
+    # Create post record
     post = Post(
         stream_id=stream_id,
         author_id=author_id,
         text_content=text_content,
         content_type=content_type,
+        background_name=background_name,
+        text_color=text_color,
+        outline_color=outline_color,
     )
     session.add(post)
+    session.flush()  # Generate post.id
+
+    # Save uploaded image if picture post
+    if content_type == "picture" and image_bytes:
+        post.image_path = save_uploaded_image(image_bytes, post.id)
+
+    # Get stream and author names for rendering
+    stream = session.query(Stream).filter(Stream.id == stream_id).first()
+    author = session.query(User).filter(User.id == author_id).first()
+
+    if not stream or not author:
+        raise ValueError("Stream or author not found")
+
+    # Render and cache the post
+    post.processed_image_path = render_and_cache_post(
+        post=post,
+        stream_name=stream.name,
+        author_name=author.display_name
+    )
+
     session.flush()
     return post
 
