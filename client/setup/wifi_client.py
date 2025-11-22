@@ -6,7 +6,7 @@ This module handles connecting the Raspberry Pi to a WiFi network in client mode
 import subprocess
 import json
 import time
-from typing import Optional, Dict
+from typing import Optional, Dict, Tuple
 from pathlib import Path
 import logging
 import os
@@ -15,6 +15,26 @@ logger = logging.getLogger(__name__)
 
 WIFI_CONFIG_FILE = Path.home() / "streamscene-client" / "wifi_credentials.json"
 WPA_SUPPLICANT_CONF = "/etc/wpa_supplicant/wpa_supplicant.conf"
+
+
+def parse_wpa_status(status_output: str) -> Dict[str, str]:
+    """
+    Parse wpa_cli status output into dictionary.
+
+    Example output:
+        wpa_state=SCANNING
+        bssid=00:00:00:00:00:00
+        ssid=MyNetwork
+
+    Returns:
+        Dictionary with parsed key-value pairs
+    """
+    status = {}
+    for line in status_output.strip().split('\n'):
+        if '=' in line:
+            key, value = line.split('=', 1)
+            status[key.strip()] = value.strip()
+    return status
 
 
 def load_credentials() -> Optional[Dict[str, str]]:
@@ -114,17 +134,18 @@ country=US
     return config
 
 
-def connect_to_wifi(ssid: str, password: str, timeout: int = 30) -> bool:
+def connect_to_wifi(ssid: str, password: str, timeout: int = 45) -> Tuple[bool, Optional[str]]:
     """
     Connect to WiFi network.
 
     Args:
         ssid: Network name
         password: Network password (empty string for open network)
-        timeout: Connection timeout in seconds
+        timeout: Connection timeout in seconds (default: 45s for carrier establishment)
 
     Returns:
-        True if successfully connected
+        Tuple of (success: bool, error_reason: Optional[str])
+        error_reason can be: "wrong_credentials", "network_not_found", "timeout", or None on success
     """
     logger.info(f"Connecting to WiFi: {ssid}")
 
@@ -179,8 +200,60 @@ def connect_to_wifi(ssid: str, password: str, timeout: int = 30) -> bool:
             timeout=10
         )
 
-        # Wait for wpa_supplicant to initialize
-        time.sleep(3)
+        # Wait for wpa_supplicant to associate with WiFi network
+        logger.debug("Waiting for wpa_supplicant to associate with network...")
+        association_timeout = 45  # Give wpa_supplicant up to 45s to associate
+        association_start = time.time()
+        last_state = None
+        state_change_time = time.time()
+        wrong_password_detected = False
+        network_not_found = True  # Assume not found until we see progress
+
+        while time.time() - association_start < association_timeout:
+            try:
+                result = subprocess.run(
+                    ["sudo", "wpa_cli", "-i", "wlan0", "status"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+
+                if result.returncode == 0:
+                    # Parse wpa_cli status output
+                    status_dict = parse_wpa_status(result.stdout)
+                    wpa_state = status_dict.get('wpa_state', 'UNKNOWN')
+
+                    # Log state transitions for diagnostics
+                    if wpa_state != last_state:
+                        logger.info(f"wpa_state: {last_state} → {wpa_state}")
+                        last_state = wpa_state
+                        state_change_time = time.time()
+
+                    # Success - WiFi association complete
+                    if wpa_state == "COMPLETED":
+                        logger.info("✓ WiFi association complete")
+                        network_not_found = False
+                        break
+
+                    # If we're progressing past SCANNING, network was found
+                    if wpa_state in ['ASSOCIATING', '4WAY_HANDSHAKE', 'COMPLETED']:
+                        network_not_found = False
+
+                    # Detect wrong password: stuck in 4WAY_HANDSHAKE or DISCONNECTED
+                    time_in_state = time.time() - state_change_time
+                    if wpa_state in ['4WAY_HANDSHAKE', 'DISCONNECTED'] and time_in_state > 8:
+                        logger.error(f"Stuck in {wpa_state} for {time_in_state:.1f}s - likely wrong password")
+                        wrong_password_detected = True
+                        break
+
+                # Check every 2 seconds
+                time.sleep(2)
+            except Exception as e:
+                logger.debug(f"Error checking wpa_supplicant status: {e}")
+                time.sleep(2)
+        else:
+            # Timeout - log final state for diagnostics
+            logger.warning(f"WiFi association timeout after {association_timeout}s (final state: {last_state})")
 
         # Step 3: Request DHCP lease using dhcpcd (Raspberry Pi OS default)
         logger.debug("Requesting DHCP lease with dhcpcd...")
@@ -195,12 +268,12 @@ def connect_to_wifi(ssid: str, password: str, timeout: int = 30) -> bool:
         time.sleep(1)
 
         # Request new lease (dhcpcd daemon manages this automatically)
-        # Just need to restart dhcpcd or trigger it for wlan0
+        # Since wpa_supplicant already associated, dhcpcd should get lease quickly
         subprocess.run(
             ["sudo", "dhcpcd", "-n", "wlan0"],
             check=False,
             capture_output=True,
-            timeout=15
+            timeout=30
         )
 
         # Step 4: Wait for connection
@@ -210,20 +283,28 @@ def connect_to_wifi(ssid: str, password: str, timeout: int = 30) -> bool:
         while time.time() - start_time < timeout:
             if is_connected():
                 logger.info(f"✓ Connected to WiFi: {ssid}")
-                return True
+                return True, None
             time.sleep(2)
 
-        logger.error(f"Connection timeout after {timeout}s")
-        return False
+        # Connection failed - determine specific error reason
+        if wrong_password_detected:
+            logger.error("Connection failed: Wrong WiFi credentials (4-way handshake failed)")
+            return False, "wrong_credentials"
+        elif network_not_found:
+            logger.error("Connection failed: Network not found (never progressed past SCANNING)")
+            return False, "network_not_found"
+        else:
+            logger.error(f"Connection timeout after {timeout}s (last state: {last_state})")
+            return False, "timeout"
 
     except subprocess.CalledProcessError as e:
         logger.error(f"Error connecting to WiFi: {e}")
         logger.error(f"  stdout: {e.stdout}")
         logger.error(f"  stderr: {e.stderr}")
-        return False
+        return False, "exception"
     except Exception as e:
         logger.error(f"Unexpected error connecting to WiFi: {e}")
-        return False
+        return False, "exception"
 
 
 def is_connected() -> bool:
@@ -327,6 +408,81 @@ def get_ip_address() -> Optional[str]:
     except Exception as e:
         logger.debug(f"Error getting IP address: {e}")
         return None
+
+
+def scan_networks() -> list:
+    """
+    Scan for available WiFi networks.
+
+    Returns:
+        List of dicts with network info: [{"ssid": "...", "signal": -26, "encrypted": True}, ...]
+        Empty list if scan fails.
+    """
+    try:
+        result = subprocess.run(
+            ["sudo", "iwlist", "wlan0", "scan"],
+            capture_output=True,
+            text=True,
+            timeout=15
+        )
+
+        if result.returncode != 0:
+            logger.warning("WiFi scan failed")
+            return []
+
+        # Parse scan output
+        networks = []
+        current_network = {}
+
+        for line in result.stdout.split('\n'):
+            line = line.strip()
+
+            # New cell starts
+            if 'Cell ' in line and 'Address:' in line:
+                if current_network and current_network.get('ssid'):
+                    networks.append(current_network)
+                current_network = {'ssid': '', 'signal': -100, 'encrypted': False}
+
+            # ESSID
+            elif 'ESSID:' in line:
+                ssid = line.split('ESSID:')[1].strip().strip('"')
+                if ssid:  # Skip empty SSIDs
+                    current_network['ssid'] = ssid
+
+            # Signal level
+            elif 'Signal level=' in line:
+                try:
+                    # Format: "Quality=70/70  Signal level=-26 dBm"
+                    signal_str = line.split('Signal level=')[1].split()[0]
+                    current_network['signal'] = int(signal_str)
+                except (IndexError, ValueError):
+                    pass
+
+            # Encryption
+            elif 'Encryption key:on' in line:
+                current_network['encrypted'] = True
+
+        # Add last network
+        if current_network and current_network.get('ssid'):
+            networks.append(current_network)
+
+        # Sort by signal strength (strongest first)
+        networks.sort(key=lambda n: n['signal'], reverse=True)
+
+        # Remove duplicates (keep strongest)
+        seen = set()
+        unique_networks = []
+        for network in networks:
+            if network['ssid'] not in seen:
+                seen.add(network['ssid'])
+                unique_networks.append(network)
+
+        logger.info(f"WiFi scan found {len(unique_networks)} networks")
+        return unique_networks
+
+    except Exception as e:
+        logger.error(f"Error scanning WiFi networks: {e}")
+        return []
 
 
 def test_internet_connectivity(timeout: int = 10) -> bool:

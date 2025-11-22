@@ -12,6 +12,8 @@ import os
 import logging
 import threading
 
+from .wifi_client import scan_networks
+
 logger = logging.getLogger(__name__)
 
 # Where to save WiFi credentials
@@ -59,9 +61,20 @@ class PortalHandler(BaseHTTPRequestHandler):
             post_data = self.rfile.read(content_length).decode('utf-8')
             params = parse_qs(post_data)
 
-            # Extract credentials
-            ssid = params.get('ssid', [''])[0].strip()
+            # Extract credentials - handle both dropdown and manual entry
+            network_select = params.get('network_select', [''])[0].strip()
+            manual_ssid = params.get('manual_ssid', [''])[0].strip()
             password = params.get('password', [''])[0]
+
+            # Determine which SSID to use
+            if network_select == "__manual__":
+                # User selected manual entry
+                ssid = manual_ssid
+                logger.info(f"Using manual SSID entry: {ssid}")
+            else:
+                # User selected from dropdown
+                ssid = network_select
+                logger.info(f"Using selected network: {ssid}")
 
             if not ssid:
                 # Send error page
@@ -106,19 +119,54 @@ class PortalHandler(BaseHTTPRequestHandler):
 
     def get_setup_page(self) -> str:
         """HTML form for WiFi setup (NO JAVASCRIPT)."""
-        return """<!DOCTYPE html>
+        # Scan available WiFi networks
+        networks = scan_networks()
+
+        # Generate network options HTML
+        network_options = ""
+        if networks:
+            logger.info(f"Rendering {len(networks)} networks in dropdown")
+            for network in networks:
+                ssid = network['ssid']
+                signal = network['signal']
+                encrypted = network['encrypted']
+
+                # Signal strength indicator (bars)
+                if signal >= -50:
+                    signal_bars = "▂▄▆█"  # Excellent
+                elif signal >= -60:
+                    signal_bars = "▂▄▆"   # Good
+                elif signal >= -70:
+                    signal_bars = "▂▄"    # Fair
+                else:
+                    signal_bars = "▂"     # Weak
+
+                # Lock icon for encrypted networks
+                lock_icon = "🔒" if encrypted else ""
+
+                # Build option display text
+                display_text = f"{ssid} {signal_bars} {lock_icon}"
+                network_options += f'                <option value="{ssid}">{display_text}</option>\n'
+        else:
+            logger.warning("No networks found during scan")
+            network_options = '                <option value="" disabled>No networks found</option>\n'
+
+        # Add manual entry option
+        network_options += '                <option value="__manual__">📝 Enter network name manually</option>\n'
+
+        return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>StreamScene WiFi Setup</title>
     <style>
-        * {
+        * {{
             box-sizing: border-box;
             margin: 0;
             padding: 0;
-        }
-        body {
+        }}
+        body {{
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
@@ -126,52 +174,59 @@ class PortalHandler(BaseHTTPRequestHandler):
             align-items: center;
             justify-content: center;
             padding: 20px;
-        }
-        .container {
+        }}
+        .container {{
             background: white;
             border-radius: 16px;
             padding: 40px;
             max-width: 500px;
             width: 100%;
             box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-        }
-        h1 {
+        }}
+        h1 {{
             color: #333;
             font-size: 28px;
             margin-bottom: 10px;
             text-align: center;
-        }
-        .subtitle {
+        }}
+        .subtitle {{
             color: #666;
             text-align: center;
             margin-bottom: 30px;
             font-size: 16px;
-        }
-        .form-group {
+        }}
+        .form-group {{
             margin-bottom: 24px;
-        }
-        label {
+        }}
+        label {{
             display: block;
             margin-bottom: 8px;
             font-weight: 600;
             color: #333;
             font-size: 14px;
-        }
+        }}
+        select,
         input[type="text"],
-        input[type="password"] {
+        input[type="password"] {{
             width: 100%;
             padding: 14px;
             border: 2px solid #e0e0e0;
             border-radius: 8px;
             font-size: 16px;
             transition: border-color 0.3s;
-        }
+            font-family: monospace;
+        }}
+        select:focus,
         input[type="text"]:focus,
-        input[type="password"]:focus {
+        input[type="password"]:focus {{
             outline: none;
             border-color: #667eea;
-        }
-        button {
+        }}
+        select {{
+            cursor: pointer;
+            background: white;
+        }}
+        button {{
             width: 100%;
             padding: 16px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -182,15 +237,15 @@ class PortalHandler(BaseHTTPRequestHandler):
             font-weight: 600;
             cursor: pointer;
             transition: transform 0.2s, box-shadow 0.2s;
-        }
-        button:hover {
+        }}
+        button:hover {{
             transform: translateY(-2px);
             box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
-        }
-        button:active {
+        }}
+        button:active {{
             transform: translateY(0);
-        }
-        .note {
+        }}
+        .note {{
             margin-top: 20px;
             padding: 16px;
             background: #f8f9fa;
@@ -198,12 +253,20 @@ class PortalHandler(BaseHTTPRequestHandler):
             border-radius: 4px;
             font-size: 14px;
             color: #555;
-        }
-        .logo {
+        }}
+        .logo {{
             text-align: center;
             margin-bottom: 20px;
             font-size: 48px;
-        }
+        }}
+        .hidden {{
+            display: none;
+        }}
+        .info {{
+            font-size: 12px;
+            color: #888;
+            margin-top: 4px;
+        }}
     </style>
 </head>
 <body>
@@ -214,15 +277,26 @@ class PortalHandler(BaseHTTPRequestHandler):
 
         <form method="POST" action="/">
             <div class="form-group">
-                <label for="ssid">WiFi Network Name (SSID)</label>
+                <label for="network_select">Select WiFi Network</label>
+                <select id="network_select" name="network_select" required>
+                    <option value="" selected>Choose a network...</option>
+{network_options}
+                </select>
+                <div class="info">
+                    Signal strength: ▂▄▆█ (excellent) to ▂ (weak) | 🔒 = Password protected
+                </div>
+            </div>
+
+            <div class="form-group" id="manual_ssid_group">
+                <label for="manual_ssid">Network Name (SSID)</label>
                 <input
                     type="text"
-                    id="ssid"
-                    name="ssid"
-                    required
-                    placeholder="Enter your WiFi network name"
+                    id="manual_ssid"
+                    name="manual_ssid"
+                    placeholder="Enter network name manually"
                     autocomplete="off"
                 >
+                <div class="info">Only needed if you selected "Enter network name manually"</div>
             </div>
 
             <div class="form-group">
