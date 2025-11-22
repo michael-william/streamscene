@@ -1,151 +1,202 @@
 # StreamScene - Next Session Plan
 
-**Last Updated:** 2025-11-22 (Session 2)
-**Current Phase:** Phase 5 Complete - Device WiFi and Network Resilience
-**Device Status:** ✅ Operational (Raspberry Pi Zero 2 WH @ 192.168.1.40)
+**Last Updated:** 2025-11-22 (Session 3)
+**Current Phase:** Phase 6 (PIL Image Renderer) - WORKING ON DEVICE!
+**Device Status:** ✅ Displaying PIL-rendered posts (Raspberry Pi Zero 2 WH @ 192.168.1.195 WiFi)
 
 ---
 
-## 📊 Session Summary (2025-11-22 - Session 2)
+## 📊 Session Summary (2025-11-22 - Session 3)
 
 ### **What We Accomplished**
 
-This session focused on **WiFi network selection and proactive network failover** to make the device resilient to network changes.
+This session focused on **implementing a new PIL-based image renderer** to replace text-only posts with rich visual content.
 
-#### **WiFi Network Scanning Feature** ✅
+#### **PIL Image Renderer** ✅
 
-**Goal:** Allow users to see and select from available WiFi networks during setup
+**Goal:** Support two new post types - "Post a Picture" and "Meme It"
 
 **Implementation:**
-- Added `scan_networks()` to `wifi_client.py`:
-  - Scans for available networks using `iwlist scan`
-  - Parses SSID, signal strength (dBm), and encryption status
-  - Sorts by signal strength (strongest first)
-  - Removes duplicate SSIDs (keeps strongest)
-- Updated captive portal (`portal_server.py`):
-  - Network selection dropdown with signal strength indicators
-  - Visual encryption indicators (🔒 for encrypted networks)
-  - Fallback to manual SSID entry if scan fails
-- Tested end-to-end on Raspberry Pi Zero 2 WH
+- Created `streamscene/core/image_renderer.py` - Pure PIL rendering engine
+  - Dynamic font sizing (20-72px) maximizes text in available space
+  - **Picture posts:** Upload image + text comment
+    - Landscape/square: Image centered with 40px padding, text below
+    - Portrait: 60/40 split (image 480px left, text 320px right)
+  - **Meme posts:** Text overlay on background image
+    - Full-screen background fills 800×480 display
+    - Text with configurable colors and outline for readability
+  - Top bar: Stream name (left), Author (center), Date (right)
+  - Word-boundary aware text wrapping
+  - Handles empty/None values gracefully
 
-**Files Modified:**
-- `client/setup/wifi_client.py` - Added scan_networks() function
-- `client/setup/portal_server.py` - Updated HTML with network dropdown
+**Files Created/Modified:**
+- `streamscene/core/image_renderer.py` - NEW PIL renderer (600+ lines)
+- `streamscene/core/backgrounds.py` - NEW background management
+- `streamscene/core/models.py` - Updated Post + BackgroundImage models
+- `streamscene/core/streams.py` - Updated post creation logic
+- `streamscene/api/routes/devices.py` - Serve pre-rendered images
+- `client/api_client.py` - Added fetch_content_image() method
+- `client/main.py` - Download server-rendered images
 
-**Commit:** d4708ce - "feat: Add WiFi network scanning to captive portal"
+**Commits:** a026c3b - "feat: Implement PIL-based image renderer for picture and meme posts"
 
 ---
 
-#### **Proactive WiFi Failover** ✅
+#### **Database Schema Updates** ✅
 
-**Goal:** Seamless WiFi failover when ethernet disconnects (no error screen if WiFi succeeds)
+**Migration:** `7f87799a3ddc_add_picture_and_meme_post_support.py`
 
-**Problem:**
-- Previous behavior: Ethernet disconnect → wait for 2 API failures → show error → attempt WiFi → show error even if WiFi worked
-- User requirement: "WiFi should activate as soon as ethernet is disconnected. Only show error if WiFi fails after 2 attempts."
+**Post Model Changes:**
+- `content_type` - Changed default from "text" to "meme"
+- `background_name` - Filename of meme background (nullable)
+- `text_color` - Hex color code (default: #000000)
+- `outline_color` - Hex color code (default: #FFFFFF)
+- `processed_image_path` - Path to server-rendered 800×480 PNG
 
-**Implementation:**
-- Made `is_ethernet_up()` public in `network_service.py`
-- Updated `main.py` failover logic:
-  - Check ethernet status on **FIRST** API failure (not second)
-  - If ethernet DOWN → immediate WiFi activation
-  - If WiFi succeeds → continue normally, **NO error screen**
-  - Only show error if WiFi connection fails
-- Changed from reactive (wait for failures) to proactive (detect disconnect immediately)
-
-**Files Modified:**
-- `client/services/network_service.py` - Made is_ethernet_up() public (line 282)
-- `client/main.py` - Rewrote failure handling (lines 527-589)
-
-**Testing:**
-- ✅ Deployed to Pi and restarted service
-- ✅ User unplugged ethernet
-- ✅ Device seamlessly failed over to WiFi
-- ✅ User posted new content, appeared on device immediately
-- ✅ **NO error screen shown** (correct behavior!)
-
-**Commits:**
-- cdbf3b4 - "feat: Implement proactive WiFi failover (no error screen on success)"
-- 7625ea8 - "feat: Add WiFi network scanning and improve display error handling"
+**New BackgroundImage Model:**
+- `id`, `filename`, `display_name`, `is_active`, `sort_order`, `created_at`
+- Tracks available backgrounds for Meme It posts
+- 13 default backgrounds seeded
 
 ---
 
-#### **Additional Improvements** ✅
+#### **Background System** ✅
 
-**Display Error Handling:**
-- Improved display initialization retry logic
-- Better error messages for different failure scenarios
-- Enhanced logging for display operations
+**Location:** `/root/streamscene/backgrounds/`
 
-**Network Manager:**
-- Updated timeout handling for WiFi connections
-- Better error propagation from network operations
+**13 Default Backgrounds Created:**
+- Solid colors: white, black, blue, red, green, purple, orange, dark_slate
+- Gradients: blue_purple, green_blue, yellow_orange, red_gradient
+- Patterns: diagonal_lines
 
-**Setup Service:**
-- Improved WiFi connection error handling
-- Updated connection flow for better reliability
+**Management:**
+- `streamscene/core/backgrounds.py` - CRUD operations
+- `scripts/create_default_backgrounds.py` - Generate backgrounds
+- `scripts/seed_backgrounds.py` - Seed database
+- Future: Admin UI for upload (Phase 5)
+
+---
+
+#### **Testing & Validation** ✅
+
+**Test Scripts Created:**
+- `scripts/test_renderer.py` - 14 test images (meme + picture posts)
+- `scripts/test_post_creation.py` - Full database integration tests
+- `scripts/display_test_post.py` - Create posts for device testing
+
+**Test Results:**
+- ✅ All text lengths (0-160 chars) rendering correctly
+- ✅ Dynamic font sizing working (text maximizes available space)
+- ✅ Image orientation detection (landscape/portrait/square)
+- ✅ Text wrapping at word boundaries
+- ✅ Color customization (text + outline)
+- ✅ Empty text handling
+- ✅ **Physical device test:** Post displaying on Waveshare 7.3" E Ink!
+
+**Test Output:**
+- `/root/streamscene/test_output/` - 14 rendered test images
+- `/root/streamscene/test_images/` - 3 test photos (landscape, portrait, square)
+- `/root/streamscene/cache/rendered/` - 11 production-rendered posts
+
+---
+
+#### **Device Client Updates** ✅
+
+**Problem Solved:** Device was showing blank screen because it was trying to render content locally instead of downloading pre-rendered images.
+
+**Solution:**
+- Updated `client/main.py` to check for `rendered_image_url` in API response
+- Added `fetch_content_image()` to `client/api_client.py`
+- Client now downloads server-rendered PNGs instead of local rendering
+- Fallback to local rendering for legacy posts
+
+**Result:** Device successfully displays PIL-rendered posts! 🎉
 
 ---
 
 ## 🎯 Next Session Priorities
 
-### **1. Test WiFi Network Scanning UI** (30 minutes)
+### **1. Phase 5: Web UI for Post Creation** (High Priority)
 
-The WiFi scanning backend is implemented and deployed, but we haven't tested the captive portal UI yet.
+Build the web interface to create Picture and Meme posts.
+
+**Requirements (from user):**
+- Two buttons on stream page: "Post a Picture" | "Meme It"
+- **Post a Picture:**
+  - Upload image (drag-drop + file picker)
+  - Text comment (160 char limit)
+  - Text color picker
+  - Outline color picker
+  - Live preview
+- **Meme It:**
+  - Background selector (thumbnails of 13 backgrounds)
+  - Text area (160 char limit)
+  - Text color picker
+  - Outline color picker
+  - Live preview
+
+**Live Preview Component:**
+- Call `create_post()` with temporary data
+- Render PIL image
+- Convert to base64 data URL
+- Display in `rx.image` component
+- Update on text/color change (debounced)
+
+**Files to Create/Modify:**
+- `streamscene/pages/stream_posts.py` - Replace existing form
+- `streamscene/components/post_creator/` - New reusable components
+- `streamscene/state/post_creation.py` - Form state management
+
+---
+
+### **2. Phase 6: Migration Script for Old Posts** (Medium Priority)
+
+Convert existing text-only posts to Meme format.
 
 **Tasks:**
-1. Clear WiFi credentials on device
-2. Trigger WiFi setup mode (unplug ethernet, remove credentials)
-3. Connect to device hotspot
-4. Verify network dropdown shows scanned networks
-5. Test selecting a network from dropdown
-6. Test manual SSID entry fallback
+1. Query all posts where `content_type = "text"`
+2. Set `content_type = "meme"`
+3. Set `background_name = "white.png"` (default)
+4. Set default text/outline colors
+5. Regenerate `processed_image_path` using PIL renderer
+6. Update database records
 
-**Commands:**
-```bash
-# Clear WiFi credentials to trigger setup mode
-ssh pi@192.168.1.40 'rm ~/streamscene-client/wifi_credentials.json'
-ssh pi@192.168.1.40 'sudo systemctl restart streamscene-client'
+**Files to Create:**
+- `scripts/migrate_old_posts.py`
 
-# Wait for hotspot, then connect phone to StreamScene-XXXX network
-# Visit http://192.168.4.1 in browser
-```
+**Testing:**
+- Run on staging data first
+- Verify all old posts still display correctly
+- Check device picks up migrated posts
 
 ---
 
-### **2. Phase 6: E Ink Hardware Integration** (Awaiting Hardware)
+### **3. Admin UI for Background Management** (Low Priority)
 
-**Current Blockers:**
-- Need additional Waveshare 7.3" displays
-- Current test device (192.168.1.40) is in production use
+Allow admins to upload custom backgrounds via web UI.
 
-**Preparation Tasks:**
-1. Document current E Ink rendering pipeline
-2. Test server-side rendering with different content types
-3. Review Waveshare driver performance characteristics
-4. Plan content rotation timing (60s minimum due to 30s refresh)
+**Features:**
+- Upload background images (PNG/JPG)
+- Preview thumbnails
+- Enable/disable backgrounds
+- Reorder backgrounds
+- Delete unused backgrounds
 
----
-
-### **3. Phase 7: Content Display & Rotation** (Future)
-
-**Features to Implement:**
-- Content rotation for multi-post streams
-- Smart rotation timing (respect E Ink constraints)
-- Content caching to reduce server load
-- Image pre-processing pipeline
-- Font size optimization
+**Files:**
+- `streamscene/pages/admin/backgrounds.py`
+- `streamscene/api/routes/backgrounds.py` - Upload endpoint
 
 ---
 
-### **4. Phase 8: OTA Update Client** (Future)
+### **4. Content Rotation & Display Timing** (Future)
 
-**Features to Implement:**
-- Client-side OTA update receiver
-- Update download and verification
-- Staged rollout support (10% → 50% → 100%)
-- Automatic rollback on failure
-- Update status reporting to server
+**Current Behavior:** Device displays latest post, polls every ~60s
+
+**Enhancements:**
+- Multi-post rotation with configurable timing
+- Respect 60s minimum (30s E Ink refresh + buffer)
+- Smart caching to reduce server load
+- Progress indicator (e.g., "2 of 5 posts")
 
 ---
 
@@ -153,126 +204,144 @@ ssh pi@192.168.1.40 'sudo systemctl restart streamscene-client'
 
 ### **None Currently!** 🎉
 
-The WiFi failover issue has been completely resolved. Device handles network changes gracefully.
+All backend systems working:
+- ✅ PIL renderer generating images
+- ✅ Database storing posts
+- ✅ API serving pre-rendered images
+- ✅ Device client downloading and displaying images
+- ✅ Physical E Ink display showing content
 
 ---
 
 ## 📈 Progress Metrics
 
-### **Network Resilience Improvements**
+### **Post System Evolution**
 
 | Feature | Before | After | Status |
 |---------|--------|-------|--------|
-| WiFi network selection | Manual SSID entry only | Scanned network dropdown | ✅ Implemented |
-| Ethernet failover | Wait 2 failures → error | Immediate WiFi (no error if success) | ✅ Tested & Working |
-| Network recovery time | ~120s (2 failures @ 60s) | ~16s (1 failure + WiFi connect) | ✅ 87% faster |
-| User experience | Error screen always shown | Seamless if WiFi works | ✅ Perfect |
+| Post types | Text only | Picture + Meme | ✅ Backend complete |
+| Rendering | Playwright (slow) | PIL (fast) | ✅ Working on device |
+| Image orientation | N/A | Auto-detect + layout | ✅ Tested |
+| Font sizing | Fixed | Dynamic (20-72px) | ✅ Tested |
+| Backgrounds | None | 13 defaults | ✅ Seeded |
+| User customization | None | Text + outline colors | ✅ Working |
+| Device display | Text rendering | Pre-rendered PNG | ✅ Working |
 
-### **Phase 5 Status**
+### **Phase Progress**
 
-**Completed:** WiFi setup system + Network resilience - **100%**
-**Next:** Phase 6 (E Ink integration) - **Awaiting hardware**
-**Then:** Phase 7 (Content rotation) - **0%**
+**Completed:**
+- ✅ Phase 0: Infrastructure Setup
+- ✅ Phase 1: Web App Core
+- ✅ Phase 2-3: OTA Update Infrastructure (server-side)
+- ✅ Phase 4: WiFi Setup System
+- ✅ Phase 5: Device State Machine & Registration
+- ✅ **Phase 6: PIL Image Renderer** ⭐ NEW
+
+**Next:**
+- Phase 5 (revisited): Web UI for Post Creation - **0%**
+- Phase 6 (revisited): Migration Script - **0%**
+- Phase 7: Content Rotation & Timing - **0%**
+- Phase 8: OTA Update Client - **0%**
 
 ---
 
 ## 🔧 Device Status
 
 **Raspberry Pi Zero 2 WH**
-- **IP Address:** 192.168.1.40 (WiFi: 192.168.1.195 when ethernet unplugged)
-- **Connection:** Ethernet (falls back to WiFi automatically)
-- **WiFi Network:** Louisiamsterdam-TP (WPA2, saved credentials)
+- **IP Address:** 192.168.1.195 (WiFi)
+- **Connection:** WiFi only (ethernet unplugged)
+- **WiFi Network:** Louisiamsterdam-TP
 - **State:** READY
 - **Device UUID:** 1c91d1e9-3cc9-44ba-a008-9cdee188d90c
 - **Database ID:** 2c0d4fe8-2426-4228-b2a9-8f89762cc338
 - **Registration:** ✅ Registered to Badgy
 - **Display:** ✅ Waveshare 7.3" E Ink (7-color, E variant - epd7in3e)
-- **Current Content:** "Deep thoughts" stream
+- **Current Content:** Test post from new PIL renderer (blue-purple gradient)
 - **Service:** `streamscene-client.service` (systemd)
-- **SSH:** `ssh pi@192.168.1.40` (password: `JjKUa9XJ8*FFUZHYB.AP`)
+- **SSH:** `ssh pi@192.168.1.195` (password: `JjKUa9XJ8*FFUZHYB.AP`)
 
 **Server**
 - **URL:** https://streamscene.dataandstories.com
 - **Status:** ✅ Operational
 - **Container:** LXC @ 192.168.1.118
-- **Rendering:** Server-side HTML/CSS with Playwright
+- **Rendering:** PIL (Python Imaging Library)
+- **Background service:** Reflex systemd service
 
 ---
 
 ## 💡 Key Learnings
 
-1. **Proactive > Reactive Network Handling**
-   - Checking ethernet status immediately prevents unnecessary delays
-   - User experience vastly improved by avoiding error screens
-   - Fast failover (16s vs 120s) makes network switching imperceptible
+1. **PIL vs Playwright for E Ink**
+   - PIL rendering is MUCH faster than Playwright
+   - No headless browser overhead
+   - Direct pixel manipulation = better E Ink optimization
+   - Easier to cache and serve
 
-2. **WiFi Network Scanning UX Matters**
-   - Showing available networks with signal strength is much better than blind SSID entry
-   - Users can see if their network is in range before entering credentials
-   - Reduces setup frustration from typos or wrong network selection
+2. **Dynamic Font Sizing is Critical**
+   - Users want text to fill available space
+   - Binary search algorithm works great (20-72px range)
+   - Word-boundary wrapping prevents awkward line breaks
+   - Different text lengths need different font sizes
 
-3. **Test Deployment Process**
-   - Always verify code is actually deployed before testing
-   - Check running process PID to ensure new code is loaded
-   - Log timestamps help correlate test actions with code execution
+3. **Image Orientation Matters**
+   - Portrait vs landscape layouts significantly impact UX
+   - 60/40 split for portrait is optimal (image prominent, text readable)
+   - Landscape/square centered layout feels balanced
+   - Auto-detection via width > height comparison works perfectly
 
-4. **Ethernet vs WiFi Priority**
-   - Device prefers ethernet when available
-   - Seamless fallback to WiFi when ethernet disconnects
-   - Automatic reconnection when ethernet returns
-   - No manual intervention needed
+4. **Server-Side Pre-Rendering Wins**
+   - Raspberry Pi Zero is too slow for complex rendering
+   - Pre-rendering on server = instant device display
+   - Caching prevents redundant re-renders
+   - Device just downloads and displays = simple client
+
+5. **Text Outline is Essential for Memes**
+   - Ensures readability on any background color
+   - 8-directional outline (2-3px) works best
+   - Configurable text + outline colors give user control
+   - Black outline on white text (or vice versa) = maximum contrast
+
+6. **Background Image Management**
+   - Filesystem storage + database metadata works well
+   - 13 default backgrounds cover most use cases
+   - Gradients more popular than solid colors for aesthetics
+   - Future: Let users upload custom backgrounds
 
 ---
 
 ## 🚀 Quick Commands for Next Session
 
+**Create Test Post (Picture):**
+```bash
+source venv/bin/activate
+# Create test script that uploads an image and text
+python scripts/display_test_post.py
+```
+
+**Create Test Post (Meme):**
+```bash
+# Already works! Use display_test_post.py
+# Modify to use different backgrounds/text
+```
+
 **Check Device Status:**
 ```bash
-ssh pi@192.168.1.40 'sudo journalctl -u streamscene-client -n 50 --no-pager | tail -20'
+ssh pi@192.168.1.195 'sudo journalctl -u streamscene-client -n 30 --no-pager | tail -20'
 ```
 
-**Verify Network Status:**
+**Restart Services:**
 ```bash
-# Check which interface is active
-ssh pi@192.168.1.40 'ip addr show eth0 | grep "inet "'
-ssh pi@192.168.1.40 'ip addr show wlan0 | grep "inet "'
+# Server
+sudo systemctl restart reflex
 
-# Check WiFi credentials
-ssh pi@192.168.1.40 'cat ~/streamscene-client/wifi_credentials.json'
+# Device
+ssh pi@192.168.1.195 'sudo systemctl restart streamscene-client'
 ```
 
-**Test WiFi Setup Flow:**
+**Deploy Client Changes:**
 ```bash
-# Clear WiFi credentials
-ssh pi@192.168.1.40 'rm ~/streamscene-client/wifi_credentials.json'
-
-# Restart to trigger setup mode
-ssh pi@192.168.1.40 'sudo systemctl restart streamscene-client'
-
-# Watch logs
-ssh pi@192.168.1.40 'sudo journalctl -u streamscene-client -f'
-
-# Device should create hotspot: StreamScene-XXXX
-# Connect phone and visit http://192.168.4.1
-```
-
-**Deploy Changes to Pi:**
-```bash
-# rsync all client code
-rsync -avz --exclude '__pycache__' --exclude '*.pyc' --exclude 'venv/' --exclude '.git/' /root/streamscene/client/ pi@192.168.1.40:~/streamscene-client/
-
-# Restart service
-ssh pi@192.168.1.40 'sudo systemctl restart streamscene-client'
-
-# Monitor logs
-ssh pi@192.168.1.40 'sudo journalctl -u streamscene-client -f'
-```
-
-**Check Git Status:**
-```bash
-cd /root/streamscene
-git log --oneline -5
-git status
+rsync -avz --exclude '__pycache__' --exclude '*.pyc' /root/streamscene/client/ pi@192.168.1.195:~/streamscene-client/
+ssh pi@192.168.1.195 'sudo systemctl restart streamscene-client'
 ```
 
 ---
@@ -280,27 +349,30 @@ git status
 ## 📚 Recent Commits
 
 ```
+a026c3b feat: Implement PIL-based image renderer for picture and meme posts
+3540a6a docs: Update NEXT_SESSION.md with WiFi network scanning and proactive failover
 7625ea8 feat: Add WiFi network scanning and improve display error handling
 cdbf3b4 feat: Implement proactive WiFi failover (no error screen on success)
 d4708ce feat: Add WiFi network scanning to captive portal
-adfd38c refactor: Extract service layer and fix architecture (Phases 1-4)
-57fd575 docs: update NEXT_SESSION.md with server-side rendering completion
 ```
 
 ---
 
 ## 🎓 Development Philosophy
 
-**Current Focus:** Network resilience and user experience
+**Current Focus:** Visual content system with PIL rendering
 
 **Principles:**
-1. **Fail gracefully** - Device should handle network changes without errors
-2. **Fast recovery** - Minimize time to recover from failures
-3. **No user intervention** - Automatic failover and recovery
-4. **Clear feedback** - Only show errors when something actually failed
+1. **Server does heavy lifting** - Pre-render images, cache aggressively
+2. **Dynamic sizing** - Text should maximize available space
+3. **User control** - Let users customize colors, backgrounds
+4. **Fast feedback** - Live preview shows exactly what will display
+5. **E Ink optimized** - High contrast, clear outlines, simple layouts
 
-**Next Focus:** Content display and rotation (Phase 7)
+**Next Focus:** Web UI for creating Picture and Meme posts with live preview
 
 ---
 
-**Next Action:** Test WiFi network scanning UI by clearing credentials and going through setup flow. Then wait for additional E Ink hardware to arrive for Phase 6 work.
+**Next Action:** Build web UI for post creation (Phase 5). Users need an interface to create Picture and Meme posts with live preview. Migration script can wait until after UI is complete.
+
+**Milestone Achieved:** 🎉 **PIL-rendered posts displaying on physical E Ink device!** The backend system is fully functional and tested on real hardware.
