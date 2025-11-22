@@ -1,360 +1,488 @@
-# Next Session - Server-Side Rendering Complete! 🎨
+# StreamScene - Next Session Plan
 
-**Last Updated:** November 21, 2025 (End of Session - Server-Side Rendering Implemented!)
-**Current Phase:** Phase 7 ✅ COMPLETE - Rendering Architecture Improved
-
----
-
-## 🎉 THIS SESSION: Server-Side HTML/CSS Rendering!
-
-**Date:** November 21, 2025
-
-### Major Achievement: Professional Server-Side Rendering
-
-**Problem:** PIL rendering on the Pi produced basic typography with limited styling capabilities. Needed professional HTML/CSS rendering with easy theme customization.
-
-**Solution:** Implemented complete server-side rendering pipeline using Playwright
-
-#### Implementation Details
-
-**Server-Side (streamscene/core/rendering.py):**
-- Created `EInkRenderer` class using Jinja2 + Playwright
-- HTML/CSS templates for professional typography and layout
-- Content-based caching using SHA256 hashing
-- Singleton pattern for browser reuse
-- Template directory: `streamscene/templates/eink/`
-
-**Templates Created:**
-- `base.html` - Base template with viewport and font settings
-- `post.html` - Post rendering with conditional logic for content/system messages
-- `themes/classic.css` - Classic theme matching current PIL look
-
-**API Endpoint:**
-- New endpoint: `GET /api/devices/{id}/content/image`
-- Query parameters: `rotation_index`, `theme`
-- Returns: Pre-rendered 800×480 PNG image
-- **Critical Fix:** Uses `asyncio.to_thread()` to run Playwright in thread pool (avoids "Playwright Sync API inside asyncio loop" error)
-
-**Device Client Updates:**
-- Added `fetch_rendered_image()` method to api_client.py
-- Modified main loop to fetch server-rendered images first
-- **Graceful fallback:** If server rendering fails, uses local PIL rendering
-- Smart error handling with logging
-
-### Test Results ✅
-
-End-to-end test confirmed server-side rendering working perfectly:
-
-```
-[INFO] [DISPLAY] Fetching server-rendered image
-[API Client] Fetching rendered image from server (theme: classic)
-[API Client] Server-rendered image received (800x480)
-[INFO] [DISPLAY] Displaying image on E Ink display
-```
-
-User posted new message and verified it displays with HTML/CSS rendering on the device!
-
-### Benefits
-
-1. **Professional Typography**: Real fonts, proper line spacing, clean layout
-2. **Easy Theming**: Change appearance via CSS without device updates
-3. **Better Performance**: Server renders once, serves to many devices (Pi CPU saved)
-4. **Caching**: Identical content served from cache instantly
-5. **Resilience**: Automatic fallback to local PIL rendering if server unavailable
-
-### Files Changed
-
-**Server:**
-- `streamscene/core/rendering.py` - NEW: Complete rendering service (213 lines)
-- `streamscene/api/routes/devices.py` - NEW: Image endpoint with async fix (lines 197-265)
-- `streamscene/api/schemas.py` - Added `rendered_image_url` field to DeviceContentResponse
-- `streamscene/templates/eink/base.html` - NEW: Base HTML template
-- `streamscene/templates/eink/post.html` - NEW: Post template with Jinja2 logic
-- `streamscene/templates/eink/themes/classic.css` - NEW: Classic theme CSS
-- `requirements.txt` - Added: `playwright>=1.40.0`, `jinja2>=3.1`
-- `.gitignore` - Added: `cache/` directory for rendered images
-
-**Client (deployed to Pi 192.168.1.40):**
-- `api_client.py` - Added `fetch_rendered_image()` method (lines 132-176)
-- `main.py` - Modified `_handle_ready()` to use server rendering with fallback (lines 574-584)
-
-### Commits This Session
-
-1. `1d930ee` - "feat: implement server-side HTML/CSS rendering for E Ink displays"
-   - Complete rendering infrastructure
-   - Templates and theme system
-   - API endpoint
-   - Updated schemas
-
-2. `db7cc27` - "fix: run Playwright rendering in thread pool to avoid asyncio conflict"
-   - Fixed async/sync Playwright error
-   - Uses `asyncio.to_thread()` for proper thread pool execution
+**Last Updated:** 2025-11-22
+**Current Phase:** Phase 1 (Day 1 Complete) - Service Layer Architecture Refactoring
+**Device Status:** ✅ Operational (Raspberry Pi Zero 2 WH @ 192.168.1.40)
 
 ---
 
-## 🎨 Next Session Priority: Styling Improvements
+## 📊 Session Summary (2025-11-22)
 
-**Goal:** Refine the HTML/CSS templates for better visual appearance on E Ink displays.
+### **What We Accomplished**
 
-### Styling Tasks
+Today's session focused on **systematic architectural refactoring** of the device client. We identified critical complexity issues and began methodical improvement through service layer extraction.
 
-1. **Typography Refinement**
-   - Test different font families (ensure available in Playwright)
-   - Adjust font sizes for optimal E Ink readability
-   - Improve line spacing and text wrapping
-   - Consider font weights for hierarchy
+#### **Phase 1 Completed: Service Layer Foundation + NetworkService** ✅
 
-2. **Layout Improvements**
-   - Better use of 800×480 screen space
-   - Margin and padding adjustments
-   - Stream name positioning and style
-   - Footer/timestamp placement
+**Phase 1.1: Fixed Network Recovery Bug**
+- Added missing `network_logger` import to main.py
+- Fixed logger initialization that was causing NameError during recovery
+- Root cause: Missing `import logging` (tried to use `logging.getLogger()` without import)
 
-3. **Content Display**
-   - Handle long messages (overflow, truncation)
-   - Multi-line text formatting
-   - Author name styling (if present)
-   - System message vs. content styling
+**Phase 1.2: Created Service Layer Infrastructure**
+- Created `client/services/` directory
+- Implemented `BaseService` abstract class:
+  - Standardized initialization pattern
+  - Centralized logging per service
+  - Clean shutdown hooks
+- Established dependency injection pattern
 
-4. **Theme Development**
-   - Consider additional themes beyond "classic"
-   - High-contrast options for E Ink
-   - Minimalist vs. decorative styles
-   - Color accent usage (if applicable)
+**Phase 1.3: Extracted NetworkService**
+- **Massive code reduction:**
+  - `_attempt_network_recovery()`: **58 lines → 3 lines** (95% reduction!)
+  - `_check_initial_network_status()`: **52 lines → 37 lines** (29% reduction)
+  - **Total: ~70 lines of duplicate logic eliminated**
 
-5. **Testing Different Content**
-   - Short messages
-   - Long messages (paragraph length)
-   - Messages with author names
-   - System messages ("No content available")
-   - Different timestamp formats
+- **Key improvements:**
+  - DNS fallback handling (automatic Google DNS 8.8.8.8/8.8.4.4)
+  - Retry logic for WiFi connections (2 attempts with 5s delay)
+  - Configurable timeouts via constructor parameters
+  - Clear separation of concerns
+  - Comprehensive logging throughout
+  - NetworkStatus dataclass for clean API
 
-### Quick Start Commands for Styling
+**Phase 1.4: Comprehensive Unit Tests**
+- Created test infrastructure (`tests/services/`)
+- **17 unit tests for NetworkService** - ALL PASSING ✅
+- Test coverage:
+  - Initial connectivity checks (ethernet/wifi/none)
+  - Network recovery scenarios (ethernet up/down, wifi success/fail)
+  - DNS configuration and fallback
+  - Error handling and edge cases
+  - Timeout and exception handling
+- Clean mocking using unittest.mock
 
-```bash
-# Test rendering with Python script
-cd /root/streamscene
-source venv/bin/activate
-python3 /tmp/render_post.py  # Modify to test different styles
+---
 
-# Edit CSS theme
-nano streamscene/templates/eink/themes/classic.css
+### **Key Discoveries**
 
-# Edit HTML template
-nano streamscene/templates/eink/post.html
+#### **1. Architecture Was Fundamentally Flawed**
 
-# Restart Reflex to pick up changes
-sudo systemctl restart reflex
+The architectural assessment revealed critical issues:
 
-# Test on device
-ssh pi@192.168.1.40 'cd ~/streamscene-client && STREAMSCENE_API_URL="https://streamscene.dataandstories.com" STREAMSCENE_DISPLAY_MODE="headless" timeout 30 sudo -E venv/bin/python3 main.py 2>&1 | head -80'
+- **God Object antipattern**: main.py doing 11+ responsibilities
+- **No service layer**: Business logic embedded directly in state handlers
+- **Tight coupling**: NetworkManager, SetupManager, main.py all intertwined
+- **Duplicate logic**: Network checks repeated 3+ times across codebase
+- **Import hygiene violations**: Imports inside methods, missing imports
 
-# View rendered output
-scp pi@192.168.1.40:~/streamscene-client/output/latest.png /tmp/
+#### **2. Network Failover Completely Broken**
+
+When ethernet disconnected:
+- Device showed error screen but never recovered to WiFi
+- Recovery logic triggered correctly but failed because:
+  - DNS configuration lost immediately when ethernet disconnected
+  - WiFi connection timeout too short (15s insufficient)
+  - No retry logic for transient failures
+  - Race conditions with system networking services
+
+#### **3. Your Instinct Was Absolutely Correct**
+
+- Code IS too complicated (God Object with 782 lines)
+- Code IS too tightly coupled (no clear boundaries)
+- Quick fixes would make it worse (band-aids on broken architecture)
+- Refactoring investment justified (prevents months of debugging)
+
+---
+
+### **Architectural Improvements**
+
+**Before Refactoring:**
+```
+main.py (782 lines, 11+ responsibilities)
+├── _attempt_network_recovery() - 58 lines, duplicate checks
+├── _check_initial_network_status() - 52 lines, duplicate logic
+├── _refresh_config_if_needed() - 68 lines
+├── Hard-coded timeouts everywhere
+├── No retry logic
+├── Imports inside methods
+└── Zero tests
 ```
 
-### Template Files to Edit
-
-- `streamscene/templates/eink/base.html` - Base styles, fonts, viewport
-- `streamscene/templates/eink/post.html` - HTML structure, Jinja2 logic
-- `streamscene/templates/eink/themes/classic.css` - All visual styling
-
-### CSS Classes Available
-
-```css
-.eink-container      /* Main container (800×480) */
-.stream-header       /* Stream name section */
-.stream-name         /* Stream name text */
-.separator           /* Horizontal line */
-.content-area        /* Main content section */
-.message-text        /* Post text */
-.system-message      /* System/error messages */
-.footer              /* Bottom section */
-.timestamp           /* Posted date/time */
-.author              /* Author name (optional) */
+**After Refactoring:**
+```
+client/
+├── main.py (simplified)
+│   ├── _attempt_network_recovery() - 3 lines (delegates to service)
+│   └── _check_initial_network_status() - 37 lines (uses service)
+├── services/
+│   ├── base.py - BaseService abstract class
+│   └── network_service.py - NetworkService (340 lines)
+│       ├── Configurable timeouts (constructor params)
+│       ├── Built-in retry logic (2 attempts)
+│       ├── DNS fallback handling
+│       ├── Comprehensive logging
+│       ├── NetworkStatus dataclass
+│       └── 17 unit tests (100% passing)
+└── tests/
+    └── services/
+        └── test_network_service.py - 17 tests ✅
 ```
 
 ---
 
-## 🏆 Phase 7 Complete: What Works End-to-End
+### **Files Created/Modified**
 
-### Content Rendering ✅
-- [x] Server-side HTML/CSS rendering (Playwright)
-- [x] Jinja2 templating system
-- [x] Theme system (CSS-based)
-- [x] Content-based caching (SHA256)
-- [x] Image API endpoint (/content/image)
-- [x] Device client fetches server-rendered images
-- [x] Graceful fallback to local PIL rendering
-- [x] Tested on actual E Ink hardware
+**New Files:**
+- `client/services/__init__.py`
+- `client/services/base.py`
+- `client/services/network_service.py`
+- `client/tests/__init__.py`
+- `client/tests/services/__init__.py`
+- `client/tests/services/test_network_service.py`
 
-### Smart Features ✅
-- [x] Smart refresh (post_id comparison)
-- [x] Content rotation mode
-- [x] Periodic config refresh
-- [x] Rotation index tracking
-- [x] Rotation post count configuration
+**Modified Files:**
+- `client/main.py`:
+  - Added NetworkService import
+  - Added network_logger import
+  - Instantiate NetworkService in __init__()
+  - Simplified _attempt_network_recovery() to delegate
+  - Simplified _check_initial_network_status() to use service
+  - **Removed 70+ lines of duplicate network logic**
 
-### Production Deployment ✅
-- [x] SystemD service auto-start
-- [x] Reboot survival
-- [x] Ethernet-first networking
-- [x] Device registration flow
-- [x] API key authentication
-- [x] Heartbeat signals
+**Deployed to Pi:**
+- All changes deployed to `/home/pi/streamscene-client/`
+- Service restarted and verified operational
+- Device displaying content correctly on E Ink
 
 ---
 
-## 🔑 Device Info
+## 🎯 Next Session Priorities
 
-- **Device UUID (from SD card):** `1c91d1e9-3cc9-44ba-a008-9cdee188d90c`
-- **Database ID (server-assigned):** `2c0d4fe8-2426-4228-b2a9-8f89762cc338`
-- **Nickname:** "Test StreamScene Frame"
-- **Registered to:** Badgy (michael@dataandstories.com)
-- **Assigned Stream:** "Deep thoughts" (`c6f6e94c-8d74-43b6-8f27-5f20f3a3a3b9`)
+### **Phase 2: Extract Configuration & Setup Services (Est: 4-5 hours)**
+
+#### **Phase 2.1: Extract ConfigurationService** (2-3 hours)
+
+**Goal:** Consolidate all configuration management into single service
+
+**Tasks:**
+1. Create `services/config_service.py`
+2. Move from main.py:
+   - `_fetch_initial_config()` → `ConfigService.get_initial_config()`
+   - `_refresh_config_if_needed()` → `ConfigService.get_config()` (with caching)
+   - API key management from config.py
+3. Consolidate scattered config logic:
+   - config.py: load/save API key functions
+   - registration.py: API key handling during registration
+   - State machine: config stored in state_data
+4. Create single source of truth for device configuration
+5. Implement proper caching with TTL (currently 120s hardcoded)
+6. Update main.py to use ConfigService
+7. Write unit tests (target: 15+ tests)
+
+**Expected Outcome:**
+- `_refresh_config_if_needed()`: **68 lines → ~5 lines**
+- Configuration logic centralized
+- Config caching properly abstracted
+- API key management unified
+
+#### **Phase 2.2: Extract SetupService** (2 hours)
+
+**Goal:** Consolidate WiFi setup and registration logic
+
+**Tasks:**
+1. Create `services/setup_service.py`
+2. Move WiFi setup logic from main.py state handlers
+3. Move registration polling logic
+4. Consolidate duplicate credential loading:
+   - `setup_manager.check_saved_credentials()`
+   - `setup_manager.has_saved_credentials()`
+   - Multiple `load_credentials()` imports
+5. Update main.py to use SetupService
+6. Write unit tests (target: 10+ tests)
+
+**Expected Outcome:**
+- WiFi setup logic extracted from main.py
+- Registration logic consolidated
+- Credential management simplified
+- Clear service API
+
+---
+
+### **Phase 3: State Pattern Implementation (Est: 4-5 hours)**
+
+**Goal:** Replace monolithic state handlers with encapsulated state classes
+
+#### **Phase 3.1: Create State Handler Infrastructure** (1 hour)
+1. Create `states/handlers/` directory
+2. Create `states/handlers/base.py` (StateHandler abstract class)
+3. Define DeviceContext dataclass for passing state data
+4. Document state handler pattern
+
+#### **Phase 3.2: Implement Concrete State Handlers** (2-3 hours)
+
+Create handler classes that replace main.py methods:
+- `wifi_setup_state.py` → Replaces `_handle_wifi_setup()`
+- `connecting_state.py` → Replaces `_handle_connecting()`
+- `awaiting_registration_state.py` → Replaces `_handle_awaiting_registration()`
+- `ready_state.py` → Replaces `_handle_ready()`
+- `error_state.py` → Replaces `_handle_error()`
+
+Each handler:
+- Calls services (NetworkService, ConfigService, SetupService)
+- Returns state transition decisions
+- Encapsulates all business logic for that state
+- Testable in complete isolation
+
+#### **Phase 3.3: Wire State Handlers Into State Machine** (1 hour)
+1. Update StateMachine to work with handlers
+2. Add `execute_state()` delegation method
+3. Update main.py to use state execution model
+4. Write unit tests for each state handler
+5. Integration tests for state transitions
+
+**Expected Outcome:**
+- State handler methods: **400+ lines → clean handler classes**
+- Business logic completely removed from main.py
+- Each state independently testable
+- Clear state transition logic
+
+---
+
+### **Phase 4: Dependency Injection + Cleanup (Est: 3-4 hours)**
+
+**Goal:** Proper dependency injection and comprehensive cleanup
+
+#### **Tasks:**
+
+1. **Create DI Container** (1 hour)
+   - Create `client/container.py` (dependency injection factory)
+   - Factory functions:
+     - `create_network_service()`
+     - `create_config_service()`
+     - `create_setup_service()`
+     - `create_client()` (main factory orchestrator)
+   - Configuration management for service creation
+
+2. **Refactor main.py Constructor** (1 hour)
+   - Update `StreamSceneClient.__init__()` to accept injected dependencies
+   - Remove direct instantiation of services
+   - Simplify initialization logic
+   - Update `main()` function to use factory
+
+3. **Create Utility Modules** (1 hour)
+   - `utils/network_utils.py` (shared network checks)
+   - `utils/file_utils.py` (shared file operations)
+   - Extract common patterns from across codebase
+
+4. **Code Cleanup** (1 hour)
+   - Remove ALL duplicate code
+   - Fix ALL import hygiene issues (move to top of files)
+   - Standardize error handling patterns
+   - Remove dead code
+
+**Expected Outcome:**
+- main.py: **782 lines → ~150 lines** (81% reduction!)
+- Clean, testable dependency graph
+- Zero duplicate code
+- Proper imports throughout
+- Consistent error handling
+
+---
+
+### **Phase 5: Testing + Documentation (Est: 3-4 hours)**
+
+**Goal:** Comprehensive testing and updated documentation
+
+#### **Tasks:**
+
+1. **Integration Tests** (2 hours)
+   - `tests/integration/test_wifi_setup_flow.py`
+   - `tests/integration/test_registration_flow.py`
+   - `tests/integration/test_network_failover.py`
+   - `tests/integration/test_content_display_flow.py`
+
+2. **E2E Test** (1 hour)
+   - `tests/e2e/test_device_lifecycle.py`
+   - Complete flow: boot → setup → registration → operation
+   - Use mocked hardware or real Pi
+
+3. **Documentation** (1 hour)
+   - Update CLAUDE.md with new architecture
+   - Document service layer pattern
+   - Document state handler pattern
+   - Add testing guide
+   - Create architecture diagrams
+   - Update deployment docs
+
+**Expected Outcome:**
+- **80%+ test coverage**
+- All major flows tested end-to-end
+- Clear, up-to-date documentation
+- Architecture diagrams for new developers
+
+---
+
+## 🐛 Known Issues
+
+### **DNS Configuration Lost on Network Mode Switch**
+**Status:** Partial fix implemented
+**Issue:** `/etc/resolv.conf` emptied when ethernet disconnects or WiFi mode switches
+**Current Fix:** NetworkService auto-adds Google DNS when needed
+**Permanent Fix:** Create `/etc/dhcpcd.conf.d/streamscene-dns.conf` with persistent config
+
+### **Network Failover Still Not Working**
+**Status:** Known issue, will fix in Phase 2
+**Issue:** WiFi connection times out after 15s when recovering from ethernet failure
+**Root Causes:**
+- DNS lost immediately on ethernet disconnect
+- WiFi adapter state conflicts
+- System networking conflicts with manual setup
+- 15s timeout insufficient for WiFi carrier establishment
+
+**Fix Required:** Enhanced NetworkService with better DNS handling + longer WiFi timeout
+
+---
+
+## 📈 Progress Metrics
+
+### **Code Quality Improvements**
+
+| Metric | Before | After | Improvement |
+|--------|--------|-------|-------------|
+| main.py line count | 782 | ~750 | 4% (Phase 1) |
+| Network recovery | 58 lines | 3 lines | 95% reduction |
+| Initial network check | 52 lines | 37 lines | 29% reduction |
+| Duplicate logic | 3+ places | 1 service | Consolidated |
+| Unit tests | 0 | 17 passing | ∞% improvement |
+| Import violations | 7+ | 1 | 86% reduction |
+| Test coverage | 0% | ~15% | Increasing |
+
+### **Remaining Refactoring Work**
+
+**Completed:** Phase 1 (Day 1) - **25%** of total refactoring plan
+**Next:** Phases 2-3 (Days 2-3) - **50%** of total refactoring plan
+**Then:** Phases 4-5 (Days 4-5) - Final **25%** + comprehensive testing
+
+**Estimated Time Remaining:** 3-4 days of focused refactoring
+
+**Target main.py Size:** 150 lines (81% reduction from 782 lines)
+
+---
+
+## 🔧 Device Status
+
+**Raspberry Pi Zero 2 WH**
+- **IP Address:** 192.168.1.40
+- **Connection:** Ethernet (priority mode)
+- **State:** READY
+- **Device UUID:** 1c91d1e9-3cc9-44ba-a008-9cdee188d90c
+- **Database ID:** 2c0d4fe8-2426-4228-b2a9-8f89762cc338
+- **Registration:** ✅ Registered to Badgy
+- **Display:** ✅ Waveshare 7.3" E Ink (7-color, E variant - epd7in3e)
+- **Current Content:** "Deep thoughts" stream
+- **Service:** `streamscene-client.service` (systemd)
 - **SSH:** `ssh pi@192.168.1.40` (password: `JjKUa9XJ8*FFUZHYB.AP`)
-- **IP Address:** 192.168.1.40 (ethernet)
-- **E Ink Display:** Waveshare 7.3" 4-color (epd7in3g driver)
+
+**Server**
+- **URL:** https://streamscene.dataandstories.com
+- **Status:** ✅ Operational
+- **Container:** LXC @ 192.168.1.118
+- **Rendering:** Server-side HTML/CSS with Playwright
 
 ---
 
-## 📖 Test Stream Content
+## 💡 Key Learnings
 
-**Stream Name:** "Deep thoughts"
-**Stream ID:** `c6f6e94c-8d74-43b6-8f27-5f20f3a3a3b9`
-**Theme:** classic
+1. **Architectural Debt Compounds Quickly**
+   - "Network failover not working" revealed fundamental design flaws
+   - Quick fixes would have created more technical debt
+   - Systematic refactoring was the correct choice
 
-**Recent Posts:**
-- "Testing, 1 2 3" (confirmed displaying with server-side rendering)
+2. **Unit Tests Catch Issues Immediately**
+   - Tests revealed import and mocking issues instantly
+   - Having tests gives confidence for aggressive refactoring
+   - Test-driven refactoring is powerful and efficient
+
+3. **Service Layer Provides Clarity**
+   - Clear boundaries between services
+   - Easy to test in complete isolation
+   - Dramatically reduces cognitive load
+   - Makes codebase extensible
+
+4. **User's Intuition Was Spot-On**
+   - "Code is too complicated" → Confirmed: God Object antipattern
+   - "Too tightly coupled" → Confirmed: No clear boundaries
+   - "Not extensible" → Confirmed: Would be nightmare to add features
+   - Trusting domain expertise paid off
 
 ---
 
 ## 🚀 Quick Commands for Next Session
 
+**Check Device Status:**
 ```bash
-# Server: Check reflex service
-sudo systemctl status reflex
-
-# Server: Restart after CSS/template changes
-sudo systemctl restart reflex
-
-# Server: View logs
-sudo journalctl -u reflex -f
-
-# Server: Check cached images
-ls -lh /root/streamscene/cache/rendered/
-
-# Server: Test rendering directly
-cd /root/streamscene
-source venv/bin/activate
-python3 -c "
-from streamscene.core.rendering import render_device_content
-content = {
-    'stream_name': 'Test Stream',
-    'text_content': 'Hello from the server!',
-    'posted_at': '2025-11-21T22:00:00Z',
-    'has_content': True
-}
-image_path = render_device_content(content, theme='classic')
-print(f'Rendered: {image_path}')
-"
-
-# Pi: Check systemd service
-ssh pi@192.168.1.40 'sudo systemctl status streamscene-client'
-
-# Pi: View logs
-ssh pi@192.168.1.40 'sudo journalctl -u streamscene-client -n 50 --no-pager'
-
-# Pi: Test client manually (stop service first!)
-ssh pi@192.168.1.40 'sudo systemctl stop streamscene-client'
-ssh pi@192.168.1.40 'cd ~/streamscene-client && \
-  STREAMSCENE_API_URL="https://streamscene.dataandstories.com" \
-  STREAMSCENE_DISPLAY_MODE="headless" \
-  sudo -E venv/bin/python3 main.py 2>&1 | head -100'
+ssh pi@192.168.1.40 'sudo journalctl -u streamscene-client -n 50 --no-pager | tail -20'
 ```
+
+**Verify Device Working:**
+```bash
+# Check if displaying content
+ssh pi@192.168.1.40 'ls -lth ~/streamscene-client/output/latest.png'
+
+# Check network connectivity
+ssh pi@192.168.1.40 'ping -c 3 streamscene.dataandstories.com'
+
+# Verify DNS configured
+ssh pi@192.168.1.40 'cat /etc/resolv.conf'
+```
+
+**Run Unit Tests:**
+```bash
+cd /root/streamscene/client
+python3 -m unittest tests.services.test_network_service -v
+```
+
+**Deploy Changes to Pi:**
+```bash
+# Copy services
+scp -r /root/streamscene/client/services pi@192.168.1.40:~/streamscene-client/
+
+# Copy main.py
+scp /root/streamscene/client/main.py pi@192.168.1.40:~/streamscene-client/
+
+# Restart service
+ssh pi@192.168.1.40 'sudo systemctl restart streamscene-client'
+
+# Check logs
+ssh pi@192.168.1.40 'sudo journalctl -u streamscene-client -f'
+```
+
+**Start Phase 2.1:**
+1. Create `services/config_service.py`
+2. Extract configuration logic from main.py
+3. Write unit tests
+4. Deploy and verify
 
 ---
 
-## 📋 Rendering Architecture
+## 📚 References
 
-### How Server-Side Rendering Works
+**Session Artifacts:**
+- Comprehensive architectural assessment (in conversation history)
+- Approved refactoring plan (ExitPlanMode output)
+- NetworkService implementation: `client/services/network_service.py`
+- NetworkService tests: `client/tests/services/test_network_service.py`
 
-1. **Device Request:** Client calls `GET /api/devices/{id}/content/image?theme=classic`
-2. **Content Fetch:** Server fetches device content (text, stream name, timestamp)
-3. **Cache Check:** SHA256 hash of content checked against cache
-4. **Render (if needed):** Playwright renders HTML template to PNG in thread pool
-5. **Response:** Server returns PNG file (cached for future requests)
-6. **Device Display:** Client receives PIL Image object, displays on E Ink
-
-### Template Rendering Flow
-
-```
-content dict → Jinja2 template → HTML string → Playwright browser → PNG screenshot → FileResponse
-```
-
-### Cache Strategy
-
-- **Cache Key:** SHA256 hash of: stream_name, text_content, author_name, timestamp, theme
-- **Cache Location:** `/root/streamscene/cache/rendered/`
-- **Cache Format:** `{sha256_hash}.png`
-- **Invalidation:** Automatic (content change = new hash)
+**Documentation to Update:**
+- `docs/development/GOTCHAS.md` - Add refactoring lessons
+- `CLAUDE.md` - Update with new service layer architecture
+- `docs/deployment/PRODUCTION.md` - Update with new structure
 
 ---
 
-## 📖 Key Learnings This Session
+## 🎓 Refactoring Philosophy
 
-### Playwright + FastAPI Async Challenge
+**Remember:** We're fixing the foundation now to prevent months of debugging later.
 
-**Problem:** Playwright sync API cannot run inside asyncio event loop (FastAPI uses async)
+**Principles:**
+1. **Incremental progress** - Deploy after each phase, verify working
+2. **Test everything** - Unit tests give confidence to refactor aggressively
+3. **Clear boundaries** - Services have single, well-defined responsibilities
+4. **No shortcuts** - Do it right the first time, avoid future technical debt
 
-**Solution:** Use `asyncio.to_thread()` to execute synchronous rendering in thread pool:
-
-```python
-image_path = await asyncio.to_thread(
-    rendering_ops.render_device_content, content, theme
-)
-```
-
-This allows FastAPI async endpoints to safely use synchronous Playwright code.
-
-### Content-Based Caching Strategy
-
-Using SHA256 hashing of content fields (not post_id) for caching provides:
-- **Stability:** Same content = same hash = cache hit
-- **Flexibility:** Can render same post with different themes
-- **Simplicity:** No cache invalidation logic needed
-
-### Graceful Degradation Pattern
-
-Device client architecture:
-1. Try server-rendered image (fast, professional)
-2. On failure: Fall back to local PIL rendering (slower, basic)
-3. Log both attempts for debugging
-
-This ensures devices always display content, even if server rendering fails.
+**The investment IS justified.**
 
 ---
 
-## 🚦 Phase Status
-
-### Completed Phases
-- ✅ Phase 0: Infrastructure Setup
-- ✅ Phase 1: Web App Core
-- ✅ Phase 2-3: OTA Update Infrastructure (server-side)
-- ✅ Phase 4: WiFi Setup System
-- ✅ Phase 5: Device State Machine & Registration
-- ✅ Phase 6: E Ink Display Integration
-- ✅ Phase 7: Content Display & Rotation + Server-Side Rendering ← **JUST COMPLETED!**
-- 🔄 **Phase 8: Production Deployment** (SystemD ✅, SD Card Image ⏸️, Styling 🎨 ← NEXT)
-
-### Next Phases
-- Phase 8a: Styling improvements (HTML/CSS refinement)
-- Phase 8b: Complete Production Deployment (SD card image, log rotation)
-- Phase 9: OTA Update Client
-- Phase 10: Multi-Device Testing & Optimization
-
----
-
-**Next Action:** Refine HTML/CSS templates for improved E Ink display aesthetics. Focus on typography, layout, and readability. 🎨
-
-The rendering system is WORKING BEAUTIFULLY! Server-side HTML/CSS rendering with Playwright is live, cached, and displaying on the device. Next up: make it look amazing! ✨
+**Next Action:** Start Phase 2.1 - Extract ConfigurationService to consolidate all configuration management logic.

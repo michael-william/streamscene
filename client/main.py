@@ -27,6 +27,7 @@ import os
 import sys
 import time
 import signal
+import subprocess
 from typing import Optional
 from pathlib import Path
 
@@ -45,7 +46,7 @@ from renderer import ContentRenderer
 from states import StateMachine, DeviceState
 from setup.network_manager import NetworkManager
 from setup.setup_manager import SetupManager
-from setup.registration import get_registration_url
+from services import NetworkService, ConfigurationService, SetupService
 
 # Import centralized logging configuration
 from logging_config import (
@@ -54,6 +55,9 @@ from logging_config import (
     state_logger,
     api_logger,
     display_logger,
+    network_logger,
+    wifi_logger,
+    registration_logger,
 )
 
 
@@ -89,9 +93,34 @@ class StreamSceneClient:
         self.setup_manager = SetupManager(device_uuid=DEVICE_ID, network_manager=self.network_manager)
         main_logger.info("Setup manager initialized")
 
+        # Network service (business logic for network management)
+        self.network_service = NetworkService(
+            network_manager=self.network_manager,
+            setup_manager=self.setup_manager
+        )
+        self.network_service.initialize()
+        main_logger.info("Network service initialized")
+
         # API client (may not be usable until device is registered)
         self.api_client = StreamSceneAPIClient()
         api_logger.info("API client initialized")
+
+        # Configuration service (business logic for config management)
+        self.config_service = ConfigurationService(
+            api_client=self.api_client
+        )
+        self.config_service.initialize()
+        main_logger.info("Configuration service initialized")
+
+        # Setup service (business logic for WiFi setup and registration)
+        self.setup_service = SetupService(
+            device_uuid=DEVICE_ID,
+            setup_manager=self.setup_manager,
+            network_manager=self.network_manager,
+            config_service=self.config_service
+        )
+        self.setup_service.initialize()
+        main_logger.info("Setup service initialized")
 
         # Display and rendering
         self.renderer = ContentRenderer()
@@ -104,10 +133,8 @@ class StreamSceneClient:
         self.last_heartbeat = 0
 
         # Content tracking for smart refresh
-        self.device_config = None
         self.last_displayed_post_id = None
         self.rotation_index = 0
-        self.last_config_fetch = 0
 
         main_logger.info("Initialization complete")
 
@@ -121,109 +148,41 @@ class StreamSceneClient:
         """
         Fetch device configuration on startup if device is registered.
 
-        This loads rotation settings and other config from the server.
-        Config is refreshed periodically in the main loop.
+        Delegates to ConfigurationService.
+        Note: config_service.initialize() already calls this, so this is a no-op.
         """
-        # Only fetch config if device has API key (is registered)
-        api_key = load_api_key()
-        if not api_key:
-            main_logger.debug("[Config] Skipping config fetch (device not registered yet)")
-            return
-
-        main_logger.info("[Config] Fetching device configuration...")
-        try:
-            self.device_config = self.api_client.get_config()
-            self.last_config_fetch = time.time()
-
-            if self.device_config:
-                rotation_enabled = self.device_config.get("rotation_enabled", False)
-                rotation_interval = self.device_config.get("rotation_interval", 60)
-                rotation_count = self.device_config.get("rotation_post_count", 10)
-
-                main_logger.info(f"[Config] Rotation enabled: {rotation_enabled}")
-                if rotation_enabled:
-                    main_logger.info(f"[Config] Rotation interval: {rotation_interval}s, Post count: {rotation_count}")
-            else:
-                main_logger.warning("[Config] Failed to fetch device configuration")
-        except Exception as e:
-            main_logger.error(f"[Config] Error fetching configuration: {e}")
+        # ConfigurationService already fetched config during initialization
+        pass
 
     def _refresh_config_if_needed(self):
         """
-        Refresh device configuration periodically (every 2 minutes max).
+        Refresh device configuration periodically.
 
-        Detects and applies config changes like rotation settings without requiring restart.
+        Delegates to ConfigurationService and resets rotation_index if rotation settings changed.
         """
-        # Config refresh interval: 120 seconds (2 minutes)
-        CONFIG_REFRESH_INTERVAL = 120
+        # Store old config for comparison
+        old_config = self.config_service.config
 
-        # Check if it's time to refresh config
-        time_since_last_fetch = time.time() - self.last_config_fetch
-        if time_since_last_fetch < CONFIG_REFRESH_INTERVAL:
-            return  # Not time yet
+        # Refresh config (service handles TTL, API calls, and change logging)
+        new_config = self.config_service.refresh_if_needed()
 
-        # Only refresh if device is registered
-        if not load_api_key():
-            return
-
-        main_logger.debug(f"[Config] Refreshing configuration (last fetch: {int(time_since_last_fetch)}s ago)")
-
-        try:
-            # Store old config for comparison
-            old_config = self.device_config.copy() if self.device_config else {}
-
-            # Fetch new config
-            new_config = self.api_client.get_config()
-            if not new_config:
-                main_logger.warning("[Config] Failed to refresh configuration")
-                return
-
-            # Update config and timestamp
-            self.device_config = new_config
-            self.last_config_fetch = time.time()
-
-            # Detect and log changes
-            if old_config:
-                # Check rotation_enabled change
-                old_rotation = old_config.get("rotation_enabled", False)
-                new_rotation = new_config.get("rotation_enabled", False)
-                if old_rotation != new_rotation:
-                    main_logger.info(f"[Config] Rotation mode changed: {old_rotation} → {new_rotation}")
-                    # Reset rotation index when mode changes
-                    self.rotation_index = 0
-
-                # Check rotation_interval change
-                old_interval = old_config.get("rotation_interval", 60)
-                new_interval = new_config.get("rotation_interval", 60)
-                if old_interval != new_interval:
-                    main_logger.info(f"[Config] Rotation interval changed: {old_interval}s → {new_interval}s")
-
-                # Check rotation_post_count change
-                old_count = old_config.get("rotation_post_count", 10)
-                new_count = new_config.get("rotation_post_count", 10)
-                if old_count != new_count:
-                    main_logger.info(f"[Config] Rotation post count changed: {old_count} → {new_count}")
-                    # Reset rotation index when count changes
-                    self.rotation_index = 0
-
-                # If no rotation settings changed
-                if (old_rotation == new_rotation and
-                    old_interval == new_interval and
-                    old_count == new_count):
-                    main_logger.debug("[Config] No changes detected")
-            else:
-                main_logger.info("[Config] Configuration refreshed successfully")
-
-        except Exception as e:
-            main_logger.error(f"[Config] Error refreshing configuration: {e}")
+        # Reset rotation index if rotation settings changed
+        if old_config and new_config and old_config != new_config:
+            # Reset if rotation_enabled changed
+            if old_config.rotation_enabled != new_config.rotation_enabled:
+                main_logger.info("[Config] Resetting rotation index (rotation mode changed)")
+                self.rotation_index = 0
+            # Reset if rotation_post_count changed
+            elif old_config.rotation_post_count != new_config.rotation_post_count:
+                main_logger.info("[Config] Resetting rotation index (post count changed)")
+                self.rotation_index = 0
 
     def _check_initial_network_status(self):
         """
-        Check network status at startup and skip WiFi setup if ethernet is available.
+        Check network status at startup and skip WiFi setup if network is available.
 
-        This method runs after state machine initialization to detect if ethernet
-        is already connected. If ethernet has internet access, the device skips
-        WiFi setup entirely and moves directly to registration.
+        Uses NetworkService to check connectivity.
+        If ethernet or WiFi is available, skip WiFi setup and go to registration.
         """
         current_state = self.state_machine.current_state
 
@@ -234,41 +193,27 @@ class StreamSceneClient:
 
         main_logger.info("[Network] Checking initial network status...")
 
-        # Check if ethernet is available and has internet
-        ethernet_available, ethernet_ip = self.network_manager.get_ethernet_status()
+        # Use NetworkService to check connectivity
+        status = self.network_service.check_initial_connectivity()
 
-        if ethernet_available and ethernet_ip:
-            main_logger.info(f"[Network] Ethernet detected with IP: {ethernet_ip}")
+        if status.connected:
+            main_logger.info(f"[Network] {status.connection_type.upper()} connected: {status.ip_address}")
+            main_logger.info("[Network] Skipping WiFi setup, transitioning to AWAITING_REGISTRATION")
 
-            # Test internet connectivity
-            if self.network_manager.test_ethernet_connectivity(timeout=10):
-                main_logger.info("[Network] Ethernet has internet connectivity")
-                main_logger.info("[Network] Skipping WiFi setup, transitioning to AWAITING_REGISTRATION")
-
-                # Transition directly to registration
-                if self.state_machine.transition_to(
-                    DeviceState.AWAITING_REGISTRATION,
-                    state_data={
-                        "connection_type": "ethernet",
-                        "ip_address": ethernet_ip
-                    }
-                ):
-                    main_logger.info("[Network] Successfully transitioned to AWAITING_REGISTRATION via ethernet")
-                else:
-                    main_logger.warning("[Network] Failed to transition state, will continue normally")
+            # Transition directly to registration
+            if self.state_machine.transition_to(
+                DeviceState.AWAITING_REGISTRATION,
+                state_data={
+                    "connection_type": status.connection_type,
+                    "ip_address": status.ip_address
+                }
+            ):
+                main_logger.info(f"[Network] Successfully transitioned to AWAITING_REGISTRATION via {status.connection_type}")
             else:
-                main_logger.warning("[Network] Ethernet available but no internet connectivity")
-                main_logger.info("[Network] Will attempt WiFi setup")
+                main_logger.warning("[Network] Failed to transition state, will continue normally")
         else:
-            main_logger.info("[Network] No ethernet connection detected")
-
-            # Check for saved WiFi credentials as fallback
-            if self.setup_manager.has_saved_credentials():
-                ssid = self.setup_manager.get_saved_ssid()
-                main_logger.info(f"[Network] Found saved WiFi credentials for: {ssid}")
-                main_logger.info("[Network] Will attempt WiFi connection")
-            else:
-                main_logger.info("[Network] No saved WiFi credentials, will start hotspot for setup")
+            main_logger.info("[Network] No network connectivity available")
+            main_logger.info("[Network] Will proceed with WiFi setup")
 
     def run(self):
         """Run the state-driven main loop."""
@@ -331,44 +276,31 @@ class StreamSceneClient:
 
     def _handle_wifi_setup(self):
         """Handle WIFI_SETUP state - create hotspot and run captive portal."""
-        from logging_config import wifi_logger
-
         wifi_logger.info("Starting WiFi credential capture")
         state_logger.info("Entering WIFI_SETUP state")
 
-        # ALWAYS check if ethernet is connected (ethernet-first strategy)
-        ethernet_available, ethernet_ip = self.network_manager.get_ethernet_status()
+        # Check if we can skip WiFi setup (ethernet or saved credentials)
+        check_result = self.setup_service.check_network_and_credentials()
 
-        if ethernet_available and ethernet_ip:
-            wifi_logger.info(f"Ethernet detected with IP: {ethernet_ip}")
-
-            # Test internet connectivity before skipping WiFi setup
-            if self.network_manager.test_ethernet_connectivity(timeout=10):
-                wifi_logger.info("Ethernet has internet connectivity")
-                wifi_logger.info("Skipping WiFi setup, using ethernet connection")
+        if check_result.should_skip_wifi_setup:
+            if check_result.connection_type == "ethernet":
+                # Use ethernet directly
+                wifi_logger.info("Using ethernet connection - skipping WiFi setup")
                 state_logger.info("Transitioning to AWAITING_REGISTRATION via ethernet")
                 self.state_machine.transition_to(DeviceState.AWAITING_REGISTRATION, state_data={
                     "connection_type": "ethernet",
-                    "ip_address": ethernet_ip
+                    "ip_address": check_result.ip_address
                 })
                 return
-            else:
-                wifi_logger.warning("Ethernet available but no internet connectivity")
-                wifi_logger.info("Falling back to WiFi setup")
-
-        # Check if we already have saved WiFi credentials
-        saved_credentials = self.setup_manager.check_saved_credentials()
-
-        if saved_credentials:
-            wifi_logger.info(f"Found saved credentials for SSID: {saved_credentials['ssid']}")
-            wifi_logger.info("Skipping hotspot setup, using saved credentials")
-            state_logger.info("Transitioning to CONNECTING with saved credentials")
-            self.state_machine.transition_to(DeviceState.CONNECTING, saved_credentials)
-            return
+            elif check_result.connection_type == "saved_wifi":
+                # Use saved credentials
+                wifi_logger.info(f"Using saved credentials for: {check_result.credentials['ssid']}")
+                state_logger.info("Transitioning to CONNECTING with saved credentials")
+                self.state_machine.transition_to(DeviceState.CONNECTING, check_result.credentials)
+                return
 
         # No saved credentials - run full WiFi setup flow
-        wifi_logger.info("No saved credentials found")
-        wifi_logger.info("Starting hotspot setup flow")
+        wifi_logger.info("No ethernet or saved credentials - starting WiFi setup flow")
 
         # Display message on E Ink
         display_logger.info("Rendering WiFi setup message")
@@ -380,24 +312,21 @@ class StreamSceneClient:
         display_logger.info("WiFi setup message displayed")
 
         # Run WiFi setup flow
-        wifi_logger.info("Starting WiFi setup flow (30 minute timeout)")
-        credentials = self.setup_manager.run_wifi_setup(timeout=1800)  # 30 min timeout
+        credentials = self.setup_service.run_wifi_setup_flow(timeout=1800)
 
         if credentials:
             wifi_logger.info(f"Successfully obtained credentials for SSID: {credentials['ssid']}")
             state_logger.info("Transitioning to CONNECTING state")
             self.state_machine.transition_to(DeviceState.CONNECTING, credentials)
         else:
-            wifi_logger.error("Failed to obtain WiFi credentials (timeout or user error)")
-            state_logger.error("WiFi setup failed, transitioning to ERROR state")
+            wifi_logger.error("WiFi setup failed")
+            state_logger.error("Transitioning to ERROR state")
             self.state_machine.transition_to(DeviceState.ERROR, {
                 "error": "WiFi setup timeout or failure"
             })
 
     def _handle_connecting(self):
         """Handle CONNECTING state - attempt to connect to WiFi."""
-        from logging_config import wifi_logger
-
         state_logger.info("Entering CONNECTING state")
         state_data = self.state_machine.get_all_state_data()
         ssid = state_data.get("ssid")
@@ -420,9 +349,8 @@ class StreamSceneClient:
         self.display.show(image)
         display_logger.info("Connecting message displayed")
 
-        # Switch to client mode and connect
-        wifi_logger.info("Switching to WiFi client mode (30 second timeout)")
-        success, ip_address = self.network_manager.switch_to_client_mode(
+        # Connect to WiFi (service handles timeout and error handling)
+        success, ip_address = self.setup_service.connect_to_wifi(
             ssid=ssid,
             password=password,
             timeout=30
@@ -437,18 +365,15 @@ class StreamSceneClient:
         else:
             wifi_logger.error(f"Failed to connect to {ssid}")
             state_logger.error("WiFi connection failed, returning to WIFI_SETUP")
-            # Go back to WiFi setup
             self.state_machine.transition_to(DeviceState.WIFI_SETUP)
 
     def _handle_awaiting_registration(self):
         """Handle AWAITING_REGISTRATION state - show QR code and poll."""
-        from logging_config import registration_logger
-
         state_logger.info("Entering AWAITING_REGISTRATION state")
         registration_logger.info("Waiting for device registration")
 
-        # Generate registration URL
-        registration_url = get_registration_url(DEVICE_ID)
+        # Get registration URL from service
+        registration_url = self.setup_service.get_registration_url()
         registration_logger.info(f"Registration URL: {registration_url}")
 
         # Display QR code
@@ -461,12 +386,12 @@ class StreamSceneClient:
         self.display.show(image)
         display_logger.info("QR code displayed")
 
-        # Poll for registration
+        # Poll for registration (service handles polling logic)
         registration_logger.info("Starting registration polling (30 minute timeout, 10 second interval)")
-        success = self.setup_manager.run_registration_flow(
+        success = self.setup_service.run_registration_flow(
             api_client=self.api_client,
-            poll_interval=10,  # Check every 10 seconds
-            timeout=1800  # 30 minutes
+            poll_interval=10,
+            timeout=1800
         )
 
         if success:
@@ -474,7 +399,7 @@ class StreamSceneClient:
             state_logger.info("Transitioning to REGISTERED state")
             self.state_machine.transition_to(DeviceState.REGISTERED)
         else:
-            registration_logger.error("Registration timeout - no response from server")
+            registration_logger.error("Registration timeout")
             state_logger.error("Registration failed, transitioning to ERROR state")
             self.state_machine.transition_to(DeviceState.ERROR, {
                 "error": "Registration timeout - please try again"
@@ -482,8 +407,6 @@ class StreamSceneClient:
 
     def _handle_registered(self):
         """Handle REGISTERED state - device just got registered."""
-        from logging_config import registration_logger
-
         state_logger.info("Entering REGISTERED state")
         registration_logger.info("Device successfully registered!")
 
@@ -517,8 +440,17 @@ class StreamSceneClient:
             "setup_completed_at": time.time()
         })
 
+    def _attempt_network_recovery(self):
+        """
+        Attempt to recover network connection without changing device state.
+
+        Delegates to NetworkService for actual recovery logic.
+        Stays in READY state to preserve registration.
+        """
+        return self.network_service.attempt_recovery()
+
     def _handle_ready(self):
-        """Handle READY state - normal operation with smart refresh."""
+        """Handle READY state - normal operation with smart refresh. Stay in READY even if offline."""
         state_logger.info("Entering READY state")
 
         # Validate that we have API key
@@ -530,19 +462,16 @@ class StreamSceneClient:
             })
             return
 
+        # Track consecutive failures for network recovery
+        if not hasattr(self, 'consecutive_failures'):
+            self.consecutive_failures = 0
+
         # Refresh config periodically (every 2 minutes max)
         self._refresh_config_if_needed()
 
         try:
             # Determine operation mode from config
-            rotation_enabled = False
-            rotation_interval = 60
-            rotation_count = 10
-
-            if self.device_config:
-                rotation_enabled = self.device_config.get("rotation_enabled", False)
-                rotation_interval = self.device_config.get("rotation_interval", 60)
-                rotation_count = self.device_config.get("rotation_post_count", 10)
+            rotation_enabled, rotation_interval, rotation_count = self.config_service.get_rotation_settings()
 
             # Fetch content (with rotation_index if in rotation mode)
             if rotation_enabled:
@@ -553,6 +482,9 @@ class StreamSceneClient:
                 content = self.api_client.fetch_content()
 
             if content:
+                # Reset failure counter on successful fetch
+                self.consecutive_failures = 0
+
                 # Determine if display refresh is needed
                 current_post_id = content.get("post_id")
                 should_refresh = False
@@ -592,6 +524,17 @@ class StreamSceneClient:
             else:
                 # Failed to fetch content - render error
                 api_logger.warning("Failed to fetch content from server")
+                self.consecutive_failures += 1
+
+                # Attempt network recovery after 2 consecutive failures
+                if self.consecutive_failures >= 2:
+                    api_logger.warning(f"Consecutive failures: {self.consecutive_failures} - attempting network recovery")
+                    if self._attempt_network_recovery():
+                        api_logger.info("Network recovery successful - resetting failure counter")
+                        self.consecutive_failures = 0
+                    else:
+                        api_logger.warning("Network recovery failed - will retry")
+
                 display_logger.info("Rendering error message")
                 image = self.renderer.render_error(
                     "Unable to fetch content. Check network connection."
@@ -625,14 +568,17 @@ class StreamSceneClient:
             time.sleep(60)
 
     def _handle_error(self):
-        """Handle ERROR state - display error and attempt recovery."""
+        """Handle ERROR state - display error and attempt recovery with enhanced logging."""
         state_logger.info("Entering ERROR state")
         state_data = self.state_machine.get_all_state_data()
         error = state_data.get("error", "Unknown error")
         previous_state = state_data.get("previous_state", "unknown")
+        reason = state_data.get("reason", "")
 
         main_logger.error(f"Error occurred: {error}")
         main_logger.info(f"Previous state: {previous_state}")
+        if reason:
+            main_logger.info(f"Error reason: {reason}")
 
         # Display error on E Ink
         display_logger.info("Rendering error message")
@@ -646,19 +592,28 @@ class StreamSceneClient:
         main_logger.info("Waiting 10 seconds before attempting recovery")
         time.sleep(10)
 
-        # Recovery logic based on previous state
-        if "wifi" in error.lower() or "network" in error.lower():
+        # Recovery logic based on error reason or error message
+        if reason == "network_lost" or "wifi" in error.lower() or "network" in error.lower():
             main_logger.info("Network-related error detected - restarting WiFi setup")
-            state_logger.info("Transitioning to WIFI_SETUP for recovery")
-            self.state_machine.transition_to(DeviceState.WIFI_SETUP)
+            state_logger.info("Transitioning to WIFI_SETUP for network recovery")
+
+            self.state_machine.transition_to(DeviceState.WIFI_SETUP, {
+                "recovery_from": "error",
+                "original_error": error
+            })
         elif "registration" in error.lower():
             main_logger.info("Registration-related error detected - showing QR code again")
             state_logger.info("Transitioning to AWAITING_REGISTRATION for recovery")
+            self.state_machine.transition_to(DeviceState.AWAITING_REGISTRATION)
+        elif "api key" in error.lower():
+            main_logger.info("API key error detected - returning to registration")
+            state_logger.info("Transitioning to AWAITING_REGISTRATION for re-registration")
             self.state_machine.transition_to(DeviceState.AWAITING_REGISTRATION)
         else:
             # Generic error - try to continue from READY state
             main_logger.info("Generic error - attempting to continue normal operation")
             state_logger.info("Transitioning to READY state for recovery")
+
             self.state_machine.transition_to(DeviceState.READY)
 
     def _signal_handler(self, signum, frame):
@@ -673,7 +628,6 @@ class StreamSceneClient:
         try:
             # Stop any active hotspot
             if self.network_manager.is_in_ap_mode():
-                from logging_config import network_logger
                 network_logger.info("Stopping active hotspot")
                 self.network_manager.stop_hotspot()
                 network_logger.info("Hotspot stopped successfully")
