@@ -37,7 +37,7 @@ class NetworkService(BaseService):
         self,
         network_manager: NetworkManager,
         setup_manager: SetupManager,
-        wifi_timeout: int = 30,
+        wifi_timeout: int = 45,
         ethernet_check_timeout: int = 10
     ):
         """
@@ -46,7 +46,7 @@ class NetworkService(BaseService):
         Args:
             network_manager: NetworkManager for low-level network operations
             setup_manager: SetupManager for WiFi setup
-            wifi_timeout: Timeout for WiFi connection attempts (default: 30s)
+            wifi_timeout: Timeout for WiFi connection attempts (default: 45s for carrier establishment)
             ethernet_check_timeout: Timeout for ethernet connectivity test (default: 10s)
         """
         super().__init__("streamscene.network")
@@ -116,7 +116,7 @@ class NetworkService(BaseService):
             ssid=None
         )
 
-    def attempt_recovery(self) -> bool:
+    def attempt_recovery(self) -> Tuple[bool, Optional[str]]:
         """
         Attempt to recover network connection.
 
@@ -126,26 +126,28 @@ class NetworkService(BaseService):
         3. Handle DNS configuration
 
         Returns:
-            True if recovery successful, False otherwise
+            Tuple of (success: bool, error_reason: Optional[str])
+            error_reason can be: "wrong_credentials", "network_not_found", "timeout", "exception",
+                                "no_credentials", "dns_error", or None on success
         """
         self.logger.info("Attempting network recovery...")
 
         # Check ethernet status
-        if self._is_ethernet_up():
+        if self.is_ethernet_up():
             self.logger.info("Ethernet is UP - network issue may be temporary (DNS?)")
             # Try to fix DNS
             if self._ensure_dns_configured():
                 self.logger.info("DNS reconfigured - testing connectivity")
                 time.sleep(2)  # Give DNS time to propagate
-                return True
-            return False  # Ethernet up but can't fix DNS
+                return True, None
+            return False, "dns_error"  # Ethernet up but can't fix DNS
 
         self.logger.warning("Ethernet is DOWN - attempting WiFi fallback")
 
         # Check for WiFi credentials
         if not self.setup_manager.has_saved_credentials():
             self.logger.error("No WiFi credentials available - cannot recover")
-            return False
+            return False, "no_credentials"
 
         # Get saved credentials
         from setup.wifi_client import load_credentials
@@ -153,7 +155,7 @@ class NetworkService(BaseService):
 
         if not credentials:
             self.logger.error("Failed to load WiFi credentials")
-            return False
+            return False, "no_credentials"
 
         ssid = credentials['ssid']
         password = credentials['password']
@@ -161,10 +163,11 @@ class NetworkService(BaseService):
         # Attempt WiFi connection with retries
         self.logger.info(f"Attempting to connect to WiFi: {ssid}")
 
+        last_error_reason = None
         for attempt in range(1, 3):  # Try twice
             self.logger.info(f"WiFi connection attempt {attempt}/2")
 
-            success = self.setup_manager.attempt_wifi_connection(
+            success, error_reason = self.setup_manager.attempt_wifi_connection(
                 ssid,
                 password,
                 timeout=self.wifi_timeout
@@ -174,14 +177,15 @@ class NetworkService(BaseService):
                 self.logger.info(f"Successfully connected to WiFi: {ssid}")
                 # Ensure DNS is configured
                 self._ensure_dns_configured()
-                return True
+                return True, None
             else:
-                self.logger.warning(f"WiFi connection attempt {attempt} failed")
+                self.logger.warning(f"WiFi connection attempt {attempt} failed (reason: {error_reason})")
+                last_error_reason = error_reason
                 if attempt < 2:
                     time.sleep(5)  # Wait before retry
 
-        self.logger.error(f"Failed to connect to WiFi after 2 attempts: {ssid}")
-        return False
+        self.logger.error(f"Failed to connect to WiFi after 2 attempts: {ssid} (final reason: {last_error_reason})")
+        return False, last_error_reason
 
     def get_current_status(self) -> NetworkStatus:
         """
@@ -275,7 +279,7 @@ class NetworkService(BaseService):
             ssid=ssid
         )
 
-    def _is_ethernet_up(self) -> bool:
+    def is_ethernet_up(self) -> bool:
         """
         Check if ethernet interface is up (has carrier).
 

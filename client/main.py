@@ -446,6 +446,9 @@ class StreamSceneClient:
 
         Delegates to NetworkService for actual recovery logic.
         Stays in READY state to preserve registration.
+
+        Returns:
+            Tuple of (success: bool, error_reason: Optional[str])
         """
         return self.network_service.attempt_recovery()
 
@@ -522,24 +525,68 @@ class StreamSceneClient:
                     display_logger.info("Display refresh skipped (content unchanged)")
 
             else:
-                # Failed to fetch content - render error
+                # Failed to fetch content
                 api_logger.warning("Failed to fetch content from server")
                 self.consecutive_failures += 1
 
-                # Attempt network recovery after 2 consecutive failures
-                if self.consecutive_failures >= 2:
-                    api_logger.warning(f"Consecutive failures: {self.consecutive_failures} - attempting network recovery")
-                    if self._attempt_network_recovery():
-                        api_logger.info("Network recovery successful - resetting failure counter")
-                        self.consecutive_failures = 0
-                    else:
-                        api_logger.warning("Network recovery failed - will retry")
+                # Check if ethernet is down after first failure - immediate WiFi failover
+                if self.consecutive_failures >= 1:
+                    # Check if ethernet is down
+                    if not self.network_service.is_ethernet_up():
+                        api_logger.info("Ethernet is DOWN - attempting immediate WiFi failover")
+                        success, error_reason = self._attempt_network_recovery()
 
-                display_logger.info("Rendering error message")
-                image = self.renderer.render_error(
-                    "Unable to fetch content. Check network connection."
-                )
-                self.display.show(image)
+                        if success:
+                            # WiFi recovery successful - continue without showing error!
+                            api_logger.info("WiFi failover successful - continuing normal operation")
+                            self.consecutive_failures = 0
+                            self._last_error_reason = None
+                            # Don't show error - just continue to next loop
+                            return
+                        else:
+                            # WiFi recovery failed - now show error
+                            api_logger.warning(f"WiFi failover failed (reason: {error_reason})")
+                            self._last_error_reason = error_reason
+
+                            # Handle wrong WiFi credentials - transition to WiFi setup
+                            if error_reason == "wrong_credentials":
+                                api_logger.error("Wrong WiFi credentials detected - clearing credentials and entering WiFi setup mode")
+                                self.setup_manager.clear_saved_credentials()
+
+                                # Render message before state transition
+                                display_logger.info("Rendering WiFi credentials error message")
+                                image = self.renderer.render_error(
+                                    "Wrong WiFi password.\n\nEntering WiFi setup mode..."
+                                )
+                                self.display.show(image)
+                                time.sleep(5)  # Give user time to see message
+
+                                # Transition to WiFi setup
+                                state_logger.info("Transitioning to WIFI_SETUP state due to wrong credentials")
+                                self.state_machine.transition_to(DeviceState.WIFI_SETUP, {
+                                    "reason": "wrong_credentials"
+                                })
+                                return
+
+                            # Render error message for other failures
+                            display_logger.info("Rendering error message")
+                            error_message = "Unable to fetch content. Check network connection."
+
+                            # Customize error message based on error reason
+                            if self._last_error_reason == "network_not_found":
+                                error_message = "WiFi network not found.\n\nCheck if router is online."
+                            elif self._last_error_reason == "timeout":
+                                error_message = "WiFi connection timeout.\n\nCheck network signal."
+
+                            image = self.renderer.render_error(error_message)
+                            self.display.show(image)
+                    else:
+                        # Ethernet still up - wait for 2nd failure before showing error
+                        if self.consecutive_failures >= 2:
+                            # Network issue but ethernet is up - show generic error
+                            display_logger.info("Rendering error message (ethernet up, likely server issue)")
+                            image = self.renderer.render_error("Unable to fetch content. Check network connection.")
+                            self.display.show(image)
 
             # Send heartbeat if needed
             if time.time() - self.last_heartbeat >= HEARTBEAT_INTERVAL:
