@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from typing import Generator
 
 from dotenv import load_dotenv
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 
 # Load environment variables
@@ -23,7 +23,16 @@ engine = create_engine(
     pool_size=20,  # Connection pool size
     max_overflow=10,  # Additional connections beyond pool_size
     echo=False,  # Set to True for SQL logging during development
+    connect_args={"client_encoding": "utf8"},  # Force UTF-8 encoding
 )
+
+# Force UTF-8 encoding on all connections (event listener)
+@event.listens_for(engine, "connect")
+def set_unicode_mode(dbapi_conn, connection_record):
+    """Set client encoding to UTF-8 on every new connection."""
+    cursor = dbapi_conn.cursor()
+    cursor.execute("SET CLIENT_ENCODING TO 'UTF8'")
+    cursor.close()
 
 # Session factory
 SessionLocal = sessionmaker(

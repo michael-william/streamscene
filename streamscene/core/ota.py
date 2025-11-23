@@ -72,7 +72,7 @@ def check_for_updates(db: Session, device_id: UUID) -> Optional[dict]:
     # Check rollout percentage (staged rollout)
     if latest_update.rollout_percentage < 100:
         # Use device ID as seed for deterministic randomization
-        device_hash = int(hashlib.md5(str(device_id).encode()).hexdigest(), 16)
+        device_hash = int(hashlib.md5(str(device_id).encode('utf-8')).hexdigest(), 16)
         device_percentage = (device_hash % 100) + 1  # 1-100
 
         if device_percentage > latest_update.rollout_percentage:

@@ -9,6 +9,13 @@ from streamscene.core.database import get_db_session
 from streamscene.core import streams as stream_ops
 from streamscene.components.layout import authenticated_layout
 from streamscene.components.eink import eink_preview, get_text_warnings
+from streamscene.components.post_creator import (
+    post_type_selector,
+    picture_form,
+    meme_form,
+    live_preview,
+)
+from streamscene.state.post_creation_state import PostCreationState
 from .base_state import BaseState
 
 
@@ -523,44 +530,55 @@ def stream_posts_page() -> rx.Component:
                 width="100%",
             ),
 
-            # Post creation form
+            # Post creation form (new modular design)
             rx.card(
                 rx.vstack(
-                    # Header with title and character count
-                    rx.hstack(
-                        rx.text("Create a new post", weight="medium", size="4"),
-                        rx.spacer(),
-                        rx.text(
-                            f"{StreamPostsState.char_count} characters",
-                            size="2",
-                            color=rx.cond(
-                                StreamPostsState.char_count > 400,
-                                "red",
-                                "gray"
-                            ),
-                        ),
-                        width="100%",
-                        align="center",
+                    # Header
+                    rx.heading("Create a Post", size="6"),
+
+                    # Post type selector
+                    post_type_selector(
+                        current_type=PostCreationState.post_type,
+                        on_change=PostCreationState.select_post_type,
                     ),
 
-                    # Text area
-                    rx.text_area(
-                        placeholder="Write your message...",
-                        value=StreamPostsState.new_post_content,
-                        on_change=StreamPostsState.set_new_post_content,
-                        size="3",
-                        rows="4",
-                        max_length=160,  # Maximum character limit for E Ink display
+                    # Error messages
+                    rx.cond(
+                        PostCreationState.error_message,
+                        rx.callout(
+                            PostCreationState.error_message,
+                            icon="triangle_alert",
+                            color_scheme="red",
+                            size="2",
+                        ),
+                    ),
+
+                    # Success messages
+                    rx.cond(
+                        PostCreationState.success_message,
+                        rx.callout(
+                            PostCreationState.success_message,
+                            icon="check",
+                            color_scheme="green",
+                            size="2",
+                        ),
+                    ),
+
+                    # Conditional form based on post type
+                    rx.cond(
+                        PostCreationState.post_type == "picture",
+                        picture_form(PostCreationState),
+                        meme_form(PostCreationState),
                     ),
 
                     # Preview toggle
                     rx.hstack(
                         rx.switch(
-                            checked=StreamPostsState.show_preview,
-                            on_change=StreamPostsState.set_show_preview,
+                            checked=PostCreationState.show_preview,
+                            on_change=PostCreationState.toggle_preview,
                         ),
                         rx.text(
-                            "Show E Ink preview",
+                            "Show Live Preview",
                             size="2",
                             color="gray",
                         ),
@@ -568,153 +586,22 @@ def stream_posts_page() -> rx.Component:
                         align="center",
                     ),
 
-                    # E Ink Preview (conditional)
-                    rx.cond(
-                        StreamPostsState.show_preview,
-                        rx.vstack(
-                            rx.text(
-                                "Preview (800×480px, scaled to fit)",
-                                size="2",
-                                color="gray",
-                                margin_bottom="2",
-                            ),
-                            # Debug: Show what theme is being used
-                            rx.text(
-                                f"Active theme: {StreamPostsState.stream_theme_name}",
-                                size="1",
-                                color=StreamPostsState.theme_text_color,
-                                font_weight="bold",
-                                margin_bottom="2",
-                                padding="4px 8px",
-                                border_radius="4px",
-                                style={"background": StreamPostsState.theme_background},
-                            ),
-                            rx.box(
-                                # Build preview manually with reactive Vars
-                                rx.box(
-                                    rx.vstack(
-                                        # Header (3-column: stream name, author, date)
-                                        rx.hstack(
-                                            # Left: Stream name
-                                            rx.text(
-                                                StreamPostsState.stream_name,
-                                                font_size="20px",
-                                                font_weight="bold",
-                                                color=StreamPostsState.theme_header_color,
-                                                font_family="monospace",
-                                                white_space="nowrap",
-                                                overflow="hidden",
-                                                text_overflow="ellipsis",
-                                                flex="1",
-                                            ),
-                                            # Center: Author name
-                                            rx.text(
-                                                "You",
-                                                font_size="20px",
-                                                color=StreamPostsState.theme_text_color,
-                                                font_family="monospace",
-                                                text_align="center",
-                                                white_space="nowrap",
-                                                overflow="hidden",
-                                                text_overflow="ellipsis",
-                                                flex="1",
-                                            ),
-                                            # Right: Date (short format)
-                                            rx.text(
-                                                rx.moment(format="ddd. YYYY-MM-DD"),
-                                                font_size="18px",
-                                                color=StreamPostsState.theme_text_color,
-                                                font_family="monospace",
-                                                text_align="right",
-                                                white_space="nowrap",
-                                                flex="1",
-                                            ),
-                                            id="eink-preview-header",
-                                            width="100%",
-                                            height="60px",
-                                            align="center",
-                                            justify="between",
-                                        ),
-                                        # Divider
-                                        rx.divider(
-                                            id="eink-preview-divider",
-                                            border_color=StreamPostsState.theme_divider_color,
-                                            margin_y="0",
-                                        ),
-                                        # Content
-                                        rx.box(
-                                            rx.cond(
-                                                StreamPostsState.new_post_content,
-                                                rx.text(
-                                                    StreamPostsState.new_post_content,
-                                                    font_size="36px",
-                                                    text_align="center",
-                                                    color=StreamPostsState.theme_text_color,
-                                                    font_family="monospace",
-                                                    font_style="italic",
-                                                    font_weight="500",  # Medium weight for E Ink contrast
-                                                    white_space="pre-wrap",
-                                                    word_wrap="break-word",
-                                                    overflow="hidden",
-                                                    width="100%",
-                                                    padding="10px",
-                                                ),
-                                                rx.text(
-                                                    "Type a message to see preview...",
-                                                    font_size="24px",
-                                                    color="gray",
-                                                    font_style="italic",
-                                                    font_weight="500",
-                                                    text_align="center",
-                                                ),
-                                            ),
-                                            id="eink-preview-content",
-                                            width="100%",
-                                            height="380px",
-                                            display="flex",
-                                            align_items="center",
-                                            justify_content="center",
-                                        ),
-                                        id="eink-preview-vstack",
-                                        spacing="0",
-                                        width="100%",
-                                        height="100%",
-                                    ),
-                                    id="eink-preview-container",
-                                    width="800px",
-                                    height="480px",
-                                    padding="0 60px",
-                                    border=f"4px solid {StreamPostsState.theme_text_color}",
-                                    border_radius="8px",
-                                    overflow="hidden",
-                                    box_shadow="0 4px 6px rgba(0, 0, 0, 0.1)",
-                                ),
-                                id="eink-preview-wrapper",
-                                # Scale down to 70% for desktop, 50% for mobile
-                                transform="scale(0.7)",
-                                transform_origin="top left",
-                                # Combined style: theme background + responsive scaling
-                                style={
-                                    "background": StreamPostsState.theme_background,
-                                    "@media (max-width: 768px)": {
-                                        "transform": "scale(0.5)",
-                                    }
-                                },
-                            ),
-                            spacing="2",
-                            width="100%",
-                            align="start",
-                        ),
+                    # Live preview (conditional)
+                    live_preview(
+                        preview_data=PostCreationState.preview_image_data,
+                        is_generating=PostCreationState.is_generating_preview,
+                        show=PostCreationState.show_preview,
+                        on_auto_refresh=PostCreationState.auto_refresh_preview,
                     ),
 
-                    # Warning messages (conditional)
+                    # Validation errors
                     rx.cond(
-                        StreamPostsState.preview_warnings.length() > 0,
+                        PostCreationState.validation_errors.length() > 0,
                         rx.vstack(
                             rx.foreach(
-                                StreamPostsState.preview_warnings,
-                                lambda warning: rx.callout(
-                                    warning,
+                                PostCreationState.validation_errors,
+                                lambda error: rx.callout(
+                                    error,
                                     icon="triangle_alert",
                                     color_scheme="yellow",
                                     size="2",
@@ -725,24 +612,34 @@ def stream_posts_page() -> rx.Component:
                         ),
                     ),
 
-                    # Post button
+                    # Submit button
                     rx.button(
                         rx.cond(
-                            StreamPostsState.is_posting,
-                            rx.spinner(size="3"),
-                            "Post Message",
+                            PostCreationState.is_submitting,
+                            rx.hstack(
+                                rx.spinner(size="2"),
+                                rx.text("Creating..."),
+                                spacing="2",
+                            ),
+                            "Create Post",
                         ),
-                        on_click=StreamPostsState.create_post,
+                        on_click=lambda: PostCreationState.submit_post(StreamPostsState.stream_id),
                         color_scheme="blue",
                         size="3",
-                        disabled=StreamPostsState.is_posting,
+                        disabled=rx.cond(
+                            PostCreationState.is_valid,
+                            PostCreationState.is_submitting,
+                            True,
+                        ),
+                        width="100%",
                     ),
 
-                    spacing="3",
+                    spacing="4",
                     width="100%",
                 ),
                 size="3",
                 width="100%",
+                on_mount=PostCreationState.on_load,  # Load backgrounds on mount
             ),
 
             # Posts list

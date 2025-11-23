@@ -73,7 +73,7 @@ class EInkRenderer:
             "theme": theme,
         }
         cache_str = str(sorted(cache_data.items()))
-        return hashlib.sha256(cache_str.encode()).hexdigest()
+        return hashlib.sha256(cache_str.encode('utf-8')).hexdigest()
 
     def _get_cached_image(self, cache_key: str) -> Optional[Path]:
         """Get cached image path if it exists."""

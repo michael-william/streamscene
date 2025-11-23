@@ -152,7 +152,7 @@ def render_and_cache_post(
 
     # Generate cache key (hash of post content)
     cache_key = hashlib.sha256(
-        f"{post.id}{post.content_type}{post.text_content}{post.text_color}{post.outline_color}".encode()
+        f"{post.id}{post.content_type}{post.text_content}{post.text_color}{post.outline_color}".encode('utf-8')
     ).hexdigest()[:16]
 
     # Save rendered image
