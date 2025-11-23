@@ -3,6 +3,7 @@
 import logging
 import base64
 import io
+import json
 from typing import List, Optional
 from uuid import UUID
 
@@ -90,7 +91,7 @@ class PostCreationState(BaseState):
             return False
         if self.char_count > 160:
             return False
-        if self.post_type == "picture" and not self.image_bytes:
+        if self.post_type == "picture" and not self.uploaded_files:
             return False
         if self.post_type == "meme" and not self.selected_background:
             return False
@@ -112,7 +113,7 @@ class PostCreationState(BaseState):
     @rx.var
     def has_uploaded_image(self) -> bool:
         """Check if image has been uploaded."""
-        return len(self.image_bytes) > 0
+        return len(self.uploaded_files) > 0
 
     @rx.var
     def upload_button_text(self) -> str:
@@ -155,6 +156,12 @@ class PostCreationState(BaseState):
 
         # Clear preview when switching types
         self.preview_image_data = ""
+
+        # Clear uploaded image when switching to Meme (free memory)
+        if post_type == "meme":
+            self.image_bytes = b""
+            self.image_preview_url = ""
+            logger.info("[POST_CREATE] Cleared uploaded image (switched to Meme)")
 
     # ========================================
     # BACKGROUND MANAGEMENT
@@ -207,85 +214,165 @@ class PostCreationState(BaseState):
         self.preview_image_data = ""
 
     # ========================================
-    # IMAGE UPLOAD (Picture posts)
+    # IMAGE UPLOAD (Picture posts) - Standard Reflex pattern
     # ========================================
 
-    async def handle_image_upload(self, files: list[rx.UploadFile]):
-        """
-        Handle image upload for picture posts.
+    def test_upload_button(self):
+        """Simple test to verify event binding works."""
+        print("=" * 80)
+        print("[TEST] BUTTON CLICKED - Event binding IS working!")
+        print("=" * 80)
+        logger.info("[TEST] Button test successful - event binding works")
+        self.error_message = "Test button clicked! Event binding is working."
+        yield
 
-        Args:
-            files: List of uploaded files (rx.upload returns list)
-        """
-        if not files:
-            logger.warning("[POST_CREATE] No files uploaded")
-            return
+    def test_upload_button_click(self):
+        """Test if the Upload button itself can trigger a handler."""
+        print("=" * 80)
+        print("[UPLOAD BUTTON] CLICKED! This proves the Upload button works.")
+        print("=" * 80)
+        logger.info("[UPLOAD BUTTON] Button clicked successfully")
+        self.error_message = "Upload button clicked! Button itself works fine."
+        yield
 
-        file = files[0]  # Only handle first file
-        logger.info(f"[POST_CREATE] Image upload started: {file.filename}")
+    def handle_upload_manual(self):
+        """
+        Handle upload by manually reading from upload directory.
+
+        Bypasses rx.upload_files() entirely - just reads newest file from upload dir.
+        """
+        print("=" * 80)
+        print("[UPLOAD] Manual handler called!")
+        print("=" * 80)
 
         self.is_uploading_image = True
         self.error_message = ""
         yield
 
         try:
-            # Read file bytes
-            self.image_bytes = await file.read()
-            file_size_mb = len(self.image_bytes) / (1024 * 1024)
+            upload_dir = rx.get_upload_dir()
+            print(f"[UPLOAD] Upload directory: {upload_dir}")
 
-            logger.info(f"[POST_CREATE] Image uploaded: {file.filename}, size: {file_size_mb:.2f}MB")
-
-            # Validate size
-            if file_size_mb > 5:
-                self.error_message = f"Image too large ({file_size_mb:.1f}MB, max 5MB)"
-                logger.error(f"[POST_CREATE] Image too large: {file_size_mb:.2f}MB")
-                self.image_bytes = b""
+            # Get all files in upload directory
+            if not upload_dir.exists():
+                print("[UPLOAD] Upload directory doesn't exist!")
+                self.error_message = "Upload directory not found"
+                self.is_uploading_image = False
+                yield
                 return
 
-            # Validate type
-            allowed_types = ["image/png", "image/jpeg", "image/jpg", "image/webp"]
-            if file.content_type not in allowed_types:
-                self.error_message = f"Invalid file type: {file.content_type}"
-                logger.error(f"[POST_CREATE] Invalid file type: {file.content_type}")
-                self.image_bytes = b""
+            files = list(upload_dir.glob("*"))
+            print(f"[UPLOAD] Found {len(files)} files in upload directory")
+
+            if not files:
+                print("[UPLOAD] No files found in upload directory")
+                self.error_message = "No file found - please select a file first"
+                self.is_uploading_image = False
+                yield
                 return
 
-            # Validate it's actually an image
+            # Get the most recently modified file
+            latest_file = max(files, key=lambda p: p.stat().st_mtime)
+            print(f"[UPLOAD] Processing latest file: {latest_file.name}")
+
+            # Read file
+            upload_data = latest_file.read_bytes()
+            print(f"[UPLOAD] Read {len(upload_data)} bytes")
+
+            # Validate image
             try:
-                img = Image.open(io.BytesIO(self.image_bytes))
+                img = Image.open(io.BytesIO(upload_data))
                 img.verify()
-                logger.info(f"[POST_CREATE] Image verified: {img.size}, mode: {img.mode}")
+                print(f"[UPLOAD] Image validated: {img.size}")
             except Exception as e:
+                print(f"[UPLOAD] Image validation failed: {e}")
                 self.error_message = "Invalid image file"
-                logger.error(f"[POST_CREATE] Image verification failed: {e}")
-                self.image_bytes = b""
+                self.is_uploading_image = False
+                yield
                 return
 
-            # Re-open image (verify() closes it)
-            img = Image.open(io.BytesIO(self.image_bytes))
+            # Store filename
+            self.uploaded_files = [latest_file.name]
 
-            # Create preview URL (data URL)
-            b64_data = base64.b64encode(self.image_bytes).decode()
-            self.image_preview_url = f"data:{file.content_type};base64,{b64_data}"
-
-            logger.info("[POST_CREATE] Image preview generated")
-
-            # Note: Preview regeneration happens via user toggling preview
-            # We don't auto-generate here to avoid async/yield conflicts
+            # Generate preview URL
+            self.image_preview_url = rx.get_upload_url(latest_file.name)
+            print(f"[UPLOAD] Success! File: {latest_file.name}")
+            logger.info(f"[POST_CREATE] Upload complete: {latest_file.name}")
 
         except Exception as e:
-            logger.error(f"[POST_CREATE] Error uploading image: {e}", exc_info=True)
-            self.error_message = f"Error uploading image: {str(e)}"
-            self.image_bytes = b""
+            print(f"[UPLOAD] Error: {e}")
+            logger.error(f"[POST_CREATE] Upload error: {e}", exc_info=True)
+            self.error_message = f"Upload failed: {str(e)}"
+
+        finally:
+            self.is_uploading_image = False
+            yield
+
+    async def handle_upload(self, files: list[rx.UploadFile]):
+        """Handle image upload - proper Reflex async pattern."""
+        print("=" * 80)
+        print(f"[UPLOAD] Handler called! Files: {len(files) if files else 0}")
+        print("=" * 80)
+
+        if not files:
+            print("[UPLOAD] No files provided")
+            self.error_message = "No file selected"
+            return
+
+        file = files[0]
+        print(f"[UPLOAD] Processing: {file.filename}")
+
+        self.is_uploading_image = True
+        self.error_message = ""
+        yield
+
+        try:
+            # Read file data
+            upload_data = await file.read()
+            print(f"[UPLOAD] Read {len(upload_data)} bytes")
+
+            # Validate image
+            img = Image.open(io.BytesIO(upload_data))
+            img.verify()
+            print(f"[UPLOAD] Image valid!")
+
+            # Save to upload directory
+            outfile = rx.get_upload_dir() / file.filename
+            outfile.write_bytes(upload_data)
+            print(f"[UPLOAD] Saved to {outfile}")
+
+            # Store filename and generate preview
+            self.uploaded_files = [file.filename]
+            self.image_preview_url = rx.get_upload_url(file.filename)
+
+            print(f"[UPLOAD] SUCCESS! Preview: {self.image_preview_url}")
+            logger.info(f"[POST_CREATE] Upload complete: {file.filename}")
+
+        except Exception as e:
+            print(f"[UPLOAD] Error: {e}")
+            self.error_message = f"Upload failed: {str(e)}"
+            self.uploaded_files = []
 
         finally:
             self.is_uploading_image = False
             yield
 
     def clear_uploaded_image(self):
-        """Clear uploaded image."""
+        """Clear uploaded image and delete from disk."""
         logger.info("[POST_CREATE] Clearing uploaded image")
-        self.image_bytes = b""
+
+        # Delete uploaded file from disk
+        if self.uploaded_files:
+            filename = self.uploaded_files[0]
+            file_path = rx.get_upload_dir() / filename
+            if file_path.exists():
+                try:
+                    file_path.unlink()
+                    logger.info(f"[POST_CREATE] Deleted uploaded file: {file_path}")
+                except Exception as e:
+                    logger.error(f"[POST_CREATE] Failed to delete file: {e}")
+
+        # Clear state
         self.image_preview_url = ""
         self.uploaded_files = []
         self.preview_image_data = ""
@@ -369,19 +456,19 @@ class PostCreationState(BaseState):
 
             # Render based on post type
             if self.post_type == "picture":
-                if not self.image_bytes:
+                if not self.uploaded_files:
                     logger.warning("[POST_CREATE] No image to preview")
+                    self.error_message = "Please upload an image to see preview"
                     self.preview_image_data = ""
                     self.is_generating_preview = False
                     return
 
-                # Save temp image for rendering
-                temp_img = Image.open(io.BytesIO(self.image_bytes))
-                temp_path = "/tmp/preview_upload.png"
-                temp_img.save(temp_path)
+                # Get uploaded file path
+                filename = self.uploaded_files[0]
+                uploaded_file_path = rx.get_upload_dir() / filename
 
                 rendered = renderer.render_picture_post(
-                    image_path=temp_path,
+                    image_path=str(uploaded_file_path),
                     text_content=self.text_content or "",
                     stream_name=stream_name,
                     author_name=author_name,
@@ -511,9 +598,30 @@ class PostCreationState(BaseState):
         self.error_message = ""
         yield
 
+        uploaded_file_path = None
         try:
             user_uuid = UUID(self.user_id)
             stream_uuid = UUID(stream_id)
+
+            # Read image bytes from uploaded file if picture post
+            image_bytes = b""
+            if self.post_type == "picture":
+                filename = self.uploaded_files[0]
+                uploaded_file_path = rx.get_upload_dir() / filename
+
+                logger.info(f"[POST_CREATE] Reading uploaded file: {uploaded_file_path}")
+                with open(uploaded_file_path, 'rb') as f:
+                    image_bytes = f.read()
+
+                # Validate image
+                try:
+                    img = Image.open(io.BytesIO(image_bytes))
+                    img.verify()
+                    logger.info(f"[POST_CREATE] Image validated: {img.size}, mode: {img.mode}")
+                except Exception as e:
+                    self.error_message = "Invalid image file"
+                    logger.error(f"[POST_CREATE] Image validation failed: {e}")
+                    return
 
             with get_db_session() as session:
                 # Create post with appropriate parameters
@@ -524,7 +632,7 @@ class PostCreationState(BaseState):
                         author_id=user_uuid,
                         text_content=self.text_content,
                         content_type="picture",
-                        image_bytes=self.image_bytes,
+                        image_bytes=image_bytes,
                         text_color=self.text_color,
                         outline_color=self.outline_color,
                     )
@@ -545,19 +653,30 @@ class PostCreationState(BaseState):
 
                 logger.info(f"[POST_CREATE] Post created successfully: {post.id}")
 
+                # Delete uploaded file after successful post creation
+                if uploaded_file_path and uploaded_file_path.exists():
+                    try:
+                        uploaded_file_path.unlink()
+                        logger.info(f"[POST_CREATE] Deleted uploaded file: {uploaded_file_path}")
+                    except Exception as cleanup_err:
+                        logger.error(f"[POST_CREATE] Failed to delete uploaded file: {cleanup_err}")
+
                 # Set success message
                 self.success_message = "Post created successfully!"
 
                 # Clear form
                 self.text_content = ""
-                self.image_bytes = b""
+                self.uploaded_files = []
                 self.image_preview_url = ""
                 self.preview_image_data = ""
                 self.show_preview = False
 
                 # Trigger reload of stream posts (late import to avoid circular dependency)
                 from streamscene.pages.stream_posts import StreamPostsState
-                return StreamPostsState.load_stream_and_posts(stream_id)
+                yield StreamPostsState.load_stream_and_posts(stream_id)
+
+                # Auto-dismiss success message after 5 seconds
+                yield from self.auto_dismiss_success()
 
         except Exception as e:
             logger.error(f"[POST_CREATE] Error creating post: {e}", exc_info=True)
@@ -566,3 +685,14 @@ class PostCreationState(BaseState):
         finally:
             self.is_submitting = False
             yield
+
+    # ========================================
+    # AUTO-DISMISS
+    # ========================================
+
+    def auto_dismiss_success(self):
+        """Auto-dismiss success message after 5 seconds."""
+        import time
+        time.sleep(5)
+        self.success_message = ""
+        yield
