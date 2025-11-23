@@ -15,6 +15,9 @@ from pathlib import Path
 import textwrap
 from datetime import datetime
 
+# Import new modular image processing
+from streamscene.core.image_processing import process_image_for_display, ImageFitMode
+
 # Display constants
 DISPLAY_WIDTH = 800
 DISPLAY_HEIGHT = 480
@@ -232,16 +235,19 @@ class ImageRenderer:
 
     def render_picture_post(
         self,
-        image_path: str,
-        text_content: str,
-        stream_name: str,
-        author_name: str,
-        post_date: datetime,
+        image_path: Optional[str] = None,
+        image: Optional[Image.Image] = None,
+        text_content: str = "",
+        stream_name: str = "",
+        author_name: str = "",
+        post_date: Optional[datetime] = None,
         text_color: Tuple[int, int, int] = (0, 0, 0),
         outline_color: Tuple[int, int, int] = (255, 255, 255)
     ) -> Image.Image:
         """
         Render 'Post a Picture' type post.
+
+        Supports both file path (backward compat) and PIL Image (new flow).
 
         Layout:
         - Landscape/square: Image centered, text below
@@ -250,15 +256,22 @@ class ImageRenderer:
         - White background
         - Top bar with stream/author/date
         """
+        # Load image from either path or provided PIL Image
+        if image is not None:
+            uploaded_img = image
+        elif image_path is not None:
+            uploaded_img = Image.open(image_path)
+        else:
+            raise ValueError("Must provide either image_path or image parameter")
+
         # Create white canvas
         canvas = Image.new("RGB", (DISPLAY_WIDTH, DISPLAY_HEIGHT), "white")
         draw = ImageDraw.Draw(canvas)
 
         # Draw top bar
+        if post_date is None:
+            post_date = datetime.now()
         self._draw_top_bar(draw, stream_name, author_name, post_date)
-
-        # Load and process uploaded image
-        uploaded_img = Image.open(image_path)
         img_width, img_height = uploaded_img.size
 
         # Determine orientation

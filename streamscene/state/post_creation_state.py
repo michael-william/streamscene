@@ -324,7 +324,6 @@ class PostCreationState(BaseState):
 
         self.is_uploading_image = True
         self.error_message = ""
-        yield
 
         try:
             # Read file data
@@ -355,7 +354,6 @@ class PostCreationState(BaseState):
 
         finally:
             self.is_uploading_image = False
-            yield
 
     def clear_uploaded_image(self):
         """Clear uploaded image and delete from disk."""

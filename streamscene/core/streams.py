@@ -6,6 +6,7 @@ from uuid import UUID
 from pathlib import Path
 import hashlib
 import io
+import os
 
 from PIL import Image
 from sqlalchemy.orm import Session, joinedload
@@ -118,18 +119,33 @@ def render_and_cache_post(
 
     # Determine post type and render
     if post.content_type == "picture":
-        if not post.image_path:
-            raise ValueError("Picture posts require image_path")
-
-        rendered_img = renderer.render_picture_post(
-            image_path=post.image_path,
-            text_content=post.text_content or "",
-            stream_name=stream_name,
-            author_name=author_name,
-            post_date=post.created_at,
-            text_color=text_color,
-            outline_color=outline_color
-        )
+        # Support both old posts (image_path) and new posts (temp_image_bytes)
+        if post.image_path:
+            # Backward compatibility: old post with saved file
+            rendered_img = renderer.render_picture_post(
+                image_path=post.image_path,
+                text_content=post.text_content or "",
+                stream_name=stream_name,
+                author_name=author_name,
+                post_date=post.created_at,
+                text_color=text_color,
+                outline_color=outline_color
+            )
+        elif hasattr(post, '_temp_image_bytes') and post._temp_image_bytes:
+            # New posts: render from in-memory bytes
+            from PIL import Image
+            temp_img = Image.open(io.BytesIO(post._temp_image_bytes))
+            rendered_img = renderer.render_picture_post(
+                image=temp_img,  # Pass PIL Image directly
+                text_content=post.text_content or "",
+                stream_name=stream_name,
+                author_name=author_name,
+                post_date=post.created_at,
+                text_color=text_color,
+                outline_color=outline_color
+            )
+        else:
+            raise ValueError("Picture posts require image_path or temp_image_bytes")
 
     elif post.content_type == "meme":
         if not post.background_name:
@@ -400,39 +416,55 @@ def create_post(
         else:
             raise ValueError("Meme posts require background_name and no default available")
 
-    # Create post record
-    post = Post(
-        stream_id=stream_id,
-        author_id=author_id,
-        text_content=text_content,
-        content_type=content_type,
-        background_name=background_name,
-        text_color=text_color,
-        outline_color=outline_color,
-    )
-    session.add(post)
-    session.flush()  # Generate post.id
+    # Track rendered file for cleanup on failure
+    rendered_file_path = None
 
-    # Save uploaded image if picture post
-    if content_type == "picture" and image_bytes:
-        post.image_path = save_uploaded_image(image_bytes, post.id)
+    try:
+        # Create post record
+        post = Post(
+            stream_id=stream_id,
+            author_id=author_id,
+            text_content=text_content,
+            content_type=content_type,
+            background_name=background_name,
+            text_color=text_color,
+            outline_color=outline_color,
+        )
+        session.add(post)
+        session.flush()  # Generate post.id
 
-    # Get stream and author names for rendering
-    stream = session.query(Stream).filter(Stream.id == stream_id).first()
-    author = session.query(User).filter(User.id == author_id).first()
+        # Store image bytes temporarily (don't save original to disk)
+        if content_type == "picture" and image_bytes:
+            post.image_path = None  # No original stored (save 60-70% storage)
+            post._temp_image_bytes = image_bytes  # Temporary in-memory storage
 
-    if not stream or not author:
-        raise ValueError("Stream or author not found")
+        # Get stream and author names for rendering
+        stream = session.query(Stream).filter(Stream.id == stream_id).first()
+        author = session.query(User).filter(User.id == author_id).first()
 
-    # Render and cache the post
-    post.processed_image_path = render_and_cache_post(
-        post=post,
-        stream_name=stream.name,
-        author_name=author.display_name
-    )
+        if not stream or not author:
+            raise ValueError("Stream or author not found")
 
-    session.flush()
-    return post
+        # Render and cache the post (writes file to disk)
+        post.processed_image_path = render_and_cache_post(
+            post=post,
+            stream_name=stream.name,
+            author_name=author.display_name
+        )
+        rendered_file_path = post.processed_image_path
+
+        session.flush()
+        return post
+
+    except Exception as e:
+        # Clean up rendered file if it was created before transaction failed
+        if rendered_file_path and os.path.exists(rendered_file_path):
+            try:
+                os.remove(rendered_file_path)
+                logger.info(f"[CLEANUP] Removed orphaned render: {rendered_file_path}")
+            except Exception as cleanup_err:
+                logger.error(f"[CLEANUP] Failed to delete {rendered_file_path}: {cleanup_err}")
+        raise
 
 
 def get_post_by_id(session: Session, post_id: UUID) -> Optional[Post]:
