@@ -14,7 +14,10 @@ from typing import Optional, Tuple, Literal
 from pathlib import Path
 import textwrap
 import re
+import logging
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 # Import new modular image processing
 from streamscene.core.image_processing import process_image_for_display, ImageFitMode
@@ -121,6 +124,12 @@ class ImageRenderer:
                     lines.append(" ".join(current_line))
                 current_line = [word]
 
+                # DEBUG: Check if single word exceeds max_width
+                word_bbox = draw.textbbox((0, 0), word, font=font)
+                word_width = word_bbox[2] - word_bbox[0]
+                if word_width > max_width:
+                    logger.warning(f"[WRAP] Word '{word}' width {word_width}px exceeds max_width {max_width}px")
+
         if current_line:
             lines.append(" ".join(current_line))
 
@@ -161,8 +170,17 @@ class ImageRenderer:
             text_width = bbox[2] - bbox[0]
             text_height = bbox[3] - bbox[1]
 
+            # DEBUG: Check individual line widths
+            max_line_width = 0
+            for line in wrapped.split('\n'):
+                line_bbox = draw.textbbox((0, 0), line, font=font)
+                line_width = line_bbox[2] - line_bbox[0]
+                max_line_width = max(max_line_width, line_width)
+
+            logger.info(f"[SIZE] Font {mid}: multiline_bbox_width={text_width}, max_line_width={max_line_width}, height={text_height}, fits={max_line_width <= max_width and text_height <= max_height}")
+
             # Check if it fits
-            if text_width <= max_width and text_height <= max_height:
+            if max_line_width <= max_width and text_height <= max_height:
                 # This size works, try larger
                 best_font = font
                 best_wrapped = wrapped
