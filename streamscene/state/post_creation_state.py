@@ -653,7 +653,7 @@ class PostCreationState(BaseState):
 
         # Check post-type specific requirements
         if self.post_type == "picture":
-            if not self.image_bytes:
+            if not self.uploaded_files:
                 self.validation_errors.append("Please upload an image")
 
         elif self.post_type == "meme":
@@ -713,7 +713,9 @@ class PostCreationState(BaseState):
             image_bytes = b""
             if self.post_type == "picture":
                 filename = self.uploaded_files[0]
-                uploaded_file_path = rx.get_upload_dir() / filename
+                # Files are saved to .web/build/client/uploads/ by custom upload endpoint
+                from pathlib import Path
+                uploaded_file_path = Path("/root/streamscene/.web/build/client/uploads") / filename
 
                 logger.info(f"[POST_CREATE] Reading uploaded file: {uploaded_file_path}")
                 with open(uploaded_file_path, 'rb') as f:
