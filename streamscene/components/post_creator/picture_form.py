@@ -25,7 +25,7 @@ def picture_form(state) -> rx.Component:
         Reflex component with picture post form
     """
     return rx.vstack(
-        # Image upload section (inline - no wrapper function)
+        # Image upload section (pure JavaScript/DOM - no Reflex state)
         rx.vstack(
             rx.text(
                 "Upload Image",
@@ -33,9 +33,62 @@ def picture_form(state) -> rx.Component:
                 weight="medium",
             ),
 
+            # Hidden file input (native HTML)
+            rx.el.input(
+                type="file",
+                id="picture-upload-input",
+                accept="image/png,image/jpeg,image/webp",
+                style={"display": "none"},
+            ),
+
+            # Hidden inputs for JavaScript to set (bound to state)
+            rx.input(
+                type="text",
+                id="js-uploaded-filename",
+                value=state.js_uploaded_filename,
+                on_change=state.set_js_uploaded_filename,
+                style={"position": "absolute", "left": "-9999px"},
+            ),
+            rx.input(
+                type="text",
+                id="js-uploaded-url",
+                value=state.js_uploaded_url,
+                on_change=state.set_js_uploaded_url,
+                style={"position": "absolute", "left": "-9999px"},
+            ),
+
+            # Upload area (shown when no image uploaded)
             rx.cond(
-                state.has_uploaded_image,
-                # Has image: Show preview with remove button
+                state.image_preview_url == "",
+                rx.html("""
+                    <div id="picture-upload-area" style="width: 100%;">
+                        <div style="border: 2px dashed var(--gray-6); padding: 3em; border-radius: 8px; width: 100%; text-align: center;">
+                            <button
+                                type="button"
+                                onclick="document.getElementById('picture-upload-input').click()"
+                                style="background: var(--accent-9); color: white; border: none; padding: 0.5em 1em; border-radius: 6px; cursor: pointer; font-size: 1em; margin-bottom: 0.5em;"
+                            >
+                                Select Image
+                            </button>
+                            <p style="color: var(--gray-11); font-size: 0.875em; margin: 0.5em 0;">Click to select an image</p>
+                            <div id="picture-loading" style="display: none; margin-top: 1em;">
+                                <div style="border: 3px solid var(--gray-6); border-top: 3px solid var(--accent-9); border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; margin: 0 auto;"></div>
+                            </div>
+                            <div id="picture-error-message" style="display: none; color: var(--red-11); font-size: 0.875em; margin-top: 1em;"></div>
+                        </div>
+                    </div>
+                    <style>
+                        @keyframes spin {
+                            0% { transform: rotate(0deg); }
+                            100% { transform: rotate(360deg); }
+                        }
+                    </style>
+                """),
+            ),
+
+            # Preview area (Reflex component - shown when image_preview_url is set)
+            rx.cond(
+                state.image_preview_url != "",
                 rx.vstack(
                     rx.image(
                         src=state.image_preview_url,
@@ -49,48 +102,93 @@ def picture_form(state) -> rx.Component:
                         "Remove Image",
                         on_click=state.clear_uploaded_image,
                         color_scheme="red",
+                        size="2",
                     ),
-                    spacing="3",
-                    width="100%",
-                ),
-
-                # No image: Standard Reflex upload pattern with on_drop handler
-                rx.vstack(
-                    rx.upload(
-                        rx.vstack(
-                            rx.button("Select Image", size="3", loading=state.is_uploading_image),
-                            rx.text("Drag and drop or click to select", size="2", color="gray"),
-                            rx.cond(
-                                state.is_uploading_image,
-                                rx.text("Uploading...", size="2", color="blue"),
-                            ),
-                        ),
-                        id="upload1",
-                        border="2px dashed var(--gray-6)",
-                        padding="3em",
-                        border_radius="8px",
-                        accept={
-                            "image/png": [".png"],
-                            "image/jpeg": [".jpg", ".jpeg"],
-                            "image/webp": [".webp"],
-                        },
-                        max_files=1,
-                        max_size=5_000_000,
-                        on_drop=state.handle_upload,
-                    ),
-                    # Debug: Show selected files
-                    rx.vstack(
-                        rx.text("Selected files:", weight="bold", size="2"),
-                        rx.foreach(
-                            rx.selected_files("upload1"),
-                            lambda filename: rx.text(f"- {filename}", color="green"),
-                        ),
-                        spacing="1",
-                    ),
-                    spacing="3",
+                    spacing="2",
                     width="100%",
                 ),
             ),
+
+            # JavaScript to handle upload via custom endpoint
+            rx.script("""
+                (function() {
+                    const fileInput = document.getElementById('picture-upload-input');
+                    const errorDiv = document.getElementById('picture-error-message');
+                    const loadingDiv = document.getElementById('picture-loading');
+
+                    if (!fileInput || fileInput.hasAttribute('data-listener-attached')) return;
+                    fileInput.setAttribute('data-listener-attached', 'true');
+
+                    fileInput.addEventListener('change', async (e) => {
+                        const file = e.target.files[0];
+                        if (!file) return;
+
+                        console.log('[UPLOAD] File selected:', file.name);
+
+                        // Show loading state
+                        if (loadingDiv) loadingDiv.style.display = 'block';
+                        if (errorDiv) errorDiv.style.display = 'none';
+
+                        try {
+                            const formData = new FormData();
+                            formData.append('file', file);
+
+                            const response = await fetch('/api/custom-upload', {
+                                method: 'POST',
+                                body: formData
+                            });
+
+                            const data = await response.json();
+                            console.log('[UPLOAD] Upload complete:', data);
+
+                            if (data.success) {
+                                // Update hidden inputs to trigger Reflex state changes
+                                const filenameInput = document.getElementById('js-uploaded-filename');
+                                const urlInput = document.getElementById('js-uploaded-url');
+
+                                if (filenameInput && urlInput) {
+                                    console.log('[UPLOAD] Setting filename:', data.filename);
+
+                                    // Set filename first with React-compatible approach
+                                    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                                    nativeInputValueSetter.call(filenameInput, data.filename);
+                                    filenameInput.dispatchEvent(new Event('input', { bubbles: true }));
+
+                                    // Small delay then set URL (this triggers the sync)
+                                    setTimeout(() => {
+                                        console.log('[UPLOAD] Setting URL:', data.url);
+                                        nativeInputValueSetter.call(urlInput, data.url);
+                                        urlInput.dispatchEvent(new Event('input', { bubbles: true }));
+                                        console.log('[UPLOAD] Both values set, Reflex should sync now');
+                                    }, 50);
+                                } else {
+                                    console.error('[UPLOAD] Hidden inputs not found!');
+                                }
+
+                                if (errorDiv) errorDiv.style.display = 'none';
+                            } else {
+                                // Show error
+                                if (errorDiv) {
+                                    errorDiv.textContent = `Upload failed: ${data.error || 'Unknown error'}`;
+                                    errorDiv.style.display = 'block';
+                                }
+                            }
+
+                            // Clear file input for next upload
+                            fileInput.value = '';
+
+                        } catch (error) {
+                            console.error('[UPLOAD] Error:', error);
+                            if (errorDiv) {
+                                errorDiv.textContent = `Upload failed: ${error.message}`;
+                                errorDiv.style.display = 'block';
+                            }
+                        } finally {
+                            if (loadingDiv) loadingDiv.style.display = 'none';
+                        }
+                    });
+                })();
+            """),
 
             spacing="3",
             width="100%",

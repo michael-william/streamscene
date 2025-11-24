@@ -49,9 +49,15 @@ class PostCreationState(BaseState):
     outline_color: str = "#FFFFFF"  # White
 
     # Picture post fields
-    uploaded_files: list[str] = []  # rx.upload() file refs
-    image_preview_url: str = ""
+    uploaded_files: list[str] = []  # Filenames of uploaded images
+    image_preview_url: str = ""  # URL to preview uploaded image
     image_bytes: bytes = b""  # Stored for submission
+    upload_result_json: str = ""  # JSON result from custom upload endpoint (deprecated)
+    upload_error: str = ""  # Upload error message
+
+    # JavaScript upload sync (hidden inputs)
+    js_uploaded_filename: str = ""
+    js_uploaded_url: str = ""
 
     # Meme post fields
     selected_background: str = "white.png"
@@ -355,6 +361,45 @@ class PostCreationState(BaseState):
         finally:
             self.is_uploading_image = False
 
+    def set_js_uploaded_url(self, url: str):
+        """
+        Set the uploaded URL from JavaScript and trigger sync.
+
+        This is called when JavaScript updates the hidden input.
+        When both filename and URL are set, we sync to the main state.
+        """
+        self.js_uploaded_url = url
+
+        # If both filename and URL are now set, sync to main state
+        if self.js_uploaded_filename and self.js_uploaded_url:
+            logger.info(f"[POST_CREATE] Both JS values set, syncing: {self.js_uploaded_filename} -> {self.js_uploaded_url}")
+            self.on_upload_success(self.js_uploaded_filename, self.js_uploaded_url)
+
+            # Clear JS values after syncing
+            self.js_uploaded_filename = ""
+            self.js_uploaded_url = ""
+
+    def on_upload_success(self, filename: str, file_url: str):
+        """
+        Called after successful upload to /api/custom-upload.
+
+        This handler immediately syncs the uploaded file to Reflex state,
+        enabling the submit button and displaying the preview.
+
+        Args:
+            filename: Uploaded filename (with extension)
+            file_url: URL to access the uploaded file (extensionless for Nginx compatibility)
+        """
+        logger.info(f"[POST_CREATE] Upload success callback: {filename}")
+
+        # Update state immediately (no need to wait for submit)
+        self.uploaded_files = [filename]
+        self.image_preview_url = file_url
+        self.is_uploading_image = False
+        self.upload_error = ""
+
+        logger.info(f"[POST_CREATE] File synced to state - preview URL: {file_url}")
+
     def clear_uploaded_image(self):
         """Clear uploaded image and delete from disk."""
         logger.info("[POST_CREATE] Clearing uploaded image")
@@ -374,6 +419,69 @@ class PostCreationState(BaseState):
         self.image_preview_url = ""
         self.uploaded_files = []
         self.preview_image_data = ""
+
+    def process_upload_result(self, result_json: str):
+        """
+        Process upload result from custom FastAPI endpoint.
+
+        This method receives JSON from the JavaScript upload handler via a hidden input.
+        It handles both successful uploads and errors.
+
+        Args:
+            result_json: JSON string with upload result
+        """
+        import json
+
+        try:
+            data = json.loads(result_json)
+            status = data.get('status')
+
+            # Handle upload start
+            if status == 'uploading':
+                print("[CUSTOM_UPLOAD] Upload starting...")
+                self.is_uploading_image = True
+                self.upload_error = ""
+                return
+
+            # Handle upload result
+            if data.get('success'):
+                filename = data.get('filename', '')
+                url = data.get('url', '')
+                size = data.get('size', 0)
+
+                print(f"[CUSTOM_UPLOAD] Success! File: {filename}, Size: {size} bytes")
+                print(f"[CUSTOM_UPLOAD] URL: {url}")
+
+                # Update state with uploaded file
+                self.uploaded_files = [filename]
+                self.image_preview_url = url
+                self.is_uploading_image = False
+                self.upload_error = ""
+
+                logger.info(f"[POST_CREATE] Upload complete via custom endpoint: {filename}")
+
+            else:
+                error = data.get('error', 'Unknown error')
+                print(f"[CUSTOM_UPLOAD] Error: {error}")
+
+                self.upload_error = f"Upload failed: {error}"
+                self.is_uploading_image = False
+                self.uploaded_files = []
+                self.image_preview_url = ""
+
+                logger.error(f"[POST_CREATE] Upload error: {error}")
+
+        except json.JSONDecodeError as e:
+            print(f"[CUSTOM_UPLOAD] JSON decode error: {e}")
+            logger.error(f"[POST_CREATE] Invalid JSON in upload result: {e}")
+            self.upload_error = "Upload failed: Invalid response"
+            self.is_uploading_image = False
+
+        except Exception as e:
+            print(f"[CUSTOM_UPLOAD] Unexpected error: {e}")
+            logger.error(f"[POST_CREATE] Error processing upload result: {e}", exc_info=True)
+            self.upload_error = f"Upload failed: {str(e)}"
+            self.is_uploading_image = False
 
     # ========================================
     # COLOR CUSTOMIZATION
