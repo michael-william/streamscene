@@ -2,8 +2,6 @@
 
 import reflex as rx
 
-from .color_picker import color_picker
-from .markdown_editor import markdown_editor
 from streamscene.state.post_creation_state import PostCreationState
 
 
@@ -14,9 +12,9 @@ def picture_form(state) -> rx.Component:
     Uses inline rx.upload() for direct EventHandler binding (no abstraction layer).
 
     Components:
+    - Two-column layout (Upload | Caption)
     - Image upload (inline, no wrapper)
-    - Text area (160 char limit)
-    - Color pickers (text + outline)
+    - Simple text area (160 char limit, no markdown)
     - Character counter
 
     Args:
@@ -25,8 +23,8 @@ def picture_form(state) -> rx.Component:
     Returns:
         Reflex component with picture post form
     """
-    return rx.vstack(
-        # Image upload section (pure JavaScript/DOM - no Reflex state)
+    return rx.grid(
+        # Left column: Image upload section (pure JavaScript/DOM - no Reflex state)
         rx.vstack(
             rx.text(
                 "Upload Image",
@@ -193,54 +191,46 @@ def picture_form(state) -> rx.Component:
 
             spacing="3",
             width="100%",
+            align="start",
         ),
 
-        # Text content (caption) with markdown support
+        # Right column: Text content (caption) - simple text area
         rx.vstack(
             rx.text(
                 "Add a caption",
-                size="2",
+                size="3",
                 weight="medium",
             ),
-            markdown_editor(
+            rx.text_area(
                 value=state.text_content,
                 on_change=state.set_text_content,
                 placeholder="Write a caption for your picture...",
                 max_length=160,
+                rows="6",
+                width="100%",
+            ),
+            # Character counter
+            rx.hstack(
+                rx.text(
+                    f"{state.text_content.length()} / 160",
+                    size="1",
+                    color=rx.cond(
+                        state.text_content.length() > 160,
+                        "red",
+                        "gray",
+                    ),
+                ),
+                spacing="2",
+                justify="end",
+                width="100%",
             ),
             spacing="2",
             width="100%",
+            align="start",
         ),
 
-        # Color pickers
-        rx.vstack(
-            rx.text(
-                "Text Styling",
-                size="3",
-                weight="medium",
-            ),
-
-            rx.grid(
-                color_picker(
-                    label="Text Color",
-                    value=state.text_color,
-                    on_change=state.update_text_color,
-                ),
-                color_picker(
-                    label="Outline Color",
-                    value=state.outline_color,
-                    on_change=state.update_outline_color,
-                ),
-                columns=rx.breakpoints(initial="1", md="2"),
-                gap="4",
-                width="100%",
-            ),
-
-            spacing="3",
-            width="100%",
-        ),
-
+        # Grid configuration - responsive 2-column layout
+        columns=rx.breakpoints(initial="1", md="2"),
         spacing="5",
         width="100%",
-        align="start",
     )

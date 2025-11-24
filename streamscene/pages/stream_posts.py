@@ -14,6 +14,7 @@ from streamscene.components.post_creator import (
     picture_form,
     meme_form,
     live_preview,
+    color_picker,
 )
 from streamscene.state.post_creation_state import PostCreationState
 from .base_state import BaseState
@@ -599,11 +600,44 @@ def stream_posts_page() -> rx.Component:
                         width="100%",
                     ),
 
-                    # Live preview (conditional)
-                    live_preview(
-                        preview_data=PostCreationState.preview_image_data,
-                        is_generating=PostCreationState.is_generating_preview,
-                        show=PostCreationState.show_preview,
+                    # Live preview + Styling (2-column grid, conditional)
+                    rx.cond(
+                        PostCreationState.show_preview,
+                        rx.grid(
+                            # Left column: Live preview
+                            live_preview(
+                                preview_data=PostCreationState.preview_image_data,
+                                is_generating=PostCreationState.is_generating_preview,
+                                show=True,  # Always show when parent is visible
+                            ),
+
+                            # Right column: Styling options
+                            rx.vstack(
+                                rx.text(
+                                    "Styling",
+                                    size="3",
+                                    weight="medium",
+                                ),
+                                color_picker(
+                                    label="Text Color",
+                                    value=PostCreationState.text_color,
+                                    on_change=PostCreationState.update_text_color,
+                                ),
+                                color_picker(
+                                    label="Outline Color",
+                                    value=PostCreationState.outline_color,
+                                    on_change=PostCreationState.update_outline_color,
+                                ),
+                                spacing="3",
+                                width="100%",
+                                align="start",
+                            ),
+
+                            # Grid configuration - responsive 2-column layout
+                            columns=rx.breakpoints(initial="1", lg="2"),
+                            spacing="5",
+                            width="100%",
+                        ),
                     ),
 
                     # Validation errors
