@@ -1,10 +1,11 @@
 # StreamScene - Next Session Plan
 
-**Last Updated:** 2025-11-24 07:16 UTC (Session 6 - Picture Upload 100% COMPLETE!)
-**Current Phase:** Picture Upload - ✅ FULLY FUNCTIONAL END-TO-END
+**Last Updated:** 2025-11-24 17:56 UTC (Session 8 - UI/UX Improvements)
+**Current Phase:** Picture Upload - ✅ FULLY FUNCTIONAL END-TO-END + Enhanced UI
 **Device Status:** ✅ Displaying PIL-rendered posts (Raspberry Pi Zero 2 WH @ 192.168.1.195 WiFi)
 **Build Status:** ✅ Production build successful, app running
 **Upload Status:** ✅ COMPLETE - Upload, preview, validation, and post creation all working!
+**UI Status:** ✅ Improved 2-column layout, simple text editor, mobile responsive
 
 ---
 
@@ -156,6 +157,87 @@ rx.cond(
 
 ---
 
+## 🎉 Session 8 Improvements (2025-11-24)
+
+### UI/UX Enhancements
+
+**1. Improved Post a Picture Layout** (commit `541e987`)
+- Restructured form to 2-column responsive grid:
+  - **Left column:** Image upload area + preview
+  - **Right column:** Simple text area for caption (no markdown)
+- Moved color pickers to preview section (Live Preview | Styling)
+- Mobile responsive: Stacks vertically on small screens, side-by-side on desktop
+- Character counter shows 0/160 with red warning when over limit
+
+**2. Fixed Text Sizing Algorithm** (commit `3249b9e`)
+- **Bug fix:** Algorithm now checks each individual line width (not just multiline bounding box)
+- Added warning logging when words exceed max_width during wrapping
+- Added debug logging to track font sizing decisions
+- Ensures all text fits within constraints even with long words like "restaurant"
+- Tested with 81-character message - algorithm correctly selects font size 49
+
+**3. Cleanup**
+- Removed old test files from upload directories (~148MB freed)
+- Cleaned `/root/streamscene/uploaded_files/` (deleted)
+- Cleaned `.web/public/uploads/` (empty)
+- Cleaned `.web/build/client/uploads/` (empty)
+
+### Technical Details
+
+**Layout Changes:**
+```python
+# picture_form.py - Now uses rx.grid instead of rx.vstack
+rx.grid(
+    # Left: Upload + preview
+    rx.vstack(...),
+    # Right: Simple text area (no markdown)
+    rx.vstack(
+        rx.text_area(max_length=160),
+        character_counter
+    ),
+    columns=rx.breakpoints(initial="1", md="2"),  # Mobile responsive
+)
+```
+
+**Text Sizing Fix:**
+```python
+# image_renderer.py - Check each line individually
+max_line_width = 0
+for line in wrapped.split('\n'):
+    line_bbox = draw.textbbox((0, 0), line, font=font)
+    line_width = line_bbox[2] - line_bbox[0]
+    max_line_width = max(max_line_width, line_width)
+
+if max_line_width <= max_width and text_height <= max_height:
+    # Font size fits!
+```
+
+### Files Modified
+
+1. **`streamscene/components/post_creator/picture_form.py`**
+   - Changed from vstack to 2-column grid layout
+   - Removed markdown_editor import
+   - Replaced markdown editor with simple rx.text_area
+   - Removed color pickers (moved to stream_posts.py)
+
+2. **`streamscene/pages/stream_posts.py`**
+   - Added color_picker import
+   - Restructured preview section to 2-column grid
+   - Left: live_preview, Right: Styling with color pickers
+   - Responsive: `columns=rx.breakpoints(initial="1", lg="2")`
+
+3. **`streamscene/core/image_renderer.py`**
+   - Added logging import and logger instance
+   - Fixed `_calculate_optimal_font_size()` to check individual line widths
+   - Added debug logging for word overflow and font size decisions
+
+### Commits This Session
+
+1. **541e987** - "feat: Improve post picture layout with 2-column responsive design"
+2. **3249b9e** - "fix: Improve text sizing algorithm to check individual line widths"
+
+---
+
 ## 🎯 Next Session Priorities
 
 ### 1. Test New Picture Layout on Device **[HIGH PRIORITY]**
@@ -182,13 +264,13 @@ Verify uploaded pictures display correctly on the Raspberry Pi E Ink display:
 - Check device receives and displays it
 - Verify PIL rendering works with uploaded images
 
-### 3. Clean Up Upload Directories
+### 3. ~~Clean Up Upload Directories~~ ✅ DONE
 
-Old files in `uploaded_files/` directory need cleanup:
-```bash
-# Remove old files from previous attempts
-rm -rf /root/streamscene/uploaded_files/
-```
+**Completed 2025-11-24:**
+- Deleted `/root/streamscene/uploaded_files/` directory
+- Cleaned `.web/public/uploads/` (all test files removed)
+- Cleaned `.web/build/client/uploads/` (all test files removed)
+- Freed ~148MB of disk space
 
 ### 4. Consider Unit Tests for Upload Logic
 
@@ -248,15 +330,17 @@ Add tests for:
 ## 📚 Recent Commits
 
 ```
+3249b9e fix: Improve text sizing algorithm to check individual line widths
+541e987 feat: Improve post picture layout with 2-column responsive design
+868af1d feat: Fix preview system and add markdown text editor
 7f3cf40 fix: Correct validation and file path for picture uploads
 497b283 fix: Picture upload preview working with Reflex state sync
-768f006 backup: Save requirements before Reflex upgrade
-24d0cb3 WIP: Picture upload debugging - 7 attempts before Reflex upgrade
-e474891 Fix EventSpec iteration error in post creation
 ```
 
 ---
 
-**Next Action:** Test picture upload on physical device to verify end-to-end functionality including E Ink display rendering.
+**Next Action:** Test new 2-column layout and improved text sizing on physical device to verify UI improvements display correctly on E Ink.
 
-**Milestone Achieved:** 🎉 **Picture Upload Feature 100% Complete!** Upload, preview, validation, and post creation all working end-to-end.
+**Recent Milestones:**
+- 🎉 **Picture Upload Feature 100% Complete!** Upload, preview, validation, and post creation all working end-to-end.
+- 🎨 **UI/UX Enhanced!** Improved 2-column layout, simple text editor, mobile responsive, better text sizing algorithm.
