@@ -399,4 +399,191 @@ The user tried uploading after the latest restart and reported:
 
 ---
 
-**Next session:** Start with Step 1 (check browser console) and Step 2 (simplified handler test).
+## Attempt 8-10: Upgrade Reflex, Change Handler Reference
+
+**Date:** 2025-11-23 20:00-20:40 UTC
+
+**What we tried:**
+- Attempt #8: Upgraded Reflex 0.8.17 → 0.8.20
+- Attempt #9: Changed `state.handle_upload` to `PostCreationState.handle_upload`
+- Attempt #10: Cleared all caches, tested in incognito
+
+**Result:** Handler path still mangled, upload never works
+
+**Root cause identified:** Reflex's upload handler path resolution is broken with nested state classes. The path becomes unresolvable garbage.
+
+---
+
+## Attempt 11: Pure JavaScript/DOM Upload with Custom FastAPI Endpoint ✅ (95% Complete)
+
+**Date:** 2025-11-23 20:40-21:10 UTC
+
+**Decision:** Completely bypass Reflex's upload system
+
+### Solution Architecture
+
+```
+Browser JavaScript → /api/custom-upload (FastAPI) → Save file → Return JSON
+                                                          ↓
+                                              Show preview in DOM
+                                                          ↓
+                                              Store filename in hidden input
+                                                          ↓
+                                              Sync to Reflex on submit
+```
+
+### Implementation
+
+**1. Custom FastAPI Endpoint** (`/root/streamscene/streamscene/api/__init__.py`)
+- POST `/api/custom-upload`
+- Validates file type (must be image)
+- Validates file size (5MB max)
+- Generates UUID filename
+- Saves to `/root/streamscene/uploaded_files/`
+- Returns JSON: `{success: true, filename: "...", url: "/_upload/...", size: 3878137}`
+
+**2. Pure JavaScript/DOM UI** (`picture_form.py`)
+- Native HTML file input (hidden)
+- Custom upload area (HTML/CSS, no Reflex components)
+- JavaScript handles:
+  - File selection
+  - Upload to `/api/custom-upload`
+  - Loading spinner (pure DOM manipulation)
+  - Preview display (pure DOM manipulation)
+  - Filename storage in hidden input bound to Reflex state
+  - Error messages
+
+**3. Reflex State Sync** (`post_creation_state.py`)
+- Added `uploaded_filename_from_dom: str` state variable
+- Added `sync_uploaded_filename_from_dom()` method
+- Modified `submit_post()` to call sync before validation
+- Hidden input bound with `on_change=state.set_uploaded_filename_from_dom`
+
+### What's Working ✅
+
+1. **File upload** - Files successfully save to disk
+   ```bash
+   ls -lh /root/streamscene/uploaded_files/3914363e-1f30-4969-95eb-96ff3a71a51f.jpg
+   # -rw-r--r-- 1 root root 3.7M Nov 23 21:02
+   ```
+
+2. **Backend serving** - Backend serves files correctly
+   ```bash
+   curl -I http://localhost:8000/_upload/3914363e-1f30-4969-95eb-96ff3a71a51f.jpg
+   # HTTP/1.1 200 OK
+   # content-type: image/jpeg
+   # content-length: 3878137
+   ```
+
+3. **JavaScript upload flow** - Console logs confirm success
+   ```
+   [UPLOAD] File selected: dutchwine.jpg
+   [UPLOAD] Upload complete: {success: true, filename: '...', url: '/_upload/...'}
+   [UPLOAD] Preview displayed, filename stored: ...
+   ```
+
+4. **API endpoint** - FastAPI endpoint returns proper JSON
+   ```json
+   {
+     "success": true,
+     "filename": "3914363e-1f30-4969-95eb-96ff3a71a51f.jpg",
+     "url": "/_upload/3914363e-1f30-4969-95eb-96ff3a71a51f.jpg",
+     "size": 3878137
+   }
+   ```
+
+### What's NOT Working ❌
+
+**Nginx routing issue:**
+- Nginx NOT proxying `/_upload/` requests to backend
+- External test returns HTML instead of image:
+  ```bash
+  curl -I https://streamscene.dataandstories.com/_upload/...
+  # HTTP/1.1 200 OK
+  # Content-Type: text/html;charset=utf-8   <-- WRONG
+  # Content-Length: 5857                     <-- WRONG (should be 3878137)
+  ```
+
+- Browser shows broken image icon
+- Preview doesn't display (404 error)
+
+### Nginx Configuration
+
+**File:** `/data/nginx/proxy_host/21.conf` (Nginx Proxy Manager @ 192.168.1.104)
+
+**Location block added:**
+```nginx
+location /_upload/ {
+    proxy_pass http://192.168.1.118:8000;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_cache_valid 200 1h;
+    proxy_cache_bypass $http_pragma;
+    proxy_buffering on;
+    proxy_buffer_size 4k;
+    proxy_buffers 8 4k;
+}
+```
+
+**Block order is correct:**
+1. `location /_event/` (WebSocket)
+2. `location /_upload/` (Uploads) ← Our block
+3. `location /api/` (API)
+4. `location /` (Catch-all)
+
+**Tests performed:**
+- `nginx -t` → Syntax OK
+- Full container restart
+- Still returns HTML
+
+### Next Steps for Nginx Debugging
+
+**Option 1: Check included config files**
+```bash
+docker exec -it nginx-proxy-manager cat /etc/nginx/conf.d/include/proxy.conf
+```
+
+The `location /` block includes this file which might override `/_upload/`.
+
+**Option 2: Add debug header**
+```nginx
+add_header X-Debug-Location "upload-block" always;
+```
+
+**Option 3: Use regex location (higher priority)**
+```nginx
+location ~ ^/_upload/ {
+```
+
+**Option 4: Bypass Nginx temporarily**
+Change URL in `api/__init__.py`:
+```python
+file_url = f"http://192.168.1.118:8000/_upload/{safe_filename}"
+```
+
+### Why This Solution is Better
+
+**All previous attempts failed** because they relied on Reflex's upload/event system:
+- `rx.upload()` handler paths get mangled with nested states
+- `__reflex__.process_event()` doesn't exist in Reflex 0.8.20
+- Hidden input onChange doesn't fire for programmatic changes
+
+**This solution works** because:
+- ✅ Upload is 100% independent from Reflex state
+- ✅ No reliance on broken event handler paths
+- ✅ Only syncs to Reflex on final submit button
+- ✅ Easy to debug with console.log
+- ✅ Uses working FastAPI endpoint
+
+### Status: 95% Complete
+
+**Blocker:** Nginx routing issue (should take 5-10 minutes to fix)
+
+**Once fixed:** Upload will be fully functional!
+
+---
+
+**Next session:** Debug Nginx routing (check included configs, add debug headers, or bypass Nginx temporarily).

@@ -4,6 +4,7 @@ import logging
 import base64
 import io
 import json
+from pathlib import Path
 from typing import List, Optional
 from uuid import UUID
 
@@ -567,11 +568,12 @@ class PostCreationState(BaseState):
                     self.error_message = "Please upload an image to see preview"
                     self.preview_image_data = ""
                     self.is_generating_preview = False
+                    yield
                     return
 
                 # Get uploaded file path
                 filename = self.uploaded_files[0]
-                uploaded_file_path = rx.get_upload_dir() / filename
+                uploaded_file_path = Path(".web/build/client/uploads") / filename
 
                 rendered = renderer.render_picture_post(
                     image_path=str(uploaded_file_path),
@@ -588,6 +590,7 @@ class PostCreationState(BaseState):
                     logger.warning("[POST_CREATE] No background selected")
                     self.preview_image_data = ""
                     self.is_generating_preview = False
+                    yield
                     return
 
                 background_path = str(get_background_path(self.selected_background))
@@ -618,18 +621,6 @@ class PostCreationState(BaseState):
         finally:
             self.is_generating_preview = False
             yield
-
-    def auto_refresh_preview(self, _event=None):
-        """
-        Auto-refresh preview every 2 seconds.
-
-        Called by rx.moment timer when preview is visible.
-        Ignores event parameter from timer.
-        """
-        # Only regenerate if preview is visible and not already generating
-        if self.show_preview and not self.is_generating_preview:
-            logger.info("[POST_CREATE] Auto-refreshing preview")
-            yield from self.generate_preview()
 
     # ========================================
     # FORM VALIDATION

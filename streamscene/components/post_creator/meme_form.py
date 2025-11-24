@@ -4,6 +4,7 @@ import reflex as rx
 
 from .background_selector import background_selector
 from .color_picker import color_picker
+from .markdown_editor import markdown_editor
 
 
 def meme_form(state) -> rx.Component:
@@ -31,35 +32,19 @@ def meme_form(state) -> rx.Component:
             is_loading=state.is_loading_backgrounds,
         ),
 
-        # Text content
+        # Text content with markdown support
         rx.vstack(
-            rx.hstack(
-                rx.text(
-                    "Meme Text",
-                    size="2",
-                    weight="medium",
-                ),
-                rx.spacer(),
-                rx.text(
-                    f"{state.char_count} / 160",
-                    size="1",
-                    color=state.char_count_color,
-                    font_family="monospace",
-                ),
-                width="100%",
-                align="center",
+            rx.text(
+                "Meme Text",
+                size="2",
+                weight="medium",
             ),
-
-            rx.text_area(
-                placeholder="Write your meme text...",
+            markdown_editor(
                 value=state.text_content,
                 on_change=state.set_text_content,
-                size="3",
-                rows="4",
+                placeholder="Write your meme text...",
                 max_length=160,
-                width="100%",
             ),
-
             spacing="2",
             width="100%",
         ),

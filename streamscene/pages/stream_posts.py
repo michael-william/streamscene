@@ -571,7 +571,7 @@ def stream_posts_page() -> rx.Component:
                         meme_form(PostCreationState),
                     ),
 
-                    # Preview toggle
+                    # Preview toggle + manual refresh button
                     rx.hstack(
                         rx.switch(
                             checked=PostCreationState.show_preview,
@@ -582,8 +582,21 @@ def stream_posts_page() -> rx.Component:
                             size="2",
                             color="gray",
                         ),
+                        rx.spacer(),
+                        rx.cond(
+                            PostCreationState.show_preview,
+                            rx.button(
+                                rx.icon("refresh-cw", size=16),
+                                "Refresh",
+                                on_click=PostCreationState.generate_preview,
+                                size="2",
+                                variant="soft",
+                                disabled=PostCreationState.is_generating_preview,
+                            ),
+                        ),
                         spacing="2",
                         align="center",
+                        width="100%",
                     ),
 
                     # Live preview (conditional)
@@ -591,7 +604,6 @@ def stream_posts_page() -> rx.Component:
                         preview_data=PostCreationState.preview_image_data,
                         is_generating=PostCreationState.is_generating_preview,
                         show=PostCreationState.show_preview,
-                        on_auto_refresh=PostCreationState.auto_refresh_preview,
                     ),
 
                     # Validation errors

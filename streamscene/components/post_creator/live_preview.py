@@ -7,8 +7,7 @@ from typing import Callable
 def live_preview(
     preview_data: rx.Var[str],
     is_generating: rx.Var[bool],
-    show: rx.Var[bool],
-    on_auto_refresh: Callable = None
+    show: rx.Var[bool]
 ) -> rx.Component:
     """
     Live preview of rendered post (800×480px E Ink display).
@@ -18,13 +17,12 @@ def live_preview(
     - Loading state during generation
     - Error fallback
     - Toggle visibility
-    - Auto-refresh every 2 seconds when visible
+    - Manual refresh only (no auto-refresh)
 
     Args:
         preview_data: Base64 data URL of preview image
         is_generating: Loading state during preview generation
         show: Whether to show preview
-        on_auto_refresh: Callback for auto-refresh timer (optional)
 
     Returns:
         Reflex component with live preview display
@@ -32,16 +30,6 @@ def live_preview(
     return rx.cond(
         show,
         rx.vstack(
-            # Hidden timer for auto-refresh (updates every 2 seconds)
-            rx.cond(
-                on_auto_refresh is not None,
-                rx.moment(
-                    interval=2000,  # 2000ms = 2 seconds
-                    on_change=lambda _: on_auto_refresh(),
-                    display="none"  # Hidden from UI
-                ),
-            ),
-
             # Header
             rx.hstack(
                 rx.text(

@@ -3,6 +3,7 @@
 import reflex as rx
 
 from .color_picker import color_picker
+from .markdown_editor import markdown_editor
 from streamscene.state.post_creation_state import PostCreationState
 
 
@@ -194,35 +195,19 @@ def picture_form(state) -> rx.Component:
             width="100%",
         ),
 
-        # Text content (caption)
+        # Text content (caption) with markdown support
         rx.vstack(
-            rx.hstack(
-                rx.text(
-                    "Add a caption",
-                    size="2",
-                    weight="medium",
-                ),
-                rx.spacer(),
-                rx.text(
-                    f"{state.char_count} / 160",
-                    size="1",
-                    color=state.char_count_color,
-                    font_family="monospace",
-                ),
-                width="100%",
-                align="center",
+            rx.text(
+                "Add a caption",
+                size="2",
+                weight="medium",
             ),
-
-            rx.text_area(
-                placeholder="Write a caption for your picture...",
+            markdown_editor(
                 value=state.text_content,
                 on_change=state.set_text_content,
-                size="3",
-                rows="3",
+                placeholder="Write a caption for your picture...",
                 max_length=160,
-                width="100%",
             ),
-
             spacing="2",
             width="100%",
         ),

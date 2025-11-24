@@ -13,6 +13,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageFilter, ImageEnhance
 from typing import Optional, Tuple, Literal
 from pathlib import Path
 import textwrap
+import re
 from datetime import datetime
 
 # Import new modular image processing
@@ -30,12 +31,45 @@ CONTENT_AREA_HEIGHT = DISPLAY_HEIGHT - TOP_BAR_HEIGHT - PADDING
 
 # Font size ranges
 MIN_FONT_SIZE = 20
-MAX_FONT_SIZE = 72
+MAX_FONT_SIZE = 60  # Reduced from 72 for better proportions in narrow text column
 TOP_BAR_FONT_SIZE = 24
 
 # Portrait layout split (60/40)
 PORTRAIT_IMAGE_WIDTH = 480
 PORTRAIT_TEXT_WIDTH = 280  # Remaining space after padding
+
+
+def parse_markdown_to_plain_text(text: str) -> str:
+    """
+    Convert markdown syntax to plain text for E Ink rendering.
+
+    Removes markdown formatting characters while preserving content:
+    - **bold** → bold
+    - *italic* → italic
+    - [link text](url) → link text
+
+    Note: E Ink rendering currently uses single-font rendering.
+    Future enhancement: Support actual bold/italic fonts with mixed text rendering.
+
+    Args:
+        text: Markdown-formatted text
+
+    Returns:
+        Plain text with markdown syntax removed
+    """
+    if not text:
+        return ""
+
+    # Remove bold: **text** → text
+    text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
+
+    # Remove italic: *text* → text (but not ** from bold)
+    text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'\1', text)
+
+    # Remove links: [text](url) → text
+    text = re.sub(r'\[(.+?)\]\(.+?\)', r'\1', text)
+
+    return text
 
 
 class ImageRenderer:
@@ -249,10 +283,9 @@ class ImageRenderer:
 
         Supports both file path (backward compat) and PIL Image (new flow).
 
-        Layout:
-        - Landscape/square: Image centered, text below
-        - Portrait: Image left (480px), text right (320px)
-        - 40px padding around content
+        Layout (unified for all image orientations):
+        - Left container (60%): Image centered within 480px wide area
+        - Right container (40%): Text centered within 280px wide area
         - White background
         - Top bar with stream/author/date
         """
@@ -272,27 +305,19 @@ class ImageRenderer:
         if post_date is None:
             post_date = datetime.now()
         self._draw_top_bar(draw, stream_name, author_name, post_date)
-        img_width, img_height = uploaded_img.size
 
-        # Determine orientation
-        is_portrait = img_height > img_width
+        # Parse markdown to plain text for E Ink rendering
+        plain_text = parse_markdown_to_plain_text(text_content)
 
-        if is_portrait:
-            # Portrait layout: 60/40 split
-            self._render_portrait_layout(
-                canvas, draw, uploaded_img, text_content,
-                text_color, outline_color
-            )
-        else:
-            # Landscape/square layout: centered image, text below
-            self._render_landscape_layout(
-                canvas, draw, uploaded_img, text_content,
-                text_color, outline_color
-            )
+        # Use unified layout for all image orientations
+        self._render_unified_layout(
+            canvas, draw, uploaded_img, plain_text,
+            text_color, outline_color
+        )
 
         return canvas
 
-    def _render_landscape_layout(
+    def _render_unified_layout(
         self,
         canvas: Image.Image,
         draw: ImageDraw.Draw,
@@ -301,72 +326,33 @@ class ImageRenderer:
         text_color: Tuple[int, int, int],
         outline_color: Tuple[int, int, int]
     ):
-        """Render landscape/square image with text below."""
-        # Available area for content (below top bar)
+        """
+        Unified layout for all image orientations (landscape, portrait, square).
+
+        Layout:
+        - Left container (60%): 480px wide, image centered within it
+        - Right container (40%): 280px wide, text centered within it
+        - 20px gap between containers
+        """
         content_top = TOP_BAR_HEIGHT + PADDING
         content_height = DISPLAY_HEIGHT - content_top - PADDING
 
-        # Reserve space for text (estimate ~150px for text area)
-        text_area_height = 150
-        image_area_height = content_height - text_area_height - 20  # 20px gap
+        # Left container: 480px wide (60% of display)
+        image_container_width = PORTRAIT_IMAGE_WIDTH
+        image_area_width = image_container_width - PADDING  # 440px for image with padding
 
-        # Resize image to fit width and height constraints
-        max_img_width = CONTENT_AREA_WIDTH
-        max_img_height = image_area_height
-
-        resized_img = ImageOps.contain(uploaded_img, (max_img_width, max_img_height))
-
-        # Center image horizontally
-        img_x = (DISPLAY_WIDTH - resized_img.width) // 2
-        img_y = content_top
-
-        canvas.paste(resized_img, (img_x, img_y))
-
-        # Render text below image
-        text_y = img_y + resized_img.height + 20
-        text_max_height = DISPLAY_HEIGHT - text_y - PADDING
-
-        font, wrapped_text = self._calculate_optimal_font_size(
-            text_content,
-            max_width=CONTENT_AREA_WIDTH,
-            max_height=text_max_height
-        )
-
-        self._draw_text_with_outline(
-            draw,
-            position=(DISPLAY_WIDTH // 2, text_y + text_max_height // 2),
-            text=wrapped_text,
-            font=font,
-            text_color=text_color,
-            outline_color=outline_color,
-            anchor="mm"
-        )
-
-    def _render_portrait_layout(
-        self,
-        canvas: Image.Image,
-        draw: ImageDraw.Draw,
-        uploaded_img: Image.Image,
-        text_content: str,
-        text_color: Tuple[int, int, int],
-        outline_color: Tuple[int, int, int]
-    ):
-        """Render portrait image on left (60%), text on right (40%)."""
-        content_top = TOP_BAR_HEIGHT + PADDING
-        content_height = DISPLAY_HEIGHT - content_top - PADDING
-
-        # Left side: Image (480px wide including padding)
-        image_area_width = PORTRAIT_IMAGE_WIDTH - PADDING
+        # Resize image to fit within left container
         resized_img = ImageOps.contain(uploaded_img, (image_area_width, content_height))
 
-        img_x = PADDING
+        # Center image within left container (both horizontally and vertically)
+        img_x = PADDING + (image_area_width - resized_img.width) // 2
         img_y = content_top + (content_height - resized_img.height) // 2
 
         canvas.paste(resized_img, (img_x, img_y))
 
-        # Right side: Text (320px wide with padding)
+        # Right container: Text (280px wide with 20px gap)
         text_x = PORTRAIT_IMAGE_WIDTH + 20
-        text_max_width = PORTRAIT_TEXT_WIDTH - 40  # Account for padding
+        text_max_width = PORTRAIT_TEXT_WIDTH - 40  # 240px for text with padding
 
         font, wrapped_text = self._calculate_optimal_font_size(
             text_content,
@@ -374,6 +360,7 @@ class ImageRenderer:
             max_height=content_height
         )
 
+        # Center text vertically in right container
         self._draw_text_with_outline(
             draw,
             position=(text_x + text_max_width // 2, content_top + content_height // 2),
@@ -454,9 +441,12 @@ class ImageRenderer:
         text_area_height = DISPLAY_HEIGHT - text_area_top - PADDING
         text_area_width = DISPLAY_WIDTH - (2 * PADDING)
 
+        # Parse markdown to plain text for E Ink rendering
+        plain_text = parse_markdown_to_plain_text(text_content)
+
         # Calculate optimal font size for main text
         font, wrapped_text = self._calculate_optimal_font_size(
-            text_content,
+            plain_text,
             max_width=text_area_width,
             max_height=text_area_height
         )
