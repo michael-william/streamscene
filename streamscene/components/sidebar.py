@@ -67,9 +67,8 @@ def sidebar_content(current_page: str = "") -> rx.Component:
             nav_link("Dashboard", "/dashboard", current_page, "layout_dashboard"),
             nav_link("Streams", "/streams", current_page, "radio"),
             nav_link("Devices", "/devices", current_page, "monitor"),
+            nav_link("Backgrounds", "/admin/backgrounds", current_page, "image"),
             nav_link("Profile", "/profile", current_page, "user"),
-            # Future links can be added here:
-            # nav_link("Settings", "/settings", current_page, "settings"),
             spacing="1",
             width="100%",
         ),
