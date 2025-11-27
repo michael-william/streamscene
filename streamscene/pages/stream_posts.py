@@ -11,8 +11,7 @@ from streamscene.components.layout import authenticated_layout
 from streamscene.components.eink import eink_preview, get_text_warnings
 from streamscene.components.post_creator import (
     post_type_selector,
-    picture_form,
-    meme_form,
+    unified_form,
     live_preview,
     color_picker,
 )
@@ -565,12 +564,8 @@ def stream_posts_page() -> rx.Component:
                         ),
                     ),
 
-                    # Conditional form based on post type
-                    rx.cond(
-                        PostCreationState.post_type == "picture",
-                        picture_form(PostCreationState),
-                        meme_form(PostCreationState),
-                    ),
+                    # Unified form (layout adapts based on post type)
+                    unified_form(PostCreationState),
 
                     # Preview toggle + manual refresh button
                     rx.hstack(
