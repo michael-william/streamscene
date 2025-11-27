@@ -173,7 +173,7 @@ class StreamPostsState(BaseState):
                 print(f"[STREAM_POSTS] Loaded stream theme: '{self.stream_theme_name}'")
 
                 # Load posts
-                posts = stream_ops.get_stream_posts(session, stream.id, limit=50)
+                posts = stream_ops.get_stream_posts(session, stream.id, limit=10)
                 self.posts = [
                     {
                         "id": str(post.id),

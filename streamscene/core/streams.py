@@ -553,7 +553,7 @@ def update_post(
     text_content: str,
 ) -> Optional[Post]:
     """
-    Update a post's text content.
+    Update a post's text content and re-render the cached image.
 
     Args:
         session: Database session
@@ -567,9 +567,31 @@ def update_post(
     if not post:
         return None
 
+    # Update text content
     post.text_content = text_content
     post.updated_at = utc_now()
     session.flush()
+
+    # Re-render the cached image with new content
+    stream = get_stream_by_id(session, post.stream_id)
+    author = session.query(User).filter(User.id == post.author_id).first()
+
+    if stream and author:
+        # Delete old cached image if it exists
+        if post.processed_image_path and os.path.exists(post.processed_image_path):
+            try:
+                os.remove(post.processed_image_path)
+            except Exception:
+                pass  # Ignore cleanup errors
+
+        # Re-render with updated content
+        post.processed_image_path = render_and_cache_post(
+            post=post,
+            stream_name=stream.name,
+            author_name=author.display_name
+        )
+        session.flush()
+
     return post
 
 

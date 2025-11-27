@@ -509,7 +509,7 @@ class StreamSceneClient:
                     # Check if we have a pre-rendered image from the server
                     if content.get("rendered_image_url"):
                         display_logger.info("Downloading pre-rendered image from server")
-                        image = self.api_client.fetch_content_image()
+                        image = self.api_client.fetch_content_image(rotation_index=self.rotation_index)
                         if image:
                             display_logger.info("Displaying server-rendered image on E Ink display")
                             self.display.show(image)
