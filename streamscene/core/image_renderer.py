@@ -37,6 +37,13 @@ MIN_FONT_SIZE = 20
 MAX_FONT_SIZE = 60  # Reduced from 72 for better proportions in narrow text column
 TOP_BAR_FONT_SIZE = 24
 
+# Font family mappings (regular, bold)
+FONT_FILES = {
+    "montserrat": ("Montserrat-Regular.ttf", "Montserrat-Bold.ttf"),
+    "roboto": ("Roboto-Regular.ttf", "Roboto-Bold.ttf"),
+    "pacifico": ("Pacifico-Regular.ttf", "Pacifico-Bold.ttf"),
+}
+
 # Portrait layout split (60/40)
 PORTRAIT_IMAGE_WIDTH = 480
 PORTRAIT_TEXT_WIDTH = 280  # Remaining space after padding
@@ -83,15 +90,17 @@ class ImageRenderer:
         self.fonts_dir = Path(fonts_dir)
         self._font_cache = {}
 
-    def _get_font(self, size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
-        """Get cached font at specified size."""
-        font_name = "OpenSans-Bold.ttf" if bold else "OpenSans-Regular.ttf"
+    def _get_font(self, size: int, bold: bool = False, family: str = "montserrat") -> ImageFont.FreeTypeFont:
+        """Get cached font at specified size and family."""
+        font_regular, font_bold = FONT_FILES.get(family, FONT_FILES["montserrat"])
+        font_name = font_bold if bold else font_regular
         cache_key = (font_name, size)
 
         if cache_key not in self._font_cache:
             font_path = self.fonts_dir / font_name
             if not font_path.exists():
                 # Fallback to default font if custom font not found
+                logger.warning(f"Font not found: {font_path}, using default")
                 self._font_cache[cache_key] = ImageFont.load_default()
             else:
                 self._font_cache[cache_key] = ImageFont.truetype(str(font_path), size)
@@ -141,7 +150,8 @@ class ImageRenderer:
         max_width: int,
         max_height: int,
         min_size: int = MIN_FONT_SIZE,
-        max_size: int = MAX_FONT_SIZE
+        max_size: int = MAX_FONT_SIZE,
+        font_family: str = "montserrat"
     ) -> Tuple[ImageFont.FreeTypeFont, str]:
         """
         Binary search for largest font size that fits text within constraints.
@@ -160,7 +170,7 @@ class ImageRenderer:
 
         while low <= high:
             mid = (low + high) // 2
-            font = self._get_font(mid)
+            font = self._get_font(mid, family=font_family)
 
             # Wrap text at this font size
             wrapped = self._wrap_text(text, font, max_width)
@@ -192,7 +202,7 @@ class ImageRenderer:
 
         # Return best fit (or minimum if nothing fits)
         if best_font is None:
-            best_font = self._get_font(min_size)
+            best_font = self._get_font(min_size, family=font_family)
             best_wrapped = self._wrap_text(text, best_font, max_width)
 
         return best_font, best_wrapped
@@ -203,12 +213,13 @@ class ImageRenderer:
         stream_name: str,
         author_name: str,
         date: datetime,
-        text_color: Tuple[int, int, int] = (0, 0, 0)
+        text_color: Tuple[int, int, int] = (0, 0, 0),
+        font_family: str = "montserrat"
     ):
         """
         Draw top info bar: Stream name (left), Author (center), Date (right).
         """
-        font = self._get_font(TOP_BAR_FONT_SIZE, bold=True)
+        font = self._get_font(TOP_BAR_FONT_SIZE, bold=True, family=font_family)
 
         # Handle None values
         stream_name = stream_name or "Stream"
@@ -295,7 +306,8 @@ class ImageRenderer:
         post_date: Optional[datetime] = None,
         text_color: Tuple[int, int, int] = (0, 0, 0),
         outline_color: Tuple[int, int, int] = (255, 255, 255),
-        outline_width: int = 2
+        outline_width: int = 2,
+        font_family: str = "montserrat"
     ) -> Image.Image:
         """
         Render 'Post a Picture' type post.
@@ -323,7 +335,7 @@ class ImageRenderer:
         # Draw top bar
         if post_date is None:
             post_date = datetime.now()
-        self._draw_top_bar(draw, stream_name, author_name, post_date)
+        self._draw_top_bar(draw, stream_name, author_name, post_date, font_family=font_family)
 
         # Parse markdown to plain text for E Ink rendering
         plain_text = parse_markdown_to_plain_text(text_content)
@@ -331,7 +343,7 @@ class ImageRenderer:
         # Use unified layout for all image orientations
         self._render_unified_layout(
             canvas, draw, uploaded_img, plain_text,
-            text_color, outline_color, outline_width
+            text_color, outline_color, outline_width, font_family
         )
 
         return canvas
@@ -344,7 +356,8 @@ class ImageRenderer:
         text_content: str,
         text_color: Tuple[int, int, int],
         outline_color: Tuple[int, int, int],
-        outline_width: int = 2
+        outline_width: int = 2,
+        font_family: str = "montserrat"
     ):
         """
         Unified layout for all image orientations (landscape, portrait, square).
@@ -377,7 +390,8 @@ class ImageRenderer:
         font, wrapped_text = self._calculate_optimal_font_size(
             text_content,
             max_width=text_max_width,
-            max_height=content_height
+            max_height=content_height,
+            font_family=font_family
         )
 
         # Center text vertically in right container
@@ -401,7 +415,8 @@ class ImageRenderer:
         post_date: datetime,
         text_color: Tuple[int, int, int] = (255, 255, 255),
         outline_color: Tuple[int, int, int] = (0, 0, 0),
-        outline_width: int = 3
+        outline_width: int = 3,
+        font_family: str = "montserrat"
     ) -> Image.Image:
         """
         Render 'Meme It' type post.
@@ -422,7 +437,7 @@ class ImageRenderer:
         draw = ImageDraw.Draw(background)
 
         # Draw top bar with outline for visibility
-        top_bar_font = self._get_font(TOP_BAR_FONT_SIZE, bold=True)
+        top_bar_font = self._get_font(TOP_BAR_FONT_SIZE, bold=True, family=font_family)
 
         # Stream name (left)
         self._draw_text_with_outline(
@@ -473,7 +488,8 @@ class ImageRenderer:
         font, wrapped_text = self._calculate_optimal_font_size(
             plain_text,
             max_width=text_area_width,
-            max_height=text_area_height
+            max_height=text_area_height,
+            font_family=font_family
         )
 
         # Draw main text in center with outline
@@ -500,7 +516,8 @@ class ImageRenderer:
         image_path: Optional[str] = None,
         background_path: Optional[str] = None,
         text_color: Tuple[int, int, int] = (0, 0, 0),
-        outline_color: Tuple[int, int, int] = (255, 255, 255)
+        outline_color: Tuple[int, int, int] = (255, 255, 255),
+        font_family: str = "montserrat"
     ) -> Image.Image:
         """
         Main entry point for rendering any post type.
@@ -515,6 +532,7 @@ class ImageRenderer:
             background_path: Path to background image (required for meme posts)
             text_color: RGB tuple for text color
             outline_color: RGB tuple for outline color
+            font_family: Font family name (montserrat, roboto, pacifico)
 
         Returns:
             PIL Image object (800x480 RGB)
@@ -524,14 +542,14 @@ class ImageRenderer:
                 raise ValueError("image_path required for picture posts")
             return self.render_picture_post(
                 image_path, text_content, stream_name, author_name,
-                post_date, text_color, outline_color
+                post_date, text_color, outline_color, font_family=font_family
             )
         elif post_type == "meme":
             if not background_path:
                 raise ValueError("background_path required for meme posts")
             return self.render_meme_post(
                 background_path, text_content, stream_name, author_name,
-                post_date, text_color, outline_color
+                post_date, text_color, outline_color, font_family=font_family
             )
         else:
             raise ValueError(f"Unknown post_type: {post_type}")

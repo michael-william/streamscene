@@ -129,6 +129,8 @@ class Post(Base):
     background_name: Mapped[str] = Column(String(100), nullable=True)  # For 'meme' posts - background filename
     text_color: Mapped[str] = Column(String(7), default="#000000", nullable=False)  # Hex color (e.g., #FFFFFF)
     outline_color: Mapped[str] = Column(String(7), default="#FFFFFF", nullable=False)  # Hex outline color
+    outline_width: Mapped[int] = Column(Integer, default=2, nullable=False)  # 0 = outline disabled
+    font_family: Mapped[str] = Column(String(20), default="montserrat", nullable=False)  # Font family name
     processed_image_path: Mapped[str] = Column(String(500), nullable=True)  # Server-rendered 800x480 PNG
     created_at: Mapped[datetime] = Column(DateTime(timezone=True), default=utc_now, nullable=False, index=True)
     updated_at: Mapped[datetime] = Column(

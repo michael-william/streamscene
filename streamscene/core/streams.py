@@ -117,6 +117,10 @@ def render_and_cache_post(
     text_color = hex_to_rgb(post.text_color)
     outline_color = hex_to_rgb(post.outline_color)
 
+    # Get outline_width and font_family (with defaults for old posts)
+    outline_width = getattr(post, 'outline_width', 2) or 2
+    font_family = getattr(post, 'font_family', 'montserrat') or 'montserrat'
+
     # Determine post type and render
     if post.content_type == "picture":
         # Support both old posts (image_path) and new posts (temp_image_bytes)
@@ -129,7 +133,9 @@ def render_and_cache_post(
                 author_name=author_name,
                 post_date=post.created_at,
                 text_color=text_color,
-                outline_color=outline_color
+                outline_color=outline_color,
+                outline_width=outline_width,
+                font_family=font_family
             )
         elif hasattr(post, '_temp_image_bytes') and post._temp_image_bytes:
             # New posts: render from in-memory bytes
@@ -142,7 +148,9 @@ def render_and_cache_post(
                 author_name=author_name,
                 post_date=post.created_at,
                 text_color=text_color,
-                outline_color=outline_color
+                outline_color=outline_color,
+                outline_width=outline_width,
+                font_family=font_family
             )
         else:
             raise ValueError("Picture posts require image_path or temp_image_bytes")
@@ -160,15 +168,17 @@ def render_and_cache_post(
             author_name=author_name,
             post_date=post.created_at,
             text_color=text_color,
-            outline_color=outline_color
+            outline_color=outline_color,
+            outline_width=outline_width,
+            font_family=font_family
         )
 
     else:
         raise ValueError(f"Unknown content_type: {post.content_type}")
 
-    # Generate cache key (hash of post content)
+    # Generate cache key (hash of post content including style settings)
     cache_key = hashlib.sha256(
-        f"{post.id}{post.content_type}{post.text_content}{post.text_color}{post.outline_color}".encode('utf-8')
+        f"{post.id}{post.content_type}{post.text_content}{post.text_color}{post.outline_color}{outline_width}{font_family}".encode('utf-8')
     ).hexdigest()[:16]
 
     # Save rendered image
@@ -376,6 +386,8 @@ def create_post(
     background_name: Optional[str] = None,
     text_color: str = "#000000",
     outline_color: str = "#FFFFFF",
+    outline_width: int = 2,
+    font_family: str = "montserrat",
 ) -> Post:
     """
     Create a new post in a stream (picture or meme).
@@ -390,6 +402,8 @@ def create_post(
         background_name: Background filename (required for meme posts)
         text_color: Hex color code for text (default: black)
         outline_color: Hex color code for outline (default: white)
+        outline_width: Outline thickness (0 = disabled, default: 2)
+        font_family: Font family name (default: montserrat)
 
     Returns:
         Post: The created post instance
@@ -429,6 +443,8 @@ def create_post(
             background_name=background_name,
             text_color=text_color,
             outline_color=outline_color,
+            outline_width=outline_width,
+            font_family=font_family,
         )
         session.add(post)
         session.flush()  # Generate post.id

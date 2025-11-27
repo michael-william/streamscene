@@ -15,7 +15,7 @@ from streamscene.components.post_creator import (
     live_preview,
     color_picker,
 )
-from streamscene.state.post_creation_state import PostCreationState
+from streamscene.state.post_creation_state import PostCreationState, FONT_OPTIONS
 from .base_state import BaseState
 
 
@@ -613,10 +613,43 @@ def stream_posts_page() -> rx.Component:
                                     size="3",
                                     weight="medium",
                                 ),
-                                color_picker(
-                                    label="Text Color",
-                                    value=PostCreationState.text_color,
-                                    on_change=PostCreationState.update_text_color,
+                                # Font and Text Color side by side
+                                rx.hstack(
+                                    # Font selector
+                                    rx.vstack(
+                                        rx.text("Font", size="2", weight="medium"),
+                                        rx.select(
+                                            [option["label"] for option in FONT_OPTIONS],
+                                            value=rx.match(
+                                                PostCreationState.selected_font,
+                                                ("montserrat", "Montserrat"),
+                                                ("roboto", "Roboto"),
+                                                ("pacifico", "Pacifico"),
+                                                "Montserrat",
+                                            ),
+                                            on_change=lambda v: PostCreationState.update_font(
+                                                rx.match(
+                                                    v,
+                                                    ("Montserrat", "montserrat"),
+                                                    ("Roboto", "roboto"),
+                                                    ("Pacifico", "pacifico"),
+                                                    "montserrat",
+                                                )
+                                            ),
+                                            size="2",
+                                        ),
+                                        spacing="1",
+                                        align="start",
+                                    ),
+                                    # Text color picker
+                                    color_picker(
+                                        label="Text Color",
+                                        value=PostCreationState.text_color,
+                                        on_change=PostCreationState.update_text_color,
+                                    ),
+                                    spacing="4",
+                                    align="end",
+                                    width="100%",
                                 ),
                                 # Outline toggle
                                 rx.hstack(
@@ -632,14 +665,14 @@ def stream_posts_page() -> rx.Component:
                                 # Outline controls (shown when enabled)
                                 rx.cond(
                                     PostCreationState.outline_enabled,
-                                    rx.vstack(
+                                    rx.hstack(
                                         color_picker(
                                             label="Outline Color",
                                             value=PostCreationState.outline_color,
                                             on_change=PostCreationState.update_outline_color,
                                         ),
-                                        rx.hstack(
-                                            rx.text("Width", size="2"),
+                                        rx.vstack(
+                                            rx.text("Width", size="2", weight="medium"),
                                             rx.input(
                                                 value=PostCreationState.outline_width.to_string(),
                                                 type="number",
@@ -649,10 +682,11 @@ def stream_posts_page() -> rx.Component:
                                                 width="70px",
                                                 size="2",
                                             ),
-                                            spacing="2",
-                                            align="center",
+                                            spacing="1",
+                                            align="start",
                                         ),
-                                        spacing="2",
+                                        spacing="4",
+                                        align="end",
                                         width="100%",
                                     ),
                                 ),

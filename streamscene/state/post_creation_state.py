@@ -20,6 +20,13 @@ from streamscene.components.post_creator.utils import validate_hex_color, format
 
 logger = logging.getLogger(__name__)
 
+# Font options for dropdown selector
+FONT_OPTIONS = [
+    {"value": "montserrat", "label": "Montserrat"},
+    {"value": "roboto", "label": "Roboto"},
+    {"value": "pacifico", "label": "Pacifico"},
+]
+
 
 class PostCreationState(BaseState):
     """
@@ -50,6 +57,7 @@ class PostCreationState(BaseState):
     outline_color: str = "#FFFFFF"  # White
     outline_enabled: bool = True  # Toggle for outline
     outline_width: int = 2  # Outline thickness (1-5)
+    selected_font: str = "montserrat"  # Font family
 
     # Picture post fields
     uploaded_files: list[str] = []  # Filenames of uploaded images
@@ -543,6 +551,14 @@ class PostCreationState(BaseState):
         except (ValueError, TypeError):
             pass
 
+    def update_font(self, font: str):
+        """Update font family and invalidate preview."""
+        valid_fonts = ["montserrat", "roboto", "pacifico"]
+        if font in valid_fonts:
+            logger.info(f"[POST_CREATE] Font updated: {self.selected_font} -> {font}")
+            self.selected_font = font
+            self.preview_image_data = ""
+
     # ========================================
     # LIVE PREVIEW
     # ========================================
@@ -605,7 +621,8 @@ class PostCreationState(BaseState):
                     post_date=post_date,
                     text_color=text_color,
                     outline_color=outline_color,
-                    outline_width=effective_outline_width
+                    outline_width=effective_outline_width,
+                    font_family=self.selected_font
                 )
 
             elif self.post_type == "meme":
@@ -626,7 +643,8 @@ class PostCreationState(BaseState):
                     post_date=post_date,
                     text_color=text_color,
                     outline_color=outline_color,
-                    outline_width=effective_outline_width
+                    outline_width=effective_outline_width,
+                    font_family=self.selected_font
                 )
 
             # Convert to base64 data URL
@@ -748,6 +766,9 @@ class PostCreationState(BaseState):
 
             with get_db_session() as session:
                 # Create post with appropriate parameters
+                # Calculate effective outline width (0 if disabled)
+                effective_outline_width = self.outline_width if self.outline_enabled else 0
+
                 if self.post_type == "picture":
                     post = stream_ops.create_post(
                         session=session,
@@ -758,6 +779,8 @@ class PostCreationState(BaseState):
                         image_bytes=image_bytes,
                         text_color=self.text_color,
                         outline_color=self.outline_color,
+                        outline_width=effective_outline_width,
+                        font_family=self.selected_font,
                     )
 
                 elif self.post_type == "meme":
@@ -770,6 +793,8 @@ class PostCreationState(BaseState):
                         background_name=self.selected_background,
                         text_color=self.text_color,
                         outline_color=self.outline_color,
+                        outline_width=effective_outline_width,
+                        font_family=self.selected_font,
                     )
 
                 session.commit()
