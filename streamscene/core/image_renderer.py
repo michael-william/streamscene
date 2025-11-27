@@ -108,20 +108,21 @@ class ImageRenderer:
 
         return self._font_cache[cache_key]
 
-    def _apply_rounded_corners(self, image: Image.Image, radius: int = BORDER_RADIUS) -> Image.Image:
+    def _apply_rounded_corners(self, image: Image.Image, radius: int = BORDER_RADIUS) -> Tuple[Image.Image, Image.Image]:
         """
-        Apply rounded corners to an image.
-
-        Creates a mask with rounded corners and applies it to the image,
-        filling corners with white.
+        Apply rounded corners to an image, returning image and mask for compositing.
 
         Args:
             image: PIL Image to process
             radius: Corner radius in pixels
 
         Returns:
-            Image with rounded corners
+            Tuple of (RGBA image with rounded corners, mask for pasting)
         """
+        # Convert to RGBA if needed
+        if image.mode != "RGBA":
+            image = image.convert("RGBA")
+
         # Create a rounded rectangle mask
         mask = Image.new("L", image.size, 0)
         draw = ImageDraw.Draw(mask)
@@ -131,11 +132,7 @@ class ImageRenderer:
             fill=255
         )
 
-        # Create output with white background
-        output = Image.new("RGB", image.size, "white")
-        output.paste(image, mask=mask)
-
-        return output
+        return image, mask
 
     def _wrap_text(self, text: str, font: ImageFont.FreeTypeFont, max_width: int) -> str:
         """
@@ -427,8 +424,7 @@ class ImageRenderer:
             text_color, outline_color, outline_width, font_family
         )
 
-        # Apply rounded corners
-        return self._apply_rounded_corners(canvas)
+        return canvas
 
     def _render_unified_layout(
         self,
@@ -459,11 +455,14 @@ class ImageRenderer:
         # Resize image to fit within left container
         resized_img = ImageOps.contain(uploaded_img, (image_area_width, content_height))
 
+        # Apply rounded corners to the uploaded image
+        rounded_img, mask = self._apply_rounded_corners(resized_img)
+
         # Center image within left container (both horizontally and vertically)
         img_x = PADDING + (image_area_width - resized_img.width) // 2
         img_y = content_top + (content_height - resized_img.height) // 2
 
-        canvas.paste(resized_img, (img_x, img_y))
+        canvas.paste(rounded_img, (img_x, img_y), mask)
 
         # Right container: Text (280px wide with 20px gap)
         text_x = PORTRAIT_IMAGE_WIDTH + 20
@@ -586,8 +585,7 @@ class ImageRenderer:
             anchor="mm"
         )
 
-        # Apply rounded corners
-        return self._apply_rounded_corners(background)
+        return background
 
     def render_post(
         self,
