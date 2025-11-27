@@ -116,11 +116,7 @@ def background_selector(
             rx.box(
                 rx.foreach(backgrounds, background_card),
                 display="grid",
-                grid_template_columns=rx.breakpoints(
-                    initial="repeat(3, 1fr)",  # Mobile: 3 columns
-                    md="repeat(4, 1fr)",  # Desktop: 4 columns
-                    lg="repeat(6, 1fr)",  # Large: 6 columns
-                ),
+                grid_template_columns="repeat(3, 1fr)",  # Always 3 columns max
                 gap="3",
                 width="100%",
             ),
