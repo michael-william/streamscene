@@ -77,8 +77,9 @@ def live_preview(
                         # Show preview
                         rx.image(
                             src=preview_data,
-                            width="800px",
-                            height="480px",
+                            width="100%",
+                            aspect_ratio="800/480",
+                            object_fit="contain",
                             border="4px solid var(--gray-6)",
                             border_radius="8px",
                             box_shadow="0 4px 6px rgba(0, 0, 0, 0.1)",
@@ -94,26 +95,15 @@ def live_preview(
                             spacing="3",
                             justify="center",
                             align="center",
-                            height="100%",
+                            min_height="200px",
                         ),
                     ),
                 ),
-                # Responsive scaling
-                transform=rx.breakpoints(
-                    initial="scale(0.4)",  # Mobile: 40%
-                    sm="scale(0.5)",  # Small: 50%
-                    md="scale(0.6)",  # Medium: 60%
-                    lg="scale(0.7)",  # Large: 70%
-                ),
-                transform_origin="top left",
-                width=rx.breakpoints(initial="320px", sm="400px", md="480px", lg="560px"),
-                height=rx.breakpoints(initial="192px", sm="240px", md="288px", lg="336px"),
-                overflow="hidden",
+                # Responsive container - no transform scaling
+                width="100%",
+                max_width="560px",
                 background="var(--gray-1)",
                 border_radius="8px",
-                display="flex",
-                align_items="center",
-                justify_content="center",
             ),
 
             spacing="3",
