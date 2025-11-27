@@ -95,7 +95,7 @@ class DashboardState(BaseState):
                         "stream_name": item["stream_name"],
                         "stream_id": item["stream_id"],
                     }
-                    for item in all_posts[:10]
+                    for item in all_posts[:5]
                 ]
 
                 # Store recent streams for display (top 5)
@@ -149,7 +149,101 @@ def dashboard() -> rx.Component:
 
             # Main content area - horizontal on desktop, vertical on mobile
             rx.flex(
-                # Recent Activity Feed (Primary Focus)
+                # Your Streams List (Left Column)
+                rx.card(
+                    rx.vstack(
+                        rx.heading("Your Streams", size="5", id="dashboard-streams-heading"),
+                    rx.cond(
+                        DashboardState.stream_count > 0,
+                        rx.vstack(
+                            rx.foreach(
+                                DashboardState.recent_streams,
+                                lambda stream: rx.card(
+                                    rx.hstack(
+                                        rx.vstack(
+                                            rx.heading(stream["name"], size="3"),
+                                            rx.text(
+                                                stream["description"],
+                                                size="1",
+                                                color="gray",
+                                            ),
+                                            rx.badge(
+                                                rx.cond(
+                                                    stream["is_public"],
+                                                    "Public",
+                                                    "Private",
+                                                ),
+                                                color_scheme=rx.cond(
+                                                    stream["is_public"], "green", "gray"
+                                                ),
+                                                size="1",
+                                            ),
+                                            align="start",
+                                            spacing="1",
+                                        ),
+                                        rx.spacer(),
+                                        rx.link(
+                                            rx.button(
+                                                "View Posts",
+                                                size="1",
+                                                variant="soft",
+                                            ),
+                                            href=f"/stream-posts?id={stream['id']}",
+                                        ),
+                                        width="100%",
+                                        align="center",
+                                    ),
+                                    size="1",
+                                ),
+                            ),
+                            rx.cond(
+                                DashboardState.stream_count > 5,
+                                rx.link(
+                                    rx.button(
+                                        "View All Streams",
+                                        variant="soft",
+                                        size="2",
+                                    ),
+                                    href="/streams",
+                                ),
+                            ),
+                            spacing="2",
+                            width="100%",
+                        ),
+                        rx.vstack(
+                            rx.text(
+                                "No streams yet.",
+                                size="3",
+                                weight="medium",
+                                color="gray",
+                            ),
+                            rx.text(
+                                "Create your first stream to start sharing!",
+                                size="2",
+                                color="gray",
+                            ),
+                            rx.link(
+                                rx.button(
+                                    "Create Stream",
+                                    color_scheme="blue",
+                                    size="2",
+                                ),
+                                href="/streams",
+                            ),
+                            spacing="2",
+                            padding="4",
+                            align="center",
+                        ),
+                    ),
+                    spacing="3",
+                    width="100%",
+                ),
+                    id="dashboard-streams-list",
+                    flex="1",
+                    min_width="300px",
+                ),
+
+                # Recent Activity Feed (Right Column)
                 rx.card(
                     rx.vstack(
                         rx.heading("Recent Activity", size="5"),
@@ -245,124 +339,6 @@ def dashboard() -> rx.Component:
                     min_width="300px",
                 ),
 
-                # Your Streams List (Improved)
-                rx.card(
-                    rx.vstack(
-                        rx.heading("Your Streams", size="5", id="dashboard-streams-heading"),
-                    rx.cond(
-                        DashboardState.stream_count > 0,
-                        rx.vstack(
-                            rx.foreach(
-                                DashboardState.recent_streams,
-                                lambda stream: rx.card(
-                                    rx.hstack(
-                                        rx.vstack(
-                                            rx.heading(stream["name"], size="3"),
-                                            rx.text(
-                                                stream["description"],
-                                                size="1",
-                                                color="gray",
-                                            ),
-                                            rx.badge(
-                                                rx.cond(
-                                                    stream["is_public"],
-                                                    "Public",
-                                                    "Private",
-                                                ),
-                                                color_scheme=rx.cond(
-                                                    stream["is_public"], "green", "gray"
-                                                ),
-                                                size="1",
-                                            ),
-                                            align="start",
-                                            spacing="1",
-                                        ),
-                                        rx.spacer(),
-                                        rx.link(
-                                            rx.button(
-                                                "View Posts",
-                                                size="1",
-                                                variant="soft",
-                                            ),
-                                            href=f"/stream-posts?id={stream['id']}",
-                                        ),
-                                        width="100%",
-                                        align="center",
-                                    ),
-                                    size="1",
-                                ),
-                            ),
-                            rx.cond(
-                                DashboardState.stream_count > 5,
-                                rx.link(
-                                    rx.button(
-                                        "View All Streams",
-                                        variant="soft",
-                                        size="2",
-                                    ),
-                                    href="/streams",
-                                ),
-                            ),
-                            spacing="2",
-                            width="100%",
-                        ),
-                        rx.vstack(
-                            rx.text(
-                                "No streams yet.",
-                                size="3",
-                                weight="medium",
-                                color="gray",
-                            ),
-                            rx.text(
-                                "Create your first stream to start sharing!",
-                                size="2",
-                                color="gray",
-                            ),
-                            rx.link(
-                                rx.button(
-                                    "Create Stream",
-                                    color_scheme="blue",
-                                    size="2",
-                                ),
-                                href="/streams",
-                            ),
-                            spacing="2",
-                            padding="4",
-                            align="center",
-                        ),
-                    ),
-                    spacing="3",
-                    width="100%",
-                ),
-                    id="dashboard-streams-list",
-                    flex="1",
-                    min_width="300px",
-                ),
-
-                # Quick Actions (Cleaned Up)
-                rx.card(
-                    rx.vstack(
-                        rx.heading("Quick Actions", size="5", id="dashboard-quick-actions-heading"),
-                    rx.hstack(
-                        rx.link(
-                            rx.button(
-                                "Manage Streams",
-                                size="3",
-                                color_scheme="blue",
-                                id="dashboard-manage-streams-button",
-                            ),
-                            href="/streams",
-                        ),
-                        spacing="3",
-                    ),
-                    spacing="3",
-                    width="100%",
-                ),
-                    id="dashboard-quick-actions",
-                    flex="1",
-                    min_width="300px",
-                ),
-
                 # Flex container settings
                 direction="row",  # Horizontal on desktop, wraps to vertical on mobile
                 spacing="5",
@@ -413,6 +389,8 @@ def dashboard() -> rx.Component:
             spacing="5",
             width="100%",
             padding="4",
+            height="calc(100vh - 30px)",
+            overflow_y="auto",
             id="dashboard-main-stack",
         ),
         max_width="1400px",  # Wider to accommodate horizontal layout
