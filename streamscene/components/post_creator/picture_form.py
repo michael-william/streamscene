@@ -3,6 +3,7 @@
 import reflex as rx
 
 from streamscene.state.post_creation_state import PostCreationState
+from streamscene.components.post_creator.background_selector import background_selector
 
 
 def picture_form(state) -> rx.Component:
@@ -97,11 +98,48 @@ def picture_form(state) -> rx.Component:
                         border="1px solid var(--gray-6)",
                         object_fit="contain",
                     ),
-                    rx.button(
-                        "Remove Image",
-                        on_click=state.clear_uploaded_image,
-                        color_scheme="red",
-                        size="2",
+                    # Action buttons
+                    rx.hstack(
+                        rx.button(
+                            "Remove Image",
+                            on_click=state.clear_uploaded_image,
+                            color_scheme="red",
+                            size="2",
+                        ),
+                        rx.button(
+                            rx.cond(
+                                state.picture_background != "",
+                                rx.hstack(rx.icon("image", size=14), rx.text("Change Background"), spacing="2"),
+                                rx.hstack(rx.icon("image", size=14), rx.text("Add Background"), spacing="2"),
+                            ),
+                            on_click=state.open_picture_bg_modal,
+                            variant="soft",
+                            size="2",
+                        ),
+                        spacing="2",
+                    ),
+                    # Show selected background indicator
+                    rx.cond(
+                        state.picture_background != "",
+                        rx.hstack(
+                            rx.text("Background:", size="1", color="gray"),
+                            rx.image(
+                                src=f"/backgrounds/{state.picture_background}",
+                                width="40px",
+                                height="24px",
+                                object_fit="cover",
+                                border_radius="4px",
+                                border="1px solid var(--gray-6)",
+                            ),
+                            rx.button(
+                                rx.icon("x", size=12),
+                                on_click=state.clear_picture_background,
+                                size="1",
+                                variant="ghost",
+                            ),
+                            spacing="2",
+                            align="center",
+                        ),
                     ),
                     spacing="2",
                     width="100%",
@@ -229,8 +267,63 @@ def picture_form(state) -> rx.Component:
             align="start",
         ),
 
+        # Background selector modal
+        picture_bg_modal(state),
+
         # Grid configuration - responsive 2-column layout
         columns=rx.breakpoints(initial="1", md="2"),
         spacing="5",
         width="100%",
+    )
+
+
+def picture_bg_modal(state) -> rx.Component:
+    """Modal for selecting picture background."""
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.vstack(
+                rx.dialog.title("Choose Background"),
+                rx.dialog.description(
+                    "Select a background for your picture post (optional).",
+                    size="2",
+                ),
+
+                # Reuse background_selector component
+                background_selector(
+                    backgrounds=state.available_backgrounds,
+                    selected=state.picture_background,
+                    on_select=state.select_picture_background,
+                    is_loading=state.is_loading_backgrounds,
+                ),
+
+                rx.hstack(
+                    rx.button(
+                        "Use White (Default)",
+                        on_click=[
+                            state.set_picture_background(""),
+                            state.close_picture_bg_modal,
+                        ],
+                        variant="soft",
+                        size="2",
+                    ),
+                    rx.dialog.close(
+                        rx.button(
+                            "Cancel",
+                            variant="soft",
+                            color_scheme="gray",
+                            size="2",
+                        ),
+                    ),
+                    spacing="2",
+                    justify="end",
+                    width="100%",
+                ),
+
+                spacing="4",
+                width="100%",
+            ),
+            max_width="600px",
+        ),
+        open=state.is_picture_bg_modal_open,
+        on_open_change=state.set_is_picture_bg_modal_open,
     )

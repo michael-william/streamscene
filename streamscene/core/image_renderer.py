@@ -307,7 +307,8 @@ class ImageRenderer:
         text_color: Tuple[int, int, int] = (0, 0, 0),
         outline_color: Tuple[int, int, int] = (255, 255, 255),
         outline_width: int = 2,
-        font_family: str = "montserrat"
+        font_family: str = "montserrat",
+        background_path: Optional[str] = None
     ) -> Image.Image:
         """
         Render 'Post a Picture' type post.
@@ -317,7 +318,7 @@ class ImageRenderer:
         Layout (unified for all image orientations):
         - Left container (60%): Image centered within 480px wide area
         - Right container (40%): Text centered within 280px wide area
-        - White background
+        - White background (or custom background if provided)
         - Top bar with stream/author/date
         """
         # Load image from either path or provided PIL Image
@@ -328,8 +329,12 @@ class ImageRenderer:
         else:
             raise ValueError("Must provide either image_path or image parameter")
 
-        # Create white canvas
-        canvas = Image.new("RGB", (DISPLAY_WIDTH, DISPLAY_HEIGHT), "white")
+        # Create canvas - use background if provided, else white
+        if background_path:
+            canvas = Image.open(background_path).convert("RGB")
+            canvas = canvas.resize((DISPLAY_WIDTH, DISPLAY_HEIGHT), Image.Resampling.LANCZOS)
+        else:
+            canvas = Image.new("RGB", (DISPLAY_WIDTH, DISPLAY_HEIGHT), "white")
         draw = ImageDraw.Draw(canvas)
 
         # Draw top bar
@@ -542,7 +547,8 @@ class ImageRenderer:
                 raise ValueError("image_path required for picture posts")
             return self.render_picture_post(
                 image_path, text_content, stream_name, author_name,
-                post_date, text_color, outline_color, font_family=font_family
+                post_date, text_color, outline_color, font_family=font_family,
+                background_path=background_path  # Optional background for picture posts
             )
         elif post_type == "meme":
             if not background_path:

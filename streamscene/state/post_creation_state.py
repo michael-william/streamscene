@@ -70,6 +70,10 @@ class PostCreationState(BaseState):
     js_uploaded_filename: str = ""
     js_uploaded_url: str = ""
 
+    # Picture background (optional, defaults to white)
+    picture_background: str = ""  # Empty = white, else filename like "blue.png"
+    is_picture_bg_modal_open: bool = False
+
     # Meme post fields
     selected_background: str = "white.png"
     available_backgrounds: List[dict] = []
@@ -430,6 +434,30 @@ class PostCreationState(BaseState):
         self.image_preview_url = ""
         self.uploaded_files = []
         self.preview_image_data = ""
+        self.picture_background = ""  # Reset background when image removed
+
+    # ========================================
+    # PICTURE BACKGROUND MODAL
+    # ========================================
+
+    def open_picture_bg_modal(self):
+        """Open the picture background selector modal."""
+        self.is_picture_bg_modal_open = True
+
+    def close_picture_bg_modal(self):
+        """Close the picture background selector modal."""
+        self.is_picture_bg_modal_open = False
+
+    def select_picture_background(self, filename: str):
+        """Select a background for the picture post."""
+        self.picture_background = filename
+        self.is_picture_bg_modal_open = False
+        self.preview_image_data = ""  # Clear preview for regeneration
+
+    def clear_picture_background(self):
+        """Reset picture background to white (default)."""
+        self.picture_background = ""
+        self.preview_image_data = ""  # Clear preview for regeneration
 
     def process_upload_result(self, result_json: str):
         """
@@ -613,6 +641,14 @@ class PostCreationState(BaseState):
                 filename = self.uploaded_files[0]
                 uploaded_file_path = Path(".web/build/client/uploads") / filename
 
+                # Get background path if selected
+                picture_bg_path = None
+                if self.picture_background:
+                    try:
+                        picture_bg_path = str(get_background_path(self.picture_background))
+                    except FileNotFoundError:
+                        logger.warning(f"[POST_CREATE] Picture background not found: {self.picture_background}")
+
                 rendered = renderer.render_picture_post(
                     image_path=str(uploaded_file_path),
                     text_content=self.text_content or "",
@@ -622,7 +658,8 @@ class PostCreationState(BaseState):
                     text_color=text_color,
                     outline_color=outline_color,
                     outline_width=effective_outline_width,
-                    font_family=self.selected_font
+                    font_family=self.selected_font,
+                    background_path=picture_bg_path
                 )
 
             elif self.post_type == "meme":
@@ -777,6 +814,7 @@ class PostCreationState(BaseState):
                         text_content=self.text_content,
                         content_type="picture",
                         image_bytes=image_bytes,
+                        background_name=self.picture_background if self.picture_background else None,
                         text_color=self.text_color,
                         outline_color=self.outline_color,
                         outline_width=effective_outline_width,

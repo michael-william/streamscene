@@ -123,6 +123,14 @@ def render_and_cache_post(
 
     # Determine post type and render
     if post.content_type == "picture":
+        # Get optional background path for picture posts
+        picture_bg_path = None
+        if post.background_name:
+            try:
+                picture_bg_path = str(get_background_path(post.background_name))
+            except FileNotFoundError:
+                pass  # Use white background if not found
+
         # Support both old posts (image_path) and new posts (temp_image_bytes)
         if post.image_path:
             # Backward compatibility: old post with saved file
@@ -135,7 +143,8 @@ def render_and_cache_post(
                 text_color=text_color,
                 outline_color=outline_color,
                 outline_width=outline_width,
-                font_family=font_family
+                font_family=font_family,
+                background_path=picture_bg_path
             )
         elif hasattr(post, '_temp_image_bytes') and post._temp_image_bytes:
             # New posts: render from in-memory bytes
@@ -150,7 +159,8 @@ def render_and_cache_post(
                 text_color=text_color,
                 outline_color=outline_color,
                 outline_width=outline_width,
-                font_family=font_family
+                font_family=font_family,
+                background_path=picture_bg_path
             )
         else:
             raise ValueError("Picture posts require image_path or temp_image_bytes")
@@ -178,7 +188,7 @@ def render_and_cache_post(
 
     # Generate cache key (hash of post content including style settings)
     cache_key = hashlib.sha256(
-        f"{post.id}{post.content_type}{post.text_content}{post.text_color}{post.outline_color}{outline_width}{font_family}".encode('utf-8')
+        f"{post.id}{post.content_type}{post.text_content}{post.text_color}{post.outline_color}{outline_width}{font_family}{post.background_name or ''}".encode('utf-8')
     ).hexdigest()[:16]
 
     # Save rendered image
