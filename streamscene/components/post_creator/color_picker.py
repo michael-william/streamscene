@@ -11,13 +11,11 @@ def color_picker(
     description: str = ""
 ) -> rx.Component:
     """
-    Color picker with visual swatch and hex input.
+    Color picker with visual swatch.
 
     Features:
-    - Native color picker (click swatch)
-    - Manual hex input
+    - Native color picker (click swatch to open system color picker)
     - Visual preview
-    - Validation
 
     Args:
         label: Display label
@@ -56,18 +54,6 @@ def color_picker(
                 border_radius="6px",
                 overflow="hidden",
                 flex_shrink="0",
-            ),
-
-            # Hex value input
-            rx.input(
-                value=value,
-                on_change=on_change,
-                placeholder="#000000",
-                max_length=7,
-                size="2",
-                width="120px",
-                font_family="monospace",
-                text_transform="uppercase",
             ),
 
             # Color name/description (if provided)

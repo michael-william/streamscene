@@ -294,7 +294,8 @@ class ImageRenderer:
         author_name: str = "",
         post_date: Optional[datetime] = None,
         text_color: Tuple[int, int, int] = (0, 0, 0),
-        outline_color: Tuple[int, int, int] = (255, 255, 255)
+        outline_color: Tuple[int, int, int] = (255, 255, 255),
+        outline_width: int = 2
     ) -> Image.Image:
         """
         Render 'Post a Picture' type post.
@@ -330,7 +331,7 @@ class ImageRenderer:
         # Use unified layout for all image orientations
         self._render_unified_layout(
             canvas, draw, uploaded_img, plain_text,
-            text_color, outline_color
+            text_color, outline_color, outline_width
         )
 
         return canvas
@@ -342,7 +343,8 @@ class ImageRenderer:
         uploaded_img: Image.Image,
         text_content: str,
         text_color: Tuple[int, int, int],
-        outline_color: Tuple[int, int, int]
+        outline_color: Tuple[int, int, int],
+        outline_width: int = 2
     ):
         """
         Unified layout for all image orientations (landscape, portrait, square).
@@ -386,6 +388,7 @@ class ImageRenderer:
             font=font,
             text_color=text_color,
             outline_color=outline_color,
+            outline_width=outline_width,
             anchor="mm"
         )
 
@@ -397,7 +400,8 @@ class ImageRenderer:
         author_name: str,
         post_date: datetime,
         text_color: Tuple[int, int, int] = (255, 255, 255),
-        outline_color: Tuple[int, int, int] = (0, 0, 0)
+        outline_color: Tuple[int, int, int] = (0, 0, 0),
+        outline_width: int = 3
     ) -> Image.Image:
         """
         Render 'Meme It' type post.
@@ -428,6 +432,7 @@ class ImageRenderer:
             font=top_bar_font,
             text_color=text_color,
             outline_color=outline_color,
+            outline_width=outline_width,
             anchor="lm"
         )
 
@@ -439,6 +444,7 @@ class ImageRenderer:
             font=top_bar_font,
             text_color=text_color,
             outline_color=outline_color,
+            outline_width=outline_width,
             anchor="mm"
         )
 
@@ -451,6 +457,7 @@ class ImageRenderer:
             font=top_bar_font,
             text_color=text_color,
             outline_color=outline_color,
+            outline_width=outline_width,
             anchor="rm"
         )
 
@@ -477,7 +484,7 @@ class ImageRenderer:
             font=font,
             text_color=text_color,
             outline_color=outline_color,
-            outline_width=3,  # Thicker outline for memes
+            outline_width=outline_width,
             anchor="mm"
         )
 

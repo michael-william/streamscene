@@ -618,10 +618,43 @@ def stream_posts_page() -> rx.Component:
                                     value=PostCreationState.text_color,
                                     on_change=PostCreationState.update_text_color,
                                 ),
-                                color_picker(
-                                    label="Outline Color",
-                                    value=PostCreationState.outline_color,
-                                    on_change=PostCreationState.update_outline_color,
+                                # Outline toggle
+                                rx.hstack(
+                                    rx.text("Text Outline", size="2", weight="medium"),
+                                    rx.switch(
+                                        checked=PostCreationState.outline_enabled,
+                                        on_change=PostCreationState.toggle_outline,
+                                    ),
+                                    spacing="2",
+                                    align="center",
+                                    width="100%",
+                                ),
+                                # Outline controls (shown when enabled)
+                                rx.cond(
+                                    PostCreationState.outline_enabled,
+                                    rx.vstack(
+                                        color_picker(
+                                            label="Outline Color",
+                                            value=PostCreationState.outline_color,
+                                            on_change=PostCreationState.update_outline_color,
+                                        ),
+                                        rx.hstack(
+                                            rx.text("Width", size="2"),
+                                            rx.input(
+                                                value=PostCreationState.outline_width.to_string(),
+                                                type="number",
+                                                min="1",
+                                                max="5",
+                                                on_change=PostCreationState.update_outline_width,
+                                                width="70px",
+                                                size="2",
+                                            ),
+                                            spacing="2",
+                                            align="center",
+                                        ),
+                                        spacing="2",
+                                        width="100%",
+                                    ),
                                 ),
                                 spacing="3",
                                 width="100%",

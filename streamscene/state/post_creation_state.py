@@ -48,6 +48,8 @@ class PostCreationState(BaseState):
     text_content: str = ""
     text_color: str = "#000000"  # Black
     outline_color: str = "#FFFFFF"  # White
+    outline_enabled: bool = True  # Toggle for outline
+    outline_width: int = 2  # Outline thickness (1-5)
 
     # Picture post fields
     uploaded_files: list[str] = []  # Filenames of uploaded images
@@ -524,6 +526,23 @@ class PostCreationState(BaseState):
         # Clear preview so user re-toggles to regenerate
         self.preview_image_data = ""
 
+    def toggle_outline(self):
+        """Toggle outline on/off."""
+        self.outline_enabled = not self.outline_enabled
+        logger.info(f"[POST_CREATE] Outline toggled: {self.outline_enabled}")
+        self.preview_image_data = ""
+
+    def update_outline_width(self, width):
+        """Update outline width (1-5)."""
+        try:
+            w = int(width) if isinstance(width, str) else width
+            if 1 <= w <= 5:
+                logger.info(f"[POST_CREATE] Outline width updated: {self.outline_width} -> {w}")
+                self.outline_width = w
+                self.preview_image_data = ""
+        except (ValueError, TypeError):
+            pass
+
     # ========================================
     # LIVE PREVIEW
     # ========================================
@@ -544,6 +563,7 @@ class PostCreationState(BaseState):
         Creates a base64 data URL of the rendered post.
         """
         logger.info("[POST_CREATE] Generating preview...")
+        logger.info(f"[POST_CREATE] outline_enabled={self.outline_enabled}, outline_width={self.outline_width}")
         self.is_generating_preview = True
         self.error_message = ""
         yield
@@ -554,6 +574,8 @@ class PostCreationState(BaseState):
             # Parse colors
             text_color = hex_to_rgb(self.text_color)
             outline_color = hex_to_rgb(self.outline_color)
+            effective_outline_width = self.outline_width if self.outline_enabled else 0
+            logger.info(f"[POST_CREATE] Effective outline_width={effective_outline_width}")
 
             # Get metadata (from parent state if available)
             stream_name = getattr(self, "stream_name", "Preview Stream")
@@ -582,7 +604,8 @@ class PostCreationState(BaseState):
                     author_name=author_name,
                     post_date=post_date,
                     text_color=text_color,
-                    outline_color=outline_color
+                    outline_color=outline_color,
+                    outline_width=effective_outline_width
                 )
 
             elif self.post_type == "meme":
@@ -602,7 +625,8 @@ class PostCreationState(BaseState):
                     author_name=author_name,
                     post_date=post_date,
                     text_color=text_color,
-                    outline_color=outline_color
+                    outline_color=outline_color,
+                    outline_width=effective_outline_width
                 )
 
             # Convert to base64 data URL
