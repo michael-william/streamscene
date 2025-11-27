@@ -25,6 +25,7 @@ from streamscene.core.image_processing import process_image_for_display, ImageFi
 # Display constants
 DISPLAY_WIDTH = 800
 DISPLAY_HEIGHT = 480
+BORDER_RADIUS = 20  # Rounded corner radius in pixels
 
 # Layout constants
 TOP_BAR_HEIGHT = 60
@@ -106,6 +107,35 @@ class ImageRenderer:
                 self._font_cache[cache_key] = ImageFont.truetype(str(font_path), size)
 
         return self._font_cache[cache_key]
+
+    def _apply_rounded_corners(self, image: Image.Image, radius: int = BORDER_RADIUS) -> Image.Image:
+        """
+        Apply rounded corners to an image.
+
+        Creates a mask with rounded corners and applies it to the image,
+        filling corners with white.
+
+        Args:
+            image: PIL Image to process
+            radius: Corner radius in pixels
+
+        Returns:
+            Image with rounded corners
+        """
+        # Create a rounded rectangle mask
+        mask = Image.new("L", image.size, 0)
+        draw = ImageDraw.Draw(mask)
+        draw.rounded_rectangle(
+            [(0, 0), (image.width - 1, image.height - 1)],
+            radius=radius,
+            fill=255
+        )
+
+        # Create output with white background
+        output = Image.new("RGB", image.size, "white")
+        output.paste(image, mask=mask)
+
+        return output
 
     def _wrap_text(self, text: str, font: ImageFont.FreeTypeFont, max_width: int) -> str:
         """
@@ -214,44 +244,84 @@ class ImageRenderer:
         author_name: str,
         date: datetime,
         text_color: Tuple[int, int, int] = (0, 0, 0),
+        outline_color: Optional[Tuple[int, int, int]] = None,
+        outline_width: int = 0,
         font_family: str = "montserrat"
     ):
         """
         Draw top info bar: Stream name (left), Author (center), Date (right).
+
+        Supports optional outline for visibility on background images.
         """
         font = self._get_font(TOP_BAR_FONT_SIZE, bold=True, family=font_family)
 
         # Handle None values
         stream_name = stream_name or "Stream"
         author_name = author_name or "Anonymous"
-
-        # Stream name (left)
-        draw.text(
-            (PADDING, TOP_BAR_HEIGHT // 2),
-            stream_name,
-            font=font,
-            anchor="lm",  # left-middle
-            fill=text_color
-        )
-
-        # Author name (center)
-        draw.text(
-            (DISPLAY_WIDTH // 2, TOP_BAR_HEIGHT // 2),
-            author_name,
-            font=font,
-            anchor="mm",  # middle-middle
-            fill=text_color
-        )
-
-        # Date (right)
         date_str = date.strftime("%b %d, %Y")
-        draw.text(
-            (DISPLAY_WIDTH - PADDING, TOP_BAR_HEIGHT // 2),
-            date_str,
-            font=font,
-            anchor="rm",  # right-middle
-            fill=text_color
-        )
+
+        # Use outline if width > 0 and color provided
+        use_outline = outline_width > 0 and outline_color is not None
+
+        if use_outline:
+            # Stream name (left)
+            self._draw_text_with_outline(
+                draw,
+                position=(PADDING, TOP_BAR_HEIGHT // 2),
+                text=stream_name,
+                font=font,
+                text_color=text_color,
+                outline_color=outline_color,
+                outline_width=outline_width,
+                anchor="lm"
+            )
+            # Author name (center)
+            self._draw_text_with_outline(
+                draw,
+                position=(DISPLAY_WIDTH // 2, TOP_BAR_HEIGHT // 2),
+                text=author_name,
+                font=font,
+                text_color=text_color,
+                outline_color=outline_color,
+                outline_width=outline_width,
+                anchor="mm"
+            )
+            # Date (right)
+            self._draw_text_with_outline(
+                draw,
+                position=(DISPLAY_WIDTH - PADDING, TOP_BAR_HEIGHT // 2),
+                text=date_str,
+                font=font,
+                text_color=text_color,
+                outline_color=outline_color,
+                outline_width=outline_width,
+                anchor="rm"
+            )
+        else:
+            # Stream name (left)
+            draw.text(
+                (PADDING, TOP_BAR_HEIGHT // 2),
+                stream_name,
+                font=font,
+                anchor="lm",
+                fill=text_color
+            )
+            # Author name (center)
+            draw.text(
+                (DISPLAY_WIDTH // 2, TOP_BAR_HEIGHT // 2),
+                author_name,
+                font=font,
+                anchor="mm",
+                fill=text_color
+            )
+            # Date (right)
+            draw.text(
+                (DISPLAY_WIDTH - PADDING, TOP_BAR_HEIGHT // 2),
+                date_str,
+                font=font,
+                anchor="rm",
+                fill=text_color
+            )
 
     def _draw_text_with_outline(
         self,
@@ -340,7 +410,13 @@ class ImageRenderer:
         # Draw top bar
         if post_date is None:
             post_date = datetime.now()
-        self._draw_top_bar(draw, stream_name, author_name, post_date, font_family=font_family)
+        self._draw_top_bar(
+            draw, stream_name, author_name, post_date,
+            text_color=text_color,
+            outline_color=outline_color,
+            outline_width=outline_width,
+            font_family=font_family
+        )
 
         # Parse markdown to plain text for E Ink rendering
         plain_text = parse_markdown_to_plain_text(text_content)
@@ -351,7 +427,8 @@ class ImageRenderer:
             text_color, outline_color, outline_width, font_family
         )
 
-        return canvas
+        # Apply rounded corners
+        return self._apply_rounded_corners(canvas)
 
     def _render_unified_layout(
         self,
@@ -509,7 +586,8 @@ class ImageRenderer:
             anchor="mm"
         )
 
-        return background
+        # Apply rounded corners
+        return self._apply_rounded_corners(background)
 
     def render_post(
         self,

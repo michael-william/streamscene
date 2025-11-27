@@ -57,7 +57,7 @@ class PostCreationState(BaseState):
     outline_color: str = "#FFFFFF"  # White
     outline_enabled: bool = True  # Toggle for outline
     outline_width: int = 2  # Outline thickness (1-5)
-    selected_font: str = "montserrat"  # Font family
+    selected_font: str = "pacifico"  # Font family
 
     # Picture post fields
     uploaded_files: list[str] = []  # Filenames of uploaded images
