@@ -465,7 +465,7 @@ def create_post(
         post.processed_image_path = render_and_cache_post(
             post=post,
             stream_name=stream.name,
-            author_name=author.display_name
+            author_name=author.display_name or author.name or author.username or "Anonymous"
         )
         rendered_file_path = post.processed_image_path
 
@@ -588,7 +588,7 @@ def update_post(
         post.processed_image_path = render_and_cache_post(
             post=post,
             stream_name=stream.name,
-            author_name=author.display_name
+            author_name=author.display_name or author.name or author.username or "Anonymous"
         )
         session.flush()
 
