@@ -128,8 +128,9 @@ def loading_view() -> rx.Component:
             justify="center",
             min_height="50vh",
         ),
-        max_width="600px",
-        padding="4",
+        max_width=["95vw", "600px"],
+        padding_x=["4", "6", "8"],
+        padding_y="4",
     )
 
 
@@ -350,8 +351,9 @@ def error_view() -> rx.Component:
             min_height="50vh",
             justify="center",
         ),
-        max_width="600px",
-        padding="4",
+        max_width=["95vw", "600px"],
+        padding_x=["4", "6", "8"],
+        padding_y="4",
     )
 
 
@@ -375,8 +377,9 @@ def setup_page() -> rx.Component:
 
     return rx.container(
         content,
-        max_width="800px",
-        padding="4",
+        max_width=["95vw", "800px"],
+        padding_x=["4", "6", "8"],
+        padding_y="4",
         on_mount=SetupState.on_load,  # Trigger on_load when page mounts
     )
 

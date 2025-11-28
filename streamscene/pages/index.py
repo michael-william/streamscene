@@ -128,20 +128,23 @@ def index() -> rx.Component:
                 # Title with gradient effect
                 rx.heading(
                     "StreamScene",
-                    size="9",
                     style={
                         "background": "linear-gradient(135deg, white 0%, #a0a0a0 100%)",
                         "background_clip": "text",
                         "-webkit-background-clip": "text",
                         "color": "transparent",
                         "letter_spacing": "0.1em",
+                        "font_size": "clamp(2rem, 10vw, 3.5rem)",
+                        "white_space": "nowrap",
                     },
                 ),
                 rx.text(
                     "Your Semi-Invasive Message Board",
-                    size="5",
                     color="gray",
-                    style={"letter_spacing": "0.05em"},
+                    style={
+                        "letter_spacing": "0.05em",
+                        "font_size": "clamp(0.875rem, 4vw, 1.25rem)",
+                    },
                 ),
                 rx.text(
                     "They are watching.",
@@ -166,12 +169,15 @@ def index() -> rx.Component:
                 "bottom": "20%",
                 "left": "50%",
                 "transform": "translateX(-50%)",
-                "padding": "2em 3em",
+                "padding": "2em clamp(1em, 5vw, 3em)",
                 "background": "rgba(20, 20, 30, 0.85)",
                 "backdrop_filter": "blur(10px)",
                 "border_radius": "16px",
                 "border": "1px solid rgba(100, 100, 150, 0.3)",
                 "box_shadow": "0 8px 32px rgba(0, 0, 0, 0.4), 0 0 60px rgba(80, 80, 200, 0.15)",
+                "max_width": "90vw",
+                "box_sizing": "border-box",
+                "text_align": "center",
             },
         ),
         # Eye tracking script

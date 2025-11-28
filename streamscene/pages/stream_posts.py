@@ -840,7 +840,7 @@ def stream_posts_page() -> rx.Component:
                         width="100%",
                     ),
                     size="3",
-                    max_width="500px",
+                    max_width=["95vw", "500px"],
                 ),
                 open=StreamPostsState.is_edit_modal_open,
                 on_open_change=StreamPostsState.set_is_edit_modal_open,
@@ -894,17 +894,18 @@ def stream_posts_page() -> rx.Component:
                         width="100%",
                     ),
                     size="3",
-                    max_width="450px",
+                    max_width=["95vw", "450px"],
                 ),
                 open=StreamPostsState.is_delete_confirm_open,
                 on_open_change=StreamPostsState.set_is_delete_confirm_open,
             ),
 
             spacing="8",
-            padding="4",
+            padding_x=["4", "6", "8"],
+            padding_y="4",
             width="100%",
         ),
-        max_width="900px",
+        max_width="1200px",
         on_mount=StreamPostsState.on_load,  # Method named on_load, triggered by on_mount
     )
 

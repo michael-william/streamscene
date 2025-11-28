@@ -578,7 +578,7 @@ def rename_device_modal() -> rx.Component:
                 spacing="4",
                 width="100%",
             ),
-            max_width="450px",
+            max_width=["95vw", "450px"],
         ),
         open=DevicesState.is_rename_modal_open,
         on_open_change=DevicesState.set_is_rename_modal_open,
@@ -725,7 +725,7 @@ def rotation_settings_modal() -> rx.Component:
                 spacing="4",
                 width="100%",
             ),
-            max_width="500px",
+            max_width=["95vw", "500px"],
         ),
         open=DevicesState.is_rotation_modal_open,
         on_open_change=DevicesState.set_is_rotation_modal_open,
@@ -855,7 +855,8 @@ def devices_page() -> rx.Component:
             width="100%",
         ),
         max_width="1200px",
-        padding="4",
+        padding_x=["4", "6", "8"],
+        padding_y="4",
         on_mount=DevicesState.on_mount,
     )
 

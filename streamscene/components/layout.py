@@ -24,8 +24,8 @@ def authenticated_layout(content: rx.Component, current_page: str = "") -> rx.Co
             content,
             # Responsive margin to account for fixed sidebar
             margin_left=["0", "0", "250px"],  # 0 on mobile, 250px on tablet+
-            # Responsive padding-top for mobile header
-            padding_top=["60px", "60px", "0"],  # Account for sticky mobile header
+            # Responsive padding-top for mobile header + content breathing room
+            padding_top=["76px", "76px", "16px"],  # 60px header + 16px content padding
             min_height="100vh",
             # Responsive width to prevent horizontal scroll on desktop
             width=["100%", "100%", "calc(100% - 250px)"],  # Account for sidebar on desktop

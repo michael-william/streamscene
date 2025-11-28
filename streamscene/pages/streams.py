@@ -480,67 +480,71 @@ def owned_streams_table() -> rx.Component:
         rx.cond(
             StreamsState.filtered_owned_streams.length() > 0,
             rx.card(
-                rx.table.root(
-                rx.table.header(
-                    rx.table.row(
-                        rx.table.column_header_cell("Name"),
-                        rx.table.column_header_cell("Description"),
-                        rx.table.column_header_cell("Visibility"),
-                        rx.table.column_header_cell("Actions"),
-                    ),
-                ),
-                rx.table.body(
-                    rx.foreach(
-                        StreamsState.filtered_owned_streams,
-                        lambda stream: rx.table.row(
-                            rx.table.cell(
-                                rx.text(stream["name"], weight="medium")
-                            ),
-                            rx.table.cell(
-                                rx.text(stream["description"], color="gray", size="2")
-                            ),
-                            rx.table.cell(
-                                rx.badge(
-                                    rx.cond(stream["is_public"], "Public", "Private"),
-                                    color_scheme=rx.cond(stream["is_public"], "green", "gray"),
-                                )
-                            ),
-                            rx.table.cell(
-                                rx.hstack(
-                                    rx.link(
-                                        rx.button(
-                                            "View Posts",
-                                            size="2",
-                                            variant="soft",
-                                        ),
-                                        href=f"/stream-posts?id={stream['id']}",
-                                    ),
-                                    rx.button(
-                                        "Edit",
-                                        size="2",
-                                        variant="soft",
-                                        color_scheme="blue",
-                                        on_click=StreamsState.open_edit_modal(stream["id"]),
-                                    ),
-                                    rx.button(
-                                        "Delete",
-                                        size="2",
-                                        variant="soft",
-                                        color_scheme="red",
-                                        on_click=StreamsState.open_delete_dialog(stream["id"]),
-                                    ),
-                                    spacing="2",
-                                )
+                rx.box(
+                    rx.table.root(
+                        rx.table.header(
+                            rx.table.row(
+                                rx.table.column_header_cell("Name"),
+                                rx.table.column_header_cell("Description"),
+                                rx.table.column_header_cell("Visibility"),
+                                rx.table.column_header_cell("Actions"),
                             ),
                         ),
+                        rx.table.body(
+                            rx.foreach(
+                                StreamsState.filtered_owned_streams,
+                                lambda stream: rx.table.row(
+                                    rx.table.cell(
+                                        rx.text(stream["name"], weight="medium")
+                                    ),
+                                    rx.table.cell(
+                                        rx.text(stream["description"], color="gray", size="2")
+                                    ),
+                                    rx.table.cell(
+                                        rx.badge(
+                                            rx.cond(stream["is_public"], "Public", "Private"),
+                                            color_scheme=rx.cond(stream["is_public"], "green", "gray"),
+                                        )
+                                    ),
+                                    rx.table.cell(
+                                        rx.hstack(
+                                            rx.link(
+                                                rx.button(
+                                                    "View Posts",
+                                                    size="2",
+                                                    variant="soft",
+                                                ),
+                                                href=f"/stream-posts?id={stream['id']}",
+                                            ),
+                                            rx.button(
+                                                "Edit",
+                                                size="2",
+                                                variant="soft",
+                                                color_scheme="blue",
+                                                on_click=StreamsState.open_edit_modal(stream["id"]),
+                                            ),
+                                            rx.button(
+                                                "Delete",
+                                                size="2",
+                                                variant="soft",
+                                                color_scheme="red",
+                                                on_click=StreamsState.open_delete_dialog(stream["id"]),
+                                            ),
+                                            spacing="2",
+                                        )
+                                    ),
+                                ),
+                            ),
+                        ),
+                        variant="surface",
+                        size="3",
+                        width="100%",
                     ),
-                ),
-                    variant="surface",
-                    size="3",
+                    overflow_x="auto",
                     width="100%",
                 ),
                 size="2",
-                width="100%",  # Force card to constrain to parent width
+                width="100%",
             ),
             rx.card(
                 rx.vstack(
@@ -577,57 +581,61 @@ def subscribed_streams_table() -> rx.Component:
         rx.cond(
             StreamsState.filtered_subscribed_streams.length() > 0,
             rx.card(
-                rx.table.root(
-                rx.table.header(
-                    rx.table.row(
-                        rx.table.column_header_cell("Name"),
-                        rx.table.column_header_cell("Owner"),
-                        rx.table.column_header_cell("Description"),
-                        rx.table.column_header_cell("Actions"),
-                    ),
-                ),
-                rx.table.body(
-                    rx.foreach(
-                        StreamsState.filtered_subscribed_streams,
-                        lambda stream: rx.table.row(
-                            rx.table.cell(
-                                rx.text(stream["name"], weight="medium")
-                            ),
-                            rx.table.cell(
-                                rx.text(stream["owner_name"], size="2")
-                            ),
-                            rx.table.cell(
-                                rx.text(stream["description"], color="gray", size="2")
-                            ),
-                            rx.table.cell(
-                                rx.hstack(
-                                    rx.link(
-                                        rx.button(
-                                            "View Posts",
-                                            size="2",
-                                            variant="soft",
-                                        ),
-                                        href=f"/stream-posts?id={stream['id']}",
-                                    ),
-                                    rx.button(
-                                        "Unsubscribe",
-                                        size="2",
-                                        color_scheme="red",
-                                        variant="ghost",
-                                        disabled=True,  # TODO: Implement unsubscribe
-                                    ),
-                                    spacing="2",
-                                )
+                rx.box(
+                    rx.table.root(
+                        rx.table.header(
+                            rx.table.row(
+                                rx.table.column_header_cell("Name"),
+                                rx.table.column_header_cell("Owner"),
+                                rx.table.column_header_cell("Description"),
+                                rx.table.column_header_cell("Actions"),
                             ),
                         ),
+                        rx.table.body(
+                            rx.foreach(
+                                StreamsState.filtered_subscribed_streams,
+                                lambda stream: rx.table.row(
+                                    rx.table.cell(
+                                        rx.text(stream["name"], weight="medium")
+                                    ),
+                                    rx.table.cell(
+                                        rx.text(stream["owner_name"], size="2")
+                                    ),
+                                    rx.table.cell(
+                                        rx.text(stream["description"], color="gray", size="2")
+                                    ),
+                                    rx.table.cell(
+                                        rx.hstack(
+                                            rx.link(
+                                                rx.button(
+                                                    "View Posts",
+                                                    size="2",
+                                                    variant="soft",
+                                                ),
+                                                href=f"/stream-posts?id={stream['id']}",
+                                            ),
+                                            rx.button(
+                                                "Unsubscribe",
+                                                size="2",
+                                                color_scheme="red",
+                                                variant="ghost",
+                                                disabled=True,  # TODO: Implement unsubscribe
+                                            ),
+                                            spacing="2",
+                                        )
+                                    ),
+                                ),
+                            ),
+                        ),
+                        variant="surface",
+                        size="3",
+                        width="100%",
                     ),
-                ),
-                    variant="surface",
-                    size="3",
+                    overflow_x="auto",
                     width="100%",
                 ),
                 size="2",
-                width="100%",  # Force card to constrain to parent width
+                width="100%",
             ),
             rx.card(
                 rx.vstack(

@@ -240,7 +240,7 @@ def dashboard() -> rx.Component:
                 ),
                     id="dashboard-streams-list",
                     flex="1",
-                    min_width="300px",
+                    min_width=["0", "300px"],
                 ),
 
                 # Recent Activity Feed (Right Column)
@@ -336,14 +336,13 @@ def dashboard() -> rx.Component:
                 ),
                     id="dashboard-activity-feed",
                     flex="1",
-                    min_width="300px",
+                    min_width=["0", "300px"],
                 ),
 
-                # Flex container settings
-                direction="row",  # Horizontal on desktop, wraps to vertical on mobile
+                # Flex container settings - responsive direction for mobile stacking
+                direction=rx.breakpoints(initial="column", lg="row"),  # Stack on mobile/tablet, row on desktop
                 spacing="5",
                 width="100%",
-                wrap="wrap",
             ),
 
             # Getting Started Modal
@@ -380,7 +379,7 @@ def dashboard() -> rx.Component:
                     ),
                     id="dashboard-getting-started-modal",
                     size="3",
-                    max_width="450px",
+                    max_width=["95vw", "450px"],
                 ),
                 open=DashboardState.is_getting_started_open,
                 on_open_change=DashboardState.set_is_getting_started_open,
@@ -388,12 +387,13 @@ def dashboard() -> rx.Component:
 
             spacing="5",
             width="100%",
-            padding="4",
+            padding_x=["4", "6", "8"],
+            padding_y="4",
             height="calc(100vh - 30px)",
             overflow_y="auto",
             id="dashboard-main-stack",
         ),
-        max_width="1400px",  # Wider to accommodate horizontal layout
+        max_width="1200px",
         on_mount=DashboardState.on_mount,  # Connect lifecycle handler
         id="dashboard-container",
     )

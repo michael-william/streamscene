@@ -28,12 +28,12 @@ def nav_link(text: str, href: str, current_page: str, icon: str = "") -> rx.Comp
         rx.hstack(
             rx.cond(
                 icon != "",
-                rx.icon(icon, size=20),
+                rx.icon(icon, size=22),
                 rx.box(),
             ),
             rx.text(
                 text,
-                size="3",
+                size="4",
                 weight="medium" if is_active else "regular",
             ),
             spacing="3",
@@ -59,30 +59,34 @@ def nav_link(text: str, href: str, current_page: str, icon: str = "") -> rx.Comp
 def sidebar_content(current_page: str = "") -> rx.Component:
     """Sidebar navigation content (used in both desktop and mobile)."""
     return rx.vstack(
-        # Logo/Brand
-        rx.heading("StreamScene", size="7", padding_bottom="4"),
-        rx.divider(),
-        # Navigation Links
+        # Top section: Logo + Nav
         rx.vstack(
-            nav_link("Dashboard", "/dashboard", current_page, "layout_dashboard"),
-            nav_link("Streams", "/streams", current_page, "radio"),
-            nav_link("Devices", "/devices", current_page, "monitor"),
-            nav_link("Backgrounds", "/admin/backgrounds", current_page, "image"),
-            nav_link("Profile", "/profile", current_page, "user"),
-            spacing="1",
+            # Logo/Brand
+            rx.heading("StreamScene", size="7", padding_bottom="4"),
+            rx.divider(),
+            # Navigation Links
+            rx.vstack(
+                nav_link("Dashboard", "/dashboard", current_page, "layout_dashboard"),
+                nav_link("Streams", "/streams", current_page, "radio"),
+                nav_link("Devices", "/devices", current_page, "monitor"),
+                nav_link("Backgrounds", "/admin/backgrounds", current_page, "image"),
+                nav_link("Profile", "/profile", current_page, "user"),
+                spacing="1",
+                width="100%",
+            ),
+            spacing="4",
             width="100%",
         ),
-        rx.spacer(),
-        # User section
-        rx.divider(),
+        # Bottom section: Theme + Logout
         rx.vstack(
+            rx.divider(),
             # Theme toggle
             rx.hstack(
-                rx.icon("palette", size=18),
-                rx.text("Theme", size="3"),
+                rx.icon("palette", size=22),
+                rx.text("Theme", size="4"),
                 rx.spacer(),
                 rx.color_mode.button(
-                    size="2",
+                    size="3",
                 ),
                 spacing="2",
                 align="center",
@@ -93,24 +97,25 @@ def sidebar_content(current_page: str = "") -> rx.Component:
             # Logout button
             rx.button(
                 rx.hstack(
-                    rx.icon("log_out", size=18),
-                    rx.text("Logout", size="3"),
+                    rx.icon("log_out", size=22),
+                    rx.text("Logout", size="4"),
                     spacing="2",
                 ),
                 on_click=SidebarState.logout,
                 variant="ghost",
                 width="100%",
                 justify="start",
+                size="3",
             ),
             spacing="2",
             width="100%",
         ),
-        height="100vh",
-        width="250px",
-        class_name="rt-r-p-2",
+        justify="between",
+        height="100%",
+        width="100%",
+        padding="4",
         bg="var(--gray-2)",
         border_right="1px solid var(--gray-5)",
-        spacing="4",
     )
 
 
@@ -123,6 +128,7 @@ def desktop_sidebar(current_page: str = "") -> rx.Component:
         left="0",
         top="0",
         height="100vh",
+        width="250px",
         z_index="10",
     )
 
@@ -156,10 +162,18 @@ def mobile_drawer(current_page: str = "") -> rx.Component:
         rx.drawer.overlay(z_index="30"),
         rx.drawer.portal(
             rx.drawer.content(
-                sidebar_content(current_page),
+                rx.box(
+                    sidebar_content(current_page),
+                    height="100%",
+                    width="100%",
+                ),
                 padding="0",
                 side="left",
-                width="250px",
+                width="280px",
+                style={
+                    "height": "100dvh",  # Use dynamic viewport height for mobile
+                    "max_height": "100dvh",
+                },
             ),
         ),
         open=SidebarState.is_mobile_menu_open,
