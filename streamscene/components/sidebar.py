@@ -146,13 +146,13 @@ def mobile_header(current_page: str = "") -> rx.Component:
         rx.spacer(),
         spacing="3",
         width="100%",
-        padding="3",
         bg="var(--gray-2)",
         border_bottom="1px solid var(--gray-5)",
         display=["flex", "flex", "none"],  # Visible on mobile, hidden on tablet+
         position="sticky",
         top="0",
         z_index="20",
+        style={"padding": "0.75rem 1.5rem"},
     )
 
 
