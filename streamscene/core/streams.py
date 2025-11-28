@@ -480,6 +480,10 @@ def create_post(
         rendered_file_path = post.processed_image_path
 
         session.flush()
+
+        # Cleanup old posts if stream exceeds max_history_items limit
+        cleanup_old_posts(session, stream_id)
+
         return post
 
     except Exception as e:
@@ -607,7 +611,7 @@ def update_post(
 
 def delete_post(session: Session, post_id: UUID) -> bool:
     """
-    Delete a post.
+    Delete a post and its associated rendered image file.
 
     Args:
         session: Database session
@@ -620,9 +624,84 @@ def delete_post(session: Session, post_id: UUID) -> bool:
     if not post:
         return False
 
+    # Clean up rendered image file
+    if post.processed_image_path and os.path.exists(post.processed_image_path):
+        try:
+            os.remove(post.processed_image_path)
+        except Exception:
+            pass  # Ignore cleanup errors, proceed with DB delete
+
     session.delete(post)
     session.flush()
     return True
+
+
+def cleanup_old_posts(session: Session, stream_id: UUID) -> int:
+    """
+    Delete posts that exceed the stream's max_history_items limit.
+
+    Keeps the most recent posts up to max_history_items, deletes the rest.
+    Also cleans up associated image files.
+
+    Args:
+        session: Database session
+        stream_id: Stream UUID
+
+    Returns:
+        int: Number of posts deleted
+    """
+    stream = session.query(Stream).filter(Stream.id == stream_id).first()
+    if not stream:
+        return 0
+
+    max_posts = stream.max_history_items or 50  # Default to 50 if not set
+
+    # Get all posts ordered by newest first
+    posts = (
+        session.query(Post)
+        .filter(Post.stream_id == stream_id)
+        .order_by(desc(Post.created_at))
+        .all()
+    )
+
+    if len(posts) <= max_posts:
+        return 0  # Nothing to delete
+
+    # Posts to delete (everything after the limit)
+    posts_to_delete = posts[max_posts:]
+    deleted_count = 0
+
+    for post in posts_to_delete:
+        # Clean up rendered image file
+        if post.processed_image_path and os.path.exists(post.processed_image_path):
+            try:
+                os.remove(post.processed_image_path)
+            except Exception:
+                pass  # Ignore cleanup errors
+
+        session.delete(post)
+        deleted_count += 1
+
+    session.flush()
+    return deleted_count
+
+
+def cleanup_all_streams(session: Session) -> dict:
+    """
+    Run cleanup on all streams. Useful for periodic maintenance.
+
+    Returns:
+        dict: {stream_id: deleted_count} for streams that had deletions
+    """
+    streams = session.query(Stream).all()
+    results = {}
+
+    for stream in streams:
+        deleted = cleanup_old_posts(session, stream.id)
+        if deleted > 0:
+            results[str(stream.id)] = deleted
+
+    return results
 
 
 # ============================================================================
