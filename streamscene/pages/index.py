@@ -136,6 +136,8 @@ def index() -> rx.Component:
                         "letter_spacing": "0.1em",
                         "font_size": "clamp(2rem, 10vw, 3.5rem)",
                         "white_space": "nowrap",
+                        "line_height": "1.3",
+                        "padding": "0.1em 0",
                     },
                 ),
                 rx.text(

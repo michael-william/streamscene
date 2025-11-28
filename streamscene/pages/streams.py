@@ -8,7 +8,6 @@ import reflex as rx
 from streamscene.core.database import get_db_session
 from streamscene.core import streams as stream_ops
 from streamscene.components.layout import authenticated_layout
-from streamscene.components.theme_picker import theme_picker
 from .base_state import BaseState
 
 
@@ -807,10 +806,6 @@ def create_stream_modal() -> rx.Component:
                     on_change=StreamsState.set_new_stream_is_public,
                     size="3",
                 ),
-                theme_picker(
-                    selected_theme_var=StreamsState.new_stream_theme,
-                    on_select_handler=StreamsState.set_new_stream_theme,
-                ),
                 rx.cond(
                     StreamsState.error_message,
                     rx.callout(
@@ -884,10 +879,6 @@ def edit_stream_modal() -> rx.Component:
                     checked=StreamsState.edit_stream_is_public,
                     on_change=StreamsState.set_edit_stream_is_public,
                     size="3",
-                ),
-                theme_picker(
-                    selected_theme_var=StreamsState.edit_stream_theme,
-                    on_select_handler=StreamsState.set_edit_stream_theme,
                 ),
                 rx.cond(
                     StreamsState.error_message,
