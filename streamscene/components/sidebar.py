@@ -71,7 +71,7 @@ def sidebar_content(current_page: str = "") -> rx.Component:
                 nav_link("Devices", "/devices", current_page, "monitor"),
                 nav_link("Backgrounds", "/admin/backgrounds", current_page, "image"),
                 nav_link("Profile", "/profile", current_page, "user"),
-                spacing="1",
+                spacing="3",
                 width="100%",
             ),
             spacing="4",

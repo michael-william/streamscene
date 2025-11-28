@@ -389,7 +389,7 @@ def dashboard() -> rx.Component:
             width="100%",
             padding_x=["4", "6", "8"],
             padding_y="4",
-            height="calc(100vh - 30px)",
+            min_height=["auto", "auto", "calc(100vh - 30px)"],
             overflow_y="auto",
             id="dashboard-main-stack",
         ),
