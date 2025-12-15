@@ -126,9 +126,16 @@ class DevicesState(BaseState):
 
                 # Load user's streams for assignment
                 user_streams = stream_ops.get_user_streams(session, user_uuid)
+                subscribed_streams = stream_ops.get_subscribed_streams(session, user_uuid)
+
+                # Combine owned and subscribed streams, deduplicating by ID
+                all_streams_map = {str(s.id): s for s in user_streams}
+                for s in subscribed_streams:
+                    all_streams_map[str(s.id)] = s
+
                 self.available_streams = [
                     StreamOption(id=str(stream.id), name=stream.name)
-                    for stream in user_streams
+                    for stream in sorted(all_streams_map.values(), key=lambda s: s.name.lower())
                 ]
 
                 print(f"[DEVICES] Loaded {len(self.devices)} devices and {len(self.available_streams)} streams")
