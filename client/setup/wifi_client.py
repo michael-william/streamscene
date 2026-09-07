@@ -285,12 +285,28 @@ def connect_to_wifi(ssid: str, password: str, timeout: int = 45) -> Tuple[bool, 
         # rebind and this was silently a no-op. -1/--oneshot requests a new
         # lease and exits once it has one (or fails) - the actual primitive
         # needed here.
-        subprocess.run(
-            ["sudo", "dhcpcd", "-1", "wlan0"],
-            check=False,
-            capture_output=True,
-            timeout=30
-        )
+        #
+        # -4 forces IPv4 only. Without it, dhcpcd also tries to configure
+        # IPv6 (waiting for a Router Advertisement for SLAAC) before -1 will
+        # return - confirmed from device logs: wpa_supplicant reached
+        # wpa_state=COMPLETED in ~2s every time, but `dhcpcd -1 wlan0` then
+        # hung for the full 30s and was killed by this call's own timeout,
+        # every attempt. This network apparently doesn't answer IPv6 RA, so
+        # dhcpcd never returned even after it already had a v4 lease.
+        try:
+            result = subprocess.run(
+                ["sudo", "dhcpcd", "-1", "-4", "wlan0"],
+                check=False,
+                capture_output=True,
+                timeout=30
+            )
+            if result.returncode != 0:
+                logger.warning(
+                    "dhcpcd -1 -4 exited %s: %s", result.returncode,
+                    result.stderr.decode(errors="replace").strip()
+                )
+        except subprocess.TimeoutExpired:
+            logger.error("dhcpcd -1 -4 wlan0 did not return within 30s")
 
         # Step 4: Wait for connection
         logger.debug(f"Waiting for connection (timeout: {timeout}s)...")
