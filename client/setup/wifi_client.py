@@ -271,7 +271,20 @@ def connect_to_wifi(ssid: str, password: str, timeout: int = 45) -> Tuple[bool, 
         # Step 3: Request DHCP lease using dhcpcd (Raspberry Pi OS default)
         logger.debug("Requesting DHCP lease with dhcpcd...")
 
-        # Release any existing lease
+        # dhcpcd forks into the background even under -1/--oneshot, so a
+        # previous attempt that got killed by this function's own subprocess
+        # timeout (see the -1 -4 call below) can leave an orphaned dhcpcd
+        # process still holding wlan0 - confirmed from device logs:
+        # "dhcpcd already running on pid 1260" caused every attempt after the
+        # first timeout to fail immediately. -k alone only releases the
+        # lease, it does not reliably reach a process that already detached;
+        # pkill first to guarantee a clean slate.
+        subprocess.run(
+            ["sudo", "pkill", "-9", "dhcpcd"],
+            check=False,
+            capture_output=True,
+            timeout=5
+        )
         subprocess.run(
             ["sudo", "dhcpcd", "-k", "wlan0"],
             check=False,
@@ -347,7 +360,12 @@ def is_connected() -> bool:
         True if connected to a network
     """
     try:
-        # Method 1: Check wpa_cli status (most reliable)
+        # wpa_state=COMPLETED means link-layer association succeeded - it says
+        # nothing about DHCP. Treating it alone as "connected" is what let a
+        # device with no IP address log "Successfully connected! IP address:
+        # None" in the same breath: this used to return True here before ever
+        # checking for an address. Kept only as a debug signal now; the real
+        # answer comes from Method 2 below, which requires an actual IP.
         result = subprocess.run(
             ["sudo", "wpa_cli", "-i", "wlan0", "status"],
             capture_output=True,
@@ -355,13 +373,11 @@ def is_connected() -> bool:
             timeout=5
         )
 
-        if result.returncode == 0:
-            # Check for wpa_state=COMPLETED
-            if "wpa_state=COMPLETED" in result.stdout:
-                logger.info("WiFi connected (wpa_state=COMPLETED)")
-                return True
+        if result.returncode == 0 and "wpa_state=COMPLETED" in result.stdout:
+            logger.debug("wpa_state=COMPLETED (association only - checking for an IP next)")
 
-        # Method 2: Check if wlan0 has an IP address (also reliable)
+        # Method 2: Check if wlan0 has an IP address (the only reliable signal
+        # that the connection is actually usable)
         #
         # IMPORTANT: the hotspot's own static address (HOTSPOT_IP) is 'scope
         # global' too. Accepting any global address here reported "connected"
