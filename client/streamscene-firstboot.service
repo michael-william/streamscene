@@ -1,0 +1,23 @@
+[Unit]
+Description=StreamScene First Boot Provisioning
+Documentation=https://github.com/michael-william/streamscene
+# Run once the filesystem and boot partition are available, but before the
+# client starts - the client cannot validate its config without the device UUID.
+After=local-fs.target
+Requires=local-fs.target
+Before=streamscene-client.service
+# Only run while the provisioning script is still present. first_boot.sh
+# removes itself and this unit on success, making execution one-shot.
+ConditionPathExists=/home/pi/streamscene-client/first_boot.sh
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/home/pi/streamscene-client/first_boot.sh
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=streamscene-firstboot
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target

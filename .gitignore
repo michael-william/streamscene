@@ -18,3 +18,7 @@ usertesting/
 
 # Cached rendered images
 cache/
+
+# Working backups from in-place edits
+*.bak-preclaude
+*.bak2-preclaude

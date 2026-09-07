@@ -16,6 +16,11 @@ logger = logging.getLogger(__name__)
 WIFI_CONFIG_FILE = Path.home() / "streamscene-client" / "wifi_credentials.json"
 WPA_SUPPLICANT_CONF = "/etc/wpa_supplicant/wpa_supplicant.conf"
 
+# The static address wlan0 carries while running as an access point.
+# Must match the address hotspot.py assigns. Defined here rather than imported
+# from hotspot to avoid a circular import through setup/__init__.py.
+HOTSPOT_IP = "192.168.4.1"
+
 
 def parse_wpa_status(status_output: str) -> Dict[str, str]:
     """
@@ -326,10 +331,17 @@ def is_connected() -> bool:
         if result.returncode == 0:
             # Check for wpa_state=COMPLETED
             if "wpa_state=COMPLETED" in result.stdout:
-                logger.debug("WiFi connected (wpa_state=COMPLETED)")
+                logger.info("WiFi connected (wpa_state=COMPLETED)")
                 return True
 
         # Method 2: Check if wlan0 has an IP address (also reliable)
+        #
+        # IMPORTANT: the hotspot's own static address (HOTSPOT_IP) is 'scope
+        # global' too. Accepting any global address here reported "connected"
+        # while the radio was still running as an access point connected to
+        # nothing - the device then advanced to registration and polled a
+        # server it could not reach, showing a QR code as if all was well.
+        # Never treat the hotspot address as connectivity.
         result = subprocess.run(
             ["ip", "addr", "show", "wlan0"],
             capture_output=True,
@@ -338,17 +350,53 @@ def is_connected() -> bool:
         )
 
         if result.returncode == 0:
-            # Look for inet (IPv4 address) - not localhost
+            # Look for inet (IPv4 address) - not localhost, not the hotspot IP
             lines = result.stdout.split('\n')
             for line in lines:
                 if "inet " in line and "scope global" in line:
-                    logger.debug("WiFi connected (has global IP address)")
+                    addr = line.strip().split()[1].split('/')[0]
+                    if addr == HOTSPOT_IP:
+                        logger.warning(
+                            "wlan0 holds the hotspot address %s - this is AP mode, "
+                            "not a client connection", HOTSPOT_IP
+                        )
+                        continue
+                    logger.info("WiFi connected (global IP address %s)", addr)
                     return True
 
+        logger.info("WiFi not connected (no wpa_state=COMPLETED, no client IP)")
         return False
 
     except Exception as e:
-        logger.debug(f"Error checking connection: {e}")
+        logger.warning("Error checking connection: %s", e)
+        return False
+
+
+def is_online(host: str = "1.1.1.1", port: int = 53, timeout: int = 3) -> bool:
+    """
+    Check whether the device can actually reach the network.
+
+    is_connected() only reports link state - an associated interface with an
+    address. That is not the same as being able to reach the server, and the
+    difference is invisible on an E Ink display. Use this before advancing to
+    any state that depends on talking to the API.
+
+    Args:
+        host: Address to probe (default: Cloudflare DNS)
+        port: TCP port to probe (default: 53)
+        timeout: Seconds to wait
+
+    Returns:
+        True if a TCP connection can be established
+    """
+    import socket
+
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            logger.info("Network reachable (%s:%s)", host, port)
+            return True
+    except OSError as e:
+        logger.warning("Network unreachable (%s:%s): %s", host, port, e)
         return False
 
 

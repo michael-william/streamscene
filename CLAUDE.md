@@ -77,7 +77,8 @@ streamscene/
 ### Key Design Decisions
 
 **Device Provisioning:**
-- Pre-configured SD cards with unique UUIDs in `/boot/streamscene-device.txt`
+- Pre-configured SD cards; a unique UUID is generated per device on first boot
+  into `/boot/firmware/streamscene-device.txt` (never baked into the image)
 - QR code sticker on each device for user registration
 - WiFi hotspot + captive portal for WiFi setup (no BLE)
 
@@ -226,7 +227,8 @@ Pi Zero has limited CPU - don't process images on device.
 
 **Tested end-to-end on Raspberry Pi Zero 2 WH.**
 
-See `docs/deployment/WIFI_SETUP.md` for comprehensive testing guide.
+See `docs/deployment/WIFI_SETUP.md` for the bench testing guide (development
+only - not the distribution path; see `docs/deployment/DISTRIBUTION.md`).
 
 ### Device Deployment (Production SD Card Image)
 
@@ -259,7 +261,11 @@ sudo ./build_sd_image.sh
 7. User scans QR and registers via web UI
 8. Device enters normal operation
 
-**See:** `docs/deployment/SD_CARD_IMAGE.md` for complete guide
+**See:** `docs/deployment/DISTRIBUTION.md` for the end-to-end build-and-hand-out
+process, and `docs/deployment/SD_CARD_IMAGE.md` for image internals.
+
+**Build location:** the image must be built on the Proxmox host, not in CT118
+(no `/dev/loop*` there) and not on macOS.
 
 **Troubleshooting:** `docs/deployment/TROUBLESHOOTING.md` for log analysis
 
@@ -340,10 +346,18 @@ See `docs/deployment/PRODUCTION.md` for complete deployment guide.
 
 ### Deployment Documentation
 
-- **`docs/deployment/SD_CARD_IMAGE.md`** - **[NEW]** Production SD card image creation and deployment guide
+- **`docs/deployment/IMAGE_BUILD_PLAYBOOK.md`** - **Read before touching the image
+  build.** Every bug found and fixed in the build pipeline, the guard rails now in
+  place, and the card-reading debug loop. Written as a session handoff.
+- **`docs/deployment/DISTRIBUTION.md`** - **Start here.** End-to-end process for
+  building an image and handing out a device, plus what the recipient does
+- **`docs/deployment/SD_CARD_IMAGE.md`** - SD card image internals and reference
 - **`docs/deployment/TROUBLESHOOTING.md`** - **[NEW]** Comprehensive troubleshooting and log analysis guide
 - **`docs/deployment/PRODUCTION.md`** - Production server deployment, Nginx config, systemd services
-- **`docs/deployment/WIFI_SETUP.md`** - WiFi setup system testing guide
+- **`docs/deployment/WIFI_SETUP.md`** - WiFi setup bench testing (**development
+  only**, not the distribution path)
+- **`docs/development/REMOTE_DEBUG.md`** - Debugging a device at someone else's
+  house (Environment B)
 - **`docs/deployment/AUTHENTIK_SETUP.md`** - Authentik OAuth configuration
 - **`docs/deployment/HARDWARE_TESTING.md`** - E Ink hardware testing procedures
 

@@ -2,7 +2,18 @@
 
 # Image processing and E Ink display
 pillow>=10.0.0
-waveshare-epd
+
+# NOTE: waveshare-epd is NOT on PyPI - do not add it here.
+# Listing it makes pip abort the whole transaction, which silently leaves the
+# venv with no pillow/requests/qrcode at all. The driver is vendored instead,
+# in client/waveshare_epd/ - see that directory's VENDOR.md.
+
+# GPIO/SPI backends for the vendored waveshare_epd driver.
+# epdconfig.RaspberryPi imports spidev and gpiozero lazily; gpiozero needs a
+# pin factory, and lgpio is the one that works on Bookworm.
+spidev>=3.6
+gpiozero>=2.0
+lgpio>=0.2.2.0
 
 # HTTP client for API communication
 requests>=2.31.0

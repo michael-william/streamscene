@@ -28,8 +28,14 @@ set -u  # Exit on undefined variable
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLIENT_DIR="$SCRIPT_DIR/client"
 CONFIG_DIR="$SCRIPT_DIR/config"
-VERSION="1.0.0"
-OUTPUT_IMAGE="streamscene-client-${VERSION}.img"
+VERSION="1.2.1"
+# A dev image (WiFi pre-seeded) is named differently so it cannot be confused
+# with a distributable one - it contains a plaintext WiFi password.
+if [ -n "${DEV_WIFI_SSID:-}" ]; then
+    OUTPUT_IMAGE="streamscene-client-${VERSION}-DEV-DO-NOT-DISTRIBUTE.img"
+else
+    OUTPUT_IMAGE="streamscene-client-${VERSION}.img"
+fi
 WORK_DIR="/tmp/streamscene-build-$$"
 
 # Raspberry Pi OS configuration
@@ -55,7 +61,14 @@ cleanup() {
         echo -e "${RED}Build failed! Cleaning up...${NC}"
     fi
 
-    # Unmount if mounted
+    # Unmount if mounted. Kernel filesystems first, deepest first - the image
+    # mounts cannot be released while these are still bound inside them.
+    if [ -d "$WORK_DIR/mount" ]; then
+        sudo umount "$WORK_DIR/mount/dev/pts" 2>/dev/null || true
+        sudo umount "$WORK_DIR/mount/dev" 2>/dev/null || true
+        sudo umount "$WORK_DIR/mount/sys" 2>/dev/null || true
+        sudo umount "$WORK_DIR/mount/proc" 2>/dev/null || true
+    fi
     if mountpoint -q "$WORK_DIR/mount" 2>/dev/null; then
         echo "Unmounting image..."
         sudo umount "$WORK_DIR/mount/boot/firmware" 2>/dev/null || true
@@ -181,12 +194,29 @@ configure_system() {
 
     log_info "SSH enabled via dual mechanisms (boot file + systemd)"
 
-    # Generate unique device UUID
-    log_info "Generating unique device UUID..."
-    DEVICE_UUID=$(python3 -c 'import uuid; print(str(uuid.uuid4()))')
-    echo "$DEVICE_UUID" | sudo tee "$MOUNT_DIR/boot/firmware/streamscene-device.txt" > /dev/null
-    sudo chmod 644 "$MOUNT_DIR/boot/firmware/streamscene-device.txt"
-    log_info "Device UUID: $DEVICE_UUID"
+    # NOTE: The device UUID is deliberately NOT generated here.
+    # A UUID written at build time is baked into the image, so every card
+    # flashed from it would claim the same device identity on the server.
+    # streamscene-firstboot.service runs client/first_boot.sh on each device's
+    # first boot to generate a unique UUID into
+    # /boot/firmware/streamscene-device.txt. Do not reinstate a build-time UUID.
+    log_info "Device UUID deferred to first boot (per-device, not per-image)"
+
+    # Ensure any UUID left over from a previous build is not shipped
+    sudo rm -f "$MOUNT_DIR/boot/firmware/streamscene-device.txt"
+
+    # Enable SPI - required by the Waveshare 7.3" e-Paper HAT
+    log_info "Enabling SPI for the E Ink display..."
+    BOOT_CONFIG="$MOUNT_DIR/boot/firmware/config.txt"
+    if grep -qE '^\s*dtparam=spi=on' "$BOOT_CONFIG"; then
+        log_info "SPI already enabled"
+    elif grep -qE '^\s*#\s*dtparam=spi=on' "$BOOT_CONFIG"; then
+        sudo sed -i 's|^\s*#\s*dtparam=spi=on.*|dtparam=spi=on|' "$BOOT_CONFIG"
+        log_info "SPI enabled (uncommented existing dtparam)"
+    else
+        echo "dtparam=spi=on" | sudo tee -a "$BOOT_CONFIG" > /dev/null
+        log_info "SPI enabled (appended dtparam)"
+    fi
 
     # Set default password for pi user
     log_info "Setting default password (pi:$DEFAULT_PASSWORD)..."
@@ -204,6 +234,17 @@ install_dependencies() {
     log_step "Installing dependencies via chroot..."
 
     MOUNT_DIR="$WORK_DIR/mount"
+
+    # Bind-mount the kernel filesystems into the image before chrooting.
+    # Package postinst scripts need them: initramfs-tools fails with
+    # "MODULES dep requires mounted sysfs on /sys" and systemd-tmpfiles needs
+    # /proc. Without these, apt exits non-zero, the chroot script aborts under
+    # 'set -e', and everything after the package install silently never runs.
+    log_info "Bind-mounting /proc, /sys, /dev, /dev/pts into the image..."
+    sudo mount -t proc  proc  "$MOUNT_DIR/proc"
+    sudo mount -t sysfs sysfs "$MOUNT_DIR/sys"
+    sudo mount --bind /dev     "$MOUNT_DIR/dev"
+    sudo mount --bind /dev/pts "$MOUNT_DIR/dev/pts"
 
     # Copy qemu-arm-static for chroot (if on x86_64)
     if [ "$(uname -m)" = "x86_64" ]; then
@@ -240,7 +281,23 @@ apt-get install -y -qq \
     libwebp-dev \
     liblcms2-dev \
     libopenjp2-7 \
+    dhcpcd5 \
     rfkill
+
+echo "Disabling dhcpcd daemon (client invokes it per-interface on demand)..."
+# dhcpcd5 is installed because wifi_client.py shells out to `dhcpcd` for a DHCP
+# lease - without the binary the device associates but never gets an IP.
+# But its daemon must NOT auto-start: it manages every interface by default,
+# so it grabs wlan0, fights the hotspot's static 192.168.4.1, and destabilises
+# the AP - which clients report as "wrong password" when they fail to associate.
+# NOTE: `systemctl disable` is unreliable in a chroot (no D-Bus), so remove the
+# enablement symlinks directly and mask the unit. The dhcpcd BINARY stays
+# available - wifi_client.py invokes it per-interface when it wants a lease.
+rm -f /etc/systemd/system/multi-user.target.wants/dhcpcd.service
+rm -f /etc/systemd/system/dhcpcd.service.wants/* 2>/dev/null || true
+rm -f /etc/rc[0-9S].d/S[0-9][0-9]dhcpcd
+ln -sf /dev/null /etc/systemd/system/dhcpcd.service
+echo "dhcpcd daemon disabled and masked; binary remains at $(command -v dhcpcd || echo /usr/sbin/dhcpcd)"
 
 echo "Disabling hostapd and dnsmasq auto-start..."
 systemctl disable hostapd
@@ -261,7 +318,24 @@ EOF
 
     # Run installation in chroot
     log_info "Installing packages (this may take a few minutes)..."
-    sudo chroot "$MOUNT_DIR" /tmp/install_packages.sh || {
+    CHROOT_STATUS=0
+    sudo chroot "$MOUNT_DIR" /tmp/install_packages.sh || CHROOT_STATUS=$?
+
+    # Release the kernel filesystems as soon as the chroot is done.
+    sudo umount "$MOUNT_DIR/dev/pts" 2>/dev/null || true
+    sudo umount "$MOUNT_DIR/dev"     2>/dev/null || true
+    sudo umount "$MOUNT_DIR/sys"     2>/dev/null || true
+    sudo umount "$MOUNT_DIR/proc"    2>/dev/null || true
+
+    # A failed package install must stop the build. The old behaviour - warn and
+    # claim "packages will install on first boot" - is not survivable: the device
+    # has no network until the captive portal runs, and the portal is Python that
+    # needs those very packages.
+    if [ $CHROOT_STATUS -ne 0 ]; then
+        log_error "Chroot package installation failed (exit $CHROOT_STATUS) - aborting."
+        exit 1
+    fi
+    true || {
         log_warn "Chroot package installation failed - packages will install on first boot"
     }
 
@@ -291,17 +365,81 @@ install_client() {
     log_info "Creating Python virtual environment and installing dependencies..."
     log_info "This may take 5-10 minutes (compiling Pillow, etc.)..."
 
+    # NOTE: this must be fatal, not a warning. A device that ships without a
+    # populated venv cannot repair itself: pip needs the network, and the
+    # device has no network until the captive portal runs - which is itself
+    # Python code that needs the venv. Shipping a broken venv bricks the setup
+    # flow, so a failure here has to stop the build.
+    # 'set -e' inside the chroot is required: without it a failing pip is
+    # masked by the exit status of the following command.
     sudo chroot "$MOUNT_DIR" /bin/bash -c "
+        set -e
         cd /home/pi/streamscene-client
         python3 -m venv venv
         source venv/bin/activate
         pip install --upgrade pip
         pip install -r requirements.txt
-        deactivate
     " || {
-        log_warn "Python venv setup failed in chroot - will retry on first boot"
-        sudo mkdir -p "$CLIENT_INSTALL_DIR/venv"
+        log_error "Python venv setup failed in chroot"
+        log_error "The image cannot provision itself without a working venv - aborting."
+        exit 1
     }
+
+    # Verify the venv actually contains what the client imports at runtime.
+    # pip can exit non-zero after a partial install, and a missing module here
+    # only surfaces as a crash on the user's device.
+    log_info "Verifying client dependencies inside the image..."
+    # Import only - do not introspect __version__, which not every package
+    # defines (qrcode 8.x does not) and which is not what we are testing.
+    # ---------------------------------------------------------------------
+    # DEV ONLY: pre-seed WiFi credentials
+    #
+    # Opt-in, off by default. Set DEV_WIFI_SSID and DEV_WIFI_PSK to skip the
+    # hotspot/captive-portal step so a bench device joins WiFi straight away.
+    #
+    # NEVER use this for a device you hand to somebody else: the image would
+    # carry your WiFi password in plaintext, and the recipient could not run
+    # the setup flow on their own network. Distribution images must be built
+    # with these variables unset. The output filename is marked accordingly so
+    # a dev image cannot be mistaken for a shippable one.
+    # ---------------------------------------------------------------------
+    if [ -n "${DEV_WIFI_SSID:-}" ]; then
+        if [ -z "${DEV_WIFI_PSK:-}" ]; then
+            log_error "DEV_WIFI_SSID set without DEV_WIFI_PSK - aborting"
+            exit 1
+        fi
+        log_warn "============================================================"
+        log_warn "DEV IMAGE: pre-seeding WiFi credentials for '${DEV_WIFI_SSID}'"
+        log_warn "This image contains a plaintext WiFi password."
+        log_warn "DO NOT DISTRIBUTE IT."
+        log_warn "============================================================"
+        printf '{\n  "ssid": "%s",\n  "password": "%s",\n  "configured": true\n}\n' \
+            "$DEV_WIFI_SSID" "$DEV_WIFI_PSK" \
+          | sudo tee "$CLIENT_INSTALL_DIR/wifi_credentials.json" > /dev/null
+        sudo chmod 600 "$CLIENT_INSTALL_DIR/wifi_credentials.json"
+    else
+        # Guard against a stale file surviving from a previous dev build
+        sudo rm -f "$CLIENT_INSTALL_DIR/wifi_credentials.json"
+        log_info "No WiFi pre-seeded (distribution build)"
+    fi
+
+    # The checks live in scripts/verify_image.py rather than inline, so the
+    # quoting stays sane and the same checks can be run by hand against a
+    # mounted image.
+    sudo cp "$SCRIPT_DIR/scripts/verify_image.py" "$MOUNT_DIR/tmp/verify_image.py"
+    # 'if' rather than '$?': under 'set -e' a bare failing command would abort
+    # the script before the status could be inspected and reported.
+    if sudo chroot "$MOUNT_DIR" /bin/bash -c \
+        "cd /home/pi/streamscene-client && ./venv/bin/python3 /tmp/verify_image.py"; then
+        VERIFY_STATUS=0
+    else
+        VERIFY_STATUS=1
+    fi
+    sudo rm -f "$MOUNT_DIR/tmp/verify_image.py"
+    if [ $VERIFY_STATUS -ne 0 ]; then
+        log_error "Image verification failed - aborting."
+        exit 1
+    fi
 
     # Make scripts executable
     sudo chmod +x "$CLIENT_INSTALL_DIR"/*.sh 2>/dev/null || true
@@ -342,9 +480,25 @@ install_systemd_services() {
     log_info "Installing streamscene-client.service..."
     sudo cp "$CLIENT_DIR/streamscene-client.service" "$MOUNT_DIR/etc/systemd/system/"
 
-    # Enable StreamScene client service (will start on boot)
+    # Strip development-only settings from the shipped unit.
+    # STREAMSCENE_ALLOW_ETHERNET is for the bench rig (Pi on a USB ethernet
+    # adapter); production devices are WiFi-only and must run the hotspot and
+    # captive portal setup flow. The source file keeps it for local dev.
+    log_info "Removing dev-only ethernet flag from shipped service..."
+    sudo sed -i 's|^Environment="STREAMSCENE_ALLOW_ETHERNET=true"|# Environment="STREAMSCENE_ALLOW_ETHERNET=true"  # dev only - stripped at build|' \
+        "$MOUNT_DIR/etc/systemd/system/streamscene-client.service"
+
+    # Install first boot provisioning service
+    log_info "Installing streamscene-firstboot.service..."
+    sudo cp "$CLIENT_DIR/streamscene-firstboot.service" "$MOUNT_DIR/etc/systemd/system/"
+
+    # Enable StreamScene services (will start on boot)
+    log_info "Enabling streamscene-firstboot.service..."
+    sudo ln -sf /etc/systemd/system/streamscene-firstboot.service \
+        "$MOUNT_DIR/etc/systemd/system/multi-user.target.wants/streamscene-firstboot.service"
+
     log_info "Enabling streamscene-client.service..."
-    sudo ln -s /etc/systemd/system/streamscene-client.service \
+    sudo ln -sf /etc/systemd/system/streamscene-client.service \
         "$MOUNT_DIR/etc/systemd/system/multi-user.target.wants/streamscene-client.service"
 
     log_info "Systemd services installed and enabled"

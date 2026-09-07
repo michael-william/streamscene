@@ -74,11 +74,17 @@ class SetupManager:
         # Step 2: Start captive portal
         logger.info("[SetupManager] Step 2: Starting captive portal server")
 
-        portal = CaptivePortalServer(port=8080)
+        # Port 80, not 8080. Captive portal detection on every OS probes port
+        # 80 and nothing else; serving only on 8080 and relying on an iptables
+        # REDIRECT meant nothing listened on 80 when that rule failed to apply,
+        # so no device ever showed a sign-in sheet. The service grants
+        # CAP_NET_BIND_SERVICE (see streamscene-client.service), so binding 80
+        # needs neither root nor a NAT rule.
+        portal = CaptivePortalServer(port=80)
 
         try:
             portal.start()
-            logger.info(f"[SetupManager] Captive portal running on 192.168.4.1:8080")
+            logger.info(f"[SetupManager] Captive portal running on 192.168.4.1:80")
             logger.info(f"[SetupManager] Users can connect to: {self.network_manager.hotspot_ssid}")
             logger.info(f"[SetupManager] Password: {self.network_manager.hotspot_password}")
 

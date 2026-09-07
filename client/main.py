@@ -46,7 +46,7 @@ from renderer import ContentRenderer
 from states import StateMachine, DeviceState
 from setup.network_manager import NetworkManager
 from setup.setup_manager import SetupManager
-from services import NetworkService, ConfigurationService, SetupService
+from services import NetworkService, ConfigurationService, SetupService, OTAService
 
 # Import centralized logging configuration
 from logging_config import (
@@ -58,6 +58,7 @@ from logging_config import (
     network_logger,
     wifi_logger,
     registration_logger,
+    ota_logger,
 )
 
 
@@ -122,6 +123,14 @@ class StreamSceneClient:
         self.setup_service.initialize()
         main_logger.info("Setup service initialized")
 
+        # OTA service (handles over-the-air updates)
+        self.ota_service = OTAService(
+            api_client=self.api_client,
+            config_service=self.config_service,
+        )
+        self.ota_service.initialize()
+        ota_logger.info("OTA service initialized")
+
         # Display and rendering
         self.renderer = ContentRenderer()
         self.display = get_display()
@@ -143,6 +152,76 @@ class StreamSceneClient:
 
         # Check initial network status and skip WiFi setup if ethernet is available
         self._check_initial_network_status()
+
+        # Check for pending OTA update verification (after reboot)
+        self._check_ota_pending_verification()
+
+    def _check_ota_pending_verification(self):
+        """
+        Check for pending OTA update verification after reboot.
+
+        If an update was installed before the last reboot, verify it succeeded
+        and report status to server. Rollback if verification fails.
+        """
+        pending = self.ota_service.check_pending_verification()
+        if not pending:
+            return
+
+        ota_logger.info(f"Pending update verification: v{pending.get('update_version')}")
+
+        if self.ota_service.verify_boot_success():
+            ota_logger.info("Boot verification passed, completing update")
+            self.ota_service.complete_pending_verification()
+        else:
+            ota_logger.warning("Boot verification failed, rolling back")
+            self.ota_service.rollback_pending_update("Boot verification failed")
+
+    def _check_mandatory_updates(self):
+        """
+        Check for and install mandatory updates.
+
+        Called before normal operation. Mandatory updates must be installed
+        immediately before displaying any content.
+
+        Returns:
+            True if device should continue to normal operation
+            False if reboot is needed after mandatory update
+        """
+        if not API_KEY and not load_api_key():
+            # Not registered yet, can't check for updates
+            return True
+
+        ota_logger.info("Checking for mandatory updates...")
+        result = self.ota_service.handle_mandatory_update()
+
+        if result.needs_reboot:
+            ota_logger.info(f"Mandatory update v{result.version} installed, rebooting...")
+            self.ota_service.trigger_reboot()
+            return False
+
+        if result.update_installed:
+            ota_logger.warning(f"Mandatory update failed: {result.error}")
+
+        return True
+
+    def _check_ota_updates(self):
+        """
+        Check for OTA updates periodically.
+
+        Called during normal operation (READY state).
+        Non-mandatory updates are installed with reboot.
+        """
+        if not self.ota_service.should_check_for_updates():
+            return
+
+        ota_logger.info("Periodic OTA update check...")
+        result = self.ota_service.run_update_cycle()
+
+        if result.needs_reboot:
+            ota_logger.info(f"Update v{result.version} installed, rebooting...")
+            self.ota_service.trigger_reboot()
+        elif result.error:
+            ota_logger.warning(f"Update check failed: {result.error}")
 
     def _fetch_initial_config(self):
         """
@@ -368,9 +447,48 @@ class StreamSceneClient:
             self.state_machine.transition_to(DeviceState.WIFI_SETUP)
 
     def _handle_awaiting_registration(self):
-        """Handle AWAITING_REGISTRATION state - show QR code and poll."""
+        """Handle AWAITING_REGISTRATION state - show QR code and poll.
+
+        Registration cannot proceed without a working network path to the API.
+        Verify that first: showing a QR code while offline tells the user
+        everything is fine when nothing is, and there is no other channel on an
+        E Ink device to correct that impression.
+        """
         state_logger.info("Entering AWAITING_REGISTRATION state")
         registration_logger.info("Waiting for device registration")
+
+        from setup.wifi_client import is_connected, is_online
+
+        if not (is_connected() and is_online()):
+            registration_logger.warning(
+                "Cannot register while offline - returning to WIFI_SETUP so the "
+                "hotspot comes back and the device stays reachable"
+            )
+            # Set aside the saved credentials first. WIFI_SETUP skips the
+            # hotspot entirely when credentials exist, so falling back with them
+            # still in place just retries the same failing network forever and
+            # never opens a hotspot - leaving no way to reach the device at all.
+            self._quarantine_wifi_credentials()
+            self._show_offline_notice()
+            # Check the result. transition_to() returns False for a transition
+            # the state machine does not allow, and ignoring that silently
+            # re-enters this state on the next loop - an invisible spin that
+            # redraws the panel every ~20s and never reaches the hotspot code.
+            if not self.state_machine.transition_to(DeviceState.WIFI_SETUP, {
+                "reason": "no network in AWAITING_REGISTRATION"
+            }):
+                state_logger.error(
+                    "Transition AWAITING_REGISTRATION -> WIFI_SETUP was rejected "
+                    "by the state machine; falling back to ERROR to recover "
+                    "rather than spinning in place"
+                )
+                self.state_machine.transition_to(DeviceState.ERROR, {
+                    "error": "Offline while awaiting registration"
+                })
+            # Give the panel a rest: an E Ink refresh is ~30s and has a finite
+            # lifetime, so do not let a recovery path redraw it in a tight loop.
+            time.sleep(30)
+            return
 
         # Get registration URL from service
         registration_url = self.setup_service.get_registration_url()
@@ -387,11 +505,18 @@ class StreamSceneClient:
         display_logger.info("QR code displayed")
 
         # Poll for registration (service handles polling logic)
-        registration_logger.info("Starting registration polling (30 minute timeout, 10 second interval)")
+        #
+        # The timeout is deliberately short relative to how long someone may
+        # take to register. Do NOT treat expiry as a fatal error: a user who
+        # plugs the frame in and registers an hour later is a normal case, and
+        # dropping to ERROR leaves a QR code on screen with no poll behind it -
+        # indistinguishable from a working device. Expiry simply re-enters this
+        # state, which re-checks connectivity and resumes polling.
+        registration_logger.info("Starting registration polling (10 minute cycle, 10 second interval)")
         success = self.setup_service.run_registration_flow(
             api_client=self.api_client,
             poll_interval=10,
-            timeout=1800
+            timeout=600
         )
 
         if success:
@@ -399,11 +524,50 @@ class StreamSceneClient:
             state_logger.info("Transitioning to REGISTERED state")
             self.state_machine.transition_to(DeviceState.REGISTERED)
         else:
-            registration_logger.error("Registration timeout")
-            state_logger.error("Registration failed, transitioning to ERROR state")
-            self.state_machine.transition_to(DeviceState.ERROR, {
-                "error": "Registration timeout - please try again"
+            registration_logger.info(
+                "No registration yet after this polling cycle - re-checking "
+                "connectivity and continuing to wait"
+            )
+            self.state_machine.transition_to(DeviceState.AWAITING_REGISTRATION, {
+                "reason": "registration poll cycle elapsed, retrying"
             })
+
+    def _quarantine_wifi_credentials(self):
+        """Move saved WiFi credentials aside so WIFI_SETUP opens the hotspot.
+
+        Kept (not deleted) as wifi_credentials.json.failed for diagnosis.
+        """
+        from setup.wifi_client import WIFI_CONFIG_FILE
+
+        try:
+            if WIFI_CONFIG_FILE.exists():
+                failed = WIFI_CONFIG_FILE.with_suffix(".json.failed")
+                WIFI_CONFIG_FILE.replace(failed)
+                wifi_logger.warning(
+                    "Saved WiFi credentials did not yield a working connection; "
+                    "moved to %s so setup can capture new ones", failed
+                )
+        except Exception as e:
+            wifi_logger.error("Could not quarantine WiFi credentials: %s", e)
+
+    def _show_offline_notice(self):
+        """Tell the user on the panel that the device cannot reach the server.
+
+        Without this the display keeps showing whatever was drawn last, which
+        during setup is a QR code implying success.
+        """
+        try:
+            image = self.renderer.render_message(
+                title="No Network",
+                message=(
+                    "Could not reach StreamScene.\n\n"
+                    "Reconnect to the StreamScene-XXXX\n"
+                    "WiFi network to set up again."
+                ),
+            )
+            self.display.show(image)
+        except Exception as e:
+            display_logger.warning("Could not render offline notice: %s", e)
 
     def _handle_registered(self):
         """Handle REGISTERED state - device just got registered."""
@@ -465,12 +629,22 @@ class StreamSceneClient:
             })
             return
 
+        # Check for mandatory updates on first entry to READY state
+        if not hasattr(self, '_mandatory_update_checked'):
+            self._mandatory_update_checked = True
+            if not self._check_mandatory_updates():
+                # Reboot triggered for mandatory update
+                return
+
         # Track consecutive failures for network recovery
         if not hasattr(self, 'consecutive_failures'):
             self.consecutive_failures = 0
 
         # Refresh config periodically (every 2 minutes max)
         self._refresh_config_if_needed()
+
+        # Check for OTA updates periodically (every hour by default)
+        self._check_ota_updates()
 
         try:
             # Determine operation mode from config

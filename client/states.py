@@ -43,7 +43,12 @@ class StateMachine:
     VALID_TRANSITIONS = {
         DeviceState.WIFI_SETUP: [DeviceState.CONNECTING, DeviceState.AWAITING_REGISTRATION, DeviceState.ERROR],
         DeviceState.CONNECTING: [DeviceState.AWAITING_REGISTRATION, DeviceState.WIFI_SETUP, DeviceState.ERROR],
-        DeviceState.AWAITING_REGISTRATION: [DeviceState.REGISTERED, DeviceState.ERROR],
+        # WIFI_SETUP is reachable from here: the device can lose the network
+        # while waiting to be registered, and must be able to go back and
+        # raise its hotspot again. Without this the fallback transition is
+        # silently rejected and the device loops in AWAITING_REGISTRATION,
+        # redrawing the panel every ~20s with no way to reach it.
+        DeviceState.AWAITING_REGISTRATION: [DeviceState.REGISTERED, DeviceState.WIFI_SETUP, DeviceState.ERROR],
         DeviceState.REGISTERED: [DeviceState.READY, DeviceState.ERROR],
         DeviceState.READY: [DeviceState.ERROR],  # Can only transition to ERROR - NEVER back to setup states (preserves registration)
         DeviceState.ERROR: [DeviceState.WIFI_SETUP, DeviceState.CONNECTING, DeviceState.AWAITING_REGISTRATION, DeviceState.READY],  # Recovery paths
