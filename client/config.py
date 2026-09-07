@@ -248,6 +248,57 @@ PREFER_ETHERNET = os.getenv("STREAMSCENE_PREFER_ETHERNET", "true").lower() == "t
 ETHERNET_CHECK_TIMEOUT = int(os.getenv("STREAMSCENE_ETHERNET_TIMEOUT", "10"))
 
 # ============================================================================
+# OTA (Over-The-Air Update) Configuration
+# ============================================================================
+
+# How often to check for updates (seconds) - default 1 hour
+OTA_CHECK_INTERVAL = int(os.getenv("STREAMSCENE_OTA_CHECK_INTERVAL", "3600"))
+
+# Time to verify boot success after update (seconds) - default 5 minutes
+OTA_BOOT_VERIFICATION_TIMEOUT = int(os.getenv("STREAMSCENE_OTA_BOOT_TIMEOUT", "300"))
+
+# Timeout for update.sh script execution (seconds) - default 10 minutes
+OTA_INSTALL_TIMEOUT = int(os.getenv("STREAMSCENE_OTA_INSTALL_TIMEOUT", "600"))
+
+# Maximum download retry attempts
+OTA_MAX_RETRIES = int(os.getenv("STREAMSCENE_OTA_MAX_RETRIES", "3"))
+
+# Minimum free disk space required for update (bytes) - default 500MB
+OTA_MIN_DISK_SPACE = int(os.getenv("STREAMSCENE_OTA_MIN_DISK_SPACE", str(500 * 1024 * 1024)))
+
+# OTA storage directories
+OTA_BASE_DIR = Path("/var/lib/streamscene/ota")
+OTA_DOWNLOAD_DIR = OTA_BASE_DIR / "downloads"
+OTA_BACKUP_DIR = OTA_BASE_DIR / "backups"
+OTA_STAGING_DIR = OTA_BASE_DIR / "staging"
+OTA_STATE_FILE = OTA_BASE_DIR / "update_state.json"
+
+# Installation target directory
+OTA_INSTALL_DIR = Path("/home/pi/streamscene-client")
+
+# Number of backup versions to keep
+OTA_BACKUP_RETENTION = int(os.getenv("STREAMSCENE_OTA_BACKUP_RETENTION", "3"))
+
+# Current client version file
+VERSION_FILE = Path(__file__).parent / "VERSION"
+
+
+def get_current_version() -> str:
+    """
+    Get current client version from VERSION file.
+
+    Returns:
+        Version string (e.g., "1.0.0") or "0.0.0" if not found
+    """
+    if VERSION_FILE.exists():
+        try:
+            return VERSION_FILE.read_text().strip()
+        except Exception as e:
+            logger.warning(f"[Config] Error reading VERSION file: {e}")
+    return "0.0.0"
+
+
+# ============================================================================
 # Validation
 # ============================================================================
 

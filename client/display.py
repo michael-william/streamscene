@@ -82,20 +82,23 @@ class HeadlessDisplay(DisplayAdapter):
 
     Saves images to the output directory as PNG files.
     Perfect for development and verifying layout/colors.
+    Automatically cleans up old frames to prevent disk space issues.
     """
 
-    def __init__(self, output_dir: Optional[Path] = None):
+    def __init__(self, output_dir: Optional[Path] = None, max_frames: int = 50):
         """
         Initialize headless display.
 
         Args:
             output_dir: Directory to save PNG files (default: config.OUTPUT_DIR)
+            max_frames: Maximum frames to keep (default: 50, ~2.5MB)
         """
         self.output_dir = output_dir or config.OUTPUT_DIR
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.frame_count = 0
+        self.max_frames = max_frames
 
-        print(f"[Display] Headless mode - saving to {self.output_dir}")
+        print(f"[Display] Headless mode - saving to {self.output_dir} (max {max_frames} frames)")
 
     def show(self, image: Image.Image) -> None:
         """Save image as PNG file."""
@@ -113,6 +116,27 @@ class HeadlessDisplay(DisplayAdapter):
         # Also save as "latest.png" for easy viewing
         latest_path = self.output_dir / "latest.png"
         image.save(latest_path, "PNG")
+
+        # Cleanup old frames to prevent disk space issues
+        self._cleanup_old_frames()
+
+    def _cleanup_old_frames(self) -> None:
+        """Remove old frame files, keeping only the most recent ones."""
+        try:
+            # Get all frame files (exclude latest.png)
+            frames = sorted(
+                [f for f in self.output_dir.glob("frame_*.png")],
+                key=lambda f: f.stat().st_mtime
+            )
+
+            # Remove oldest frames if over limit
+            if len(frames) > self.max_frames:
+                to_remove = frames[:-self.max_frames]
+                for f in to_remove:
+                    f.unlink()
+                print(f"[Display] Cleaned up {len(to_remove)} old frames")
+        except Exception as e:
+            print(f"[Display] Warning: cleanup failed: {e}")
 
     def clear(self) -> None:
         """Clear (simulated)."""

@@ -19,6 +19,7 @@ CLIENT_LOG = LOG_DIR / "streamscene-client.log"
 HOTSPOT_LOG = LOG_DIR / "streamscene-hotspot.log"
 WIFI_LOG = LOG_DIR / "streamscene-wifi.log"
 REGISTRATION_LOG = LOG_DIR / "streamscene-registration.log"
+OTA_LOG = LOG_DIR / "streamscene-ota.log"
 
 # Fallback to local directory if /var/log/streamscene doesn't exist or isn't writable
 if not LOG_DIR.exists() or not os.access(LOG_DIR, os.W_OK):
@@ -28,6 +29,7 @@ if not LOG_DIR.exists() or not os.access(LOG_DIR, os.W_OK):
     HOTSPOT_LOG = LOG_DIR / "streamscene-hotspot.log"
     WIFI_LOG = LOG_DIR / "streamscene-wifi.log"
     REGISTRATION_LOG = LOG_DIR / "streamscene-registration.log"
+    OTA_LOG = LOG_DIR / "streamscene-ota.log"
 
 
 class ComponentFormatter(logging.Formatter):
@@ -124,6 +126,7 @@ network_logger = get_logger('NETWORK', WIFI_LOG)
 api_logger = get_logger('API', CLIENT_LOG)
 display_logger = get_logger('DISPLAY', CLIENT_LOG)
 state_logger = get_logger('STATE', CLIENT_LOG)
+ota_logger = get_logger('OTA', OTA_LOG)
 
 
 def log_subprocess_output(logger, process_result, command: str):
@@ -164,4 +167,5 @@ def log_startup_info():
     main_logger.info(f"Hotspot log: {HOTSPOT_LOG}")
     main_logger.info(f"WiFi log: {WIFI_LOG}")
     main_logger.info(f"Registration log: {REGISTRATION_LOG}")
+    main_logger.info(f"OTA log: {OTA_LOG}")
     main_logger.info("=" * 60)
