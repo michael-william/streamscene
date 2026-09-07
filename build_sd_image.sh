@@ -463,6 +463,14 @@ install_configurations() {
     log_info "Installing logrotate configuration..."
     sudo install -m 0644 "$CONFIG_DIR/logrotate.streamscene" "$MOUNT_DIR/etc/logrotate.d/streamscene"
 
+    # Force dhcpcd to recognize wlan0 as wireless. Without this, dhcpcd
+    # doesn't reliably see wlan0's carrier state after wpa_supplicant
+    # associates - `dhcpcd -1` hangs for its full timeout and returns
+    # nothing even though association completed in ~2s. See
+    # config/dhcpcd-wlan0.conf for the documented references.
+    log_info "Configuring dhcpcd wireless recognition for wlan0..."
+    cat "$CONFIG_DIR/dhcpcd-wlan0.conf" | sudo tee -a "$MOUNT_DIR/etc/dhcpcd.conf" > /dev/null
+
     # Create log directory
     log_info "Creating log directory..."
     sudo mkdir -p "$MOUNT_DIR/var/log/streamscene"
