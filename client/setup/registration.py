@@ -4,11 +4,16 @@ Device Registration
 Handles device registration status checking by polling the server.
 """
 
-import logging
+import sys
 import time
+from pathlib import Path
 from typing import Optional
 
-logger = logging.getLogger(__name__)
+# Bare logging.getLogger(__name__) has no file handler here (same issue
+# wifi_client.py had) - route through the pre-configured registration_logger
+# so poll detail lands in streamscene-registration.log.
+sys.path.append(str(Path(__file__).parent.parent))
+from logging_config import registration_logger as logger
 
 
 def check_registration(api_client) -> bool:

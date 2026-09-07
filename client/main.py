@@ -21,6 +21,9 @@ Environment Variables (optional):
     STREAMSCENE_DEVICE_ID - Device UUID (default: read from /boot/firmware/streamscene-device.txt)
     STREAMSCENE_API_KEY - API key (default: saved after registration)
     STREAMSCENE_DISPLAY_MODE - "eink" or "headless" (default: headless)
+    STREAMSCENE_LOG_LEVEL - "DEBUG", "INFO", "WARNING", etc. (default: INFO).
+        DEBUG surfaces wpa_supplicant state transitions, subprocess commands,
+        and other step-by-step detail that's otherwise silent.
 """
 
 import os

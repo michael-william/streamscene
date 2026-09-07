@@ -17,8 +17,8 @@ hotspot.py, portal_server.py and registration.py - this module only
 coordinates them.
 """
 
-import logging
 import subprocess
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -35,7 +35,11 @@ from .wifi_client import (
     test_internet_connectivity,
 )
 
-logger = logging.getLogger(__name__)
+# Bare logging.getLogger(__name__) has no file handler here (same issue
+# wifi_client.py had) - route through the pre-configured network_logger so
+# this module's detail lands in streamscene-wifi.log.
+sys.path.append(str(Path(__file__).parent.parent))
+from logging_config import network_logger as logger
 
 
 @dataclass

@@ -4,11 +4,14 @@ Configuration is loaded from environment variables and boot partition files.
 """
 
 import os
-import logging
 import uuid
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+# Bare logging.getLogger(__name__) has no file handler here (same issue
+# wifi_client.py had) - route through the pre-configured main_logger so
+# config validation / API key save-load detail lands in
+# streamscene-client.log.
+from logging_config import main_logger as logger
 
 # ============================================================================
 # Device UUID Loading

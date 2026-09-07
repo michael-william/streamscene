@@ -8,13 +8,15 @@ State persists to JSON file to survive reboots.
 """
 
 import json
-import logging
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Optional, Dict, Any
 
-logger = logging.getLogger(__name__)
+# Bare logging.getLogger(__name__) has no file handler here - route through
+# the pre-configured state_logger so transition/error detail actually lands
+# in streamscene-client.log instead of nowhere.
+from logging_config import state_logger as logger
 
 
 class DeviceState(Enum):

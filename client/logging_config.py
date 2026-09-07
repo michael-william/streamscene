@@ -13,6 +13,14 @@ from pathlib import Path
 from datetime import datetime
 
 
+# Development knob: STREAMSCENE_LOG_LEVEL=DEBUG surfaces the step-by-step
+# detail (wpa_supplicant state transitions, subprocess commands, DHCP steps)
+# that normally sits at DEBUG and is invisible at the INFO default. Falls
+# back to INFO on anything unrecognized rather than erroring.
+DEFAULT_LOG_LEVEL = getattr(
+    logging, os.environ.get("STREAMSCENE_LOG_LEVEL", "INFO").upper(), logging.INFO
+)
+
 # Log file locations
 LOG_DIR = Path("/var/log/streamscene")
 CLIENT_LOG = LOG_DIR / "streamscene-client.log"
@@ -55,14 +63,15 @@ class ComponentFormatter(logging.Formatter):
         return formatted
 
 
-def setup_logger(name: str, log_file: Path, level=logging.INFO) -> logging.Logger:
+def setup_logger(name: str, log_file: Path, level=DEFAULT_LOG_LEVEL) -> logging.Logger:
     """
     Create a logger with both console and file handlers
 
     Args:
         name: Logger name (e.g., 'streamscene.main')
         log_file: Path to log file
-        level: Logging level (default: INFO)
+        level: Logging level (default: DEFAULT_LOG_LEVEL, i.e. INFO unless
+            STREAMSCENE_LOG_LEVEL is set)
 
     Returns:
         Configured logger instance
