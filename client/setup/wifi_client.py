@@ -5,13 +5,21 @@ This module handles connecting the Raspberry Pi to a WiFi network in client mode
 
 import subprocess
 import json
+import sys
 import time
 from typing import Optional, Dict, Tuple
 from pathlib import Path
 import logging
 import os
 
-logger = logging.getLogger(__name__)
+# logging.getLogger(__name__) has no file handler of its own - only
+# hotspot.py wires into the pre-configured component loggers, so every
+# wpa_supplicant state transition, DHCP step and exception this module
+# logs was going nowhere (not even journald, which doesn't persist on
+# this image). Route through the same wifi_logger main.py uses so this
+# module's detail actually lands in streamscene-wifi.log.
+sys.path.append(str(Path(__file__).parent.parent))
+from logging_config import wifi_logger as logger
 
 WIFI_CONFIG_FILE = Path.home() / "streamscene-client" / "wifi_credentials.json"
 WPA_SUPPLICANT_CONF = "/etc/wpa_supplicant/wpa_supplicant.conf"
