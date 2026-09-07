@@ -272,10 +272,13 @@ def connect_to_wifi(ssid: str, password: str, timeout: int = 45) -> Tuple[bool, 
         )
         time.sleep(1)
 
-        # Request new lease (dhcpcd daemon manages this automatically)
-        # Since wpa_supplicant already associated, dhcpcd should get lease quickly
+        # Request a fresh lease. -n/--rebind asks dhcpcd to rebind an
+        # EXISTING lease; after -k just released it, there is nothing to
+        # rebind and this was silently a no-op. -1/--oneshot requests a new
+        # lease and exits once it has one (or fails) - the actual primitive
+        # needed here.
         subprocess.run(
-            ["sudo", "dhcpcd", "-n", "wlan0"],
+            ["sudo", "dhcpcd", "-1", "wlan0"],
             check=False,
             capture_output=True,
             timeout=30

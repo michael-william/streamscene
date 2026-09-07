@@ -91,19 +91,27 @@ def test_renderer_methods():
 
 
 def test_network_manager_methods():
-    """Test NetworkManager has all required methods."""
+    """Test NetworkManager (setup/network.py) has all required methods.
+
+    Collapsed from the old separate NetworkManager/SetupManager/
+    NetworkService/SetupService layers into one class - this checks its
+    merged surface.
+    """
     print("\n=== Testing NetworkManager ===")
 
-    # Check the file has the methods
-    nm_file = client_path / "setup" / "network_manager.py"
+    nm_file = client_path / "setup" / "network.py"
     content = nm_file.read_text()
 
     required_methods = [
         'def switch_to_ap_mode',
-        'def switch_to_client_mode',
-        'def get_current_mode',
-        'def is_in_ap_mode',      # NEW in Phase 5
-        'def cleanup_all_services',
+        'def connect_to_wifi',
+        'def is_in_ap_mode',
+        'def check_initial_connectivity',
+        'def check_network_and_credentials',
+        'def run_wifi_setup_flow',
+        'def run_registration_flow',
+        'def has_saved_credentials',
+        'def attempt_recovery',
     ]
 
     for method in required_methods:
@@ -120,7 +128,6 @@ def test_main_loop_integration():
     main_file = client_path / "main.py"
     content = main_file.read_text()
 
-    # Check state machine usage
     checks = {
         'get_all_state_data': 'state_machine.get_all_state_data()',
         'transition_to': 'state_machine.transition_to(',
@@ -130,12 +137,12 @@ def test_main_loop_integration():
         'render_qr_code': 'renderer.render_qr_code(',
         'render_error': 'renderer.render_error(',
 
-        # Check network manager usage (via cleanup)
-        'is_in_ap_mode': 'network_manager.is_in_ap_mode()',
-
-        # Check setup manager usage (delegates to network manager)
-        'run_wifi_setup': 'setup_manager.run_wifi_setup(',
-        'run_registration_flow': 'setup_manager.run_registration_flow(',
+        # Check network usage - single NetworkManager instance, not four
+        # separate manager/service objects
+        'is_in_ap_mode': 'self.network.is_in_ap_mode()',
+        'run_wifi_setup_flow': 'self.network.run_wifi_setup_flow(',
+        'run_registration_flow': 'self.network.run_registration_flow(',
+        'connect_to_wifi unpacks error_reason': 'success, ip_address, error_reason = self.network.connect_to_wifi(',
     }
 
     for name, call in checks.items():
@@ -143,26 +150,6 @@ def test_main_loop_integration():
         print(f"  ✓ main.py uses {name}")
 
     print("✓ main.py: All integrations verified")
-
-
-def test_setup_manager_methods():
-    """Test SetupManager has all required methods."""
-    print("\n=== Testing SetupManager ===")
-
-    sm_file = client_path / "setup" / "setup_manager.py"
-    content = sm_file.read_text()
-
-    required_methods = [
-        'def run_wifi_setup',
-        'def run_registration_flow',
-        'def check_saved_credentials',
-    ]
-
-    for method in required_methods:
-        assert method in content, f"SetupManager missing: {method}"
-        print(f"  ✓ SetupManager.{method.replace('def ', '')} exists")
-
-    print("✓ SetupManager: All methods verified")
 
 
 def main():
@@ -175,7 +162,6 @@ def main():
         test_state_machine_methods()
         test_renderer_methods()
         test_network_manager_methods()
-        test_setup_manager_methods()
         test_main_loop_integration()
 
         print("\n" + "=" * 60)

@@ -44,9 +44,8 @@ from api_client import StreamSceneAPIClient
 from display import get_display
 from renderer import ContentRenderer
 from states import StateMachine, DeviceState
-from setup.network_manager import NetworkManager
-from setup.setup_manager import SetupManager
-from services import NetworkService, ConfigurationService, SetupService, OTAService
+from setup.network import NetworkManager
+from services import ConfigurationService, OTAService
 
 # Import centralized logging configuration
 from logging_config import (
@@ -87,20 +86,9 @@ class StreamSceneClient:
         self.state_machine = StateMachine(device_uuid=DEVICE_ID)
         state_logger.info(f"Starting in state: {self.state_machine.current_state.value}")
 
-        # Setup components (WiFi, registration)
-        self.network_manager = NetworkManager(device_uuid=DEVICE_ID)
+        # Network (connectivity, hotspot/portal setup flow, registration polling)
+        self.network = NetworkManager(device_uuid=DEVICE_ID)
         main_logger.info("Network manager initialized")
-
-        self.setup_manager = SetupManager(device_uuid=DEVICE_ID, network_manager=self.network_manager)
-        main_logger.info("Setup manager initialized")
-
-        # Network service (business logic for network management)
-        self.network_service = NetworkService(
-            network_manager=self.network_manager,
-            setup_manager=self.setup_manager
-        )
-        self.network_service.initialize()
-        main_logger.info("Network service initialized")
 
         # API client (may not be usable until device is registered)
         self.api_client = StreamSceneAPIClient()
@@ -112,16 +100,6 @@ class StreamSceneClient:
         )
         self.config_service.initialize()
         main_logger.info("Configuration service initialized")
-
-        # Setup service (business logic for WiFi setup and registration)
-        self.setup_service = SetupService(
-            device_uuid=DEVICE_ID,
-            setup_manager=self.setup_manager,
-            network_manager=self.network_manager,
-            config_service=self.config_service
-        )
-        self.setup_service.initialize()
-        main_logger.info("Setup service initialized")
 
         # OTA service (handles over-the-air updates)
         self.ota_service = OTAService(
@@ -260,7 +238,7 @@ class StreamSceneClient:
         """
         Check network status at startup and skip WiFi setup if network is available.
 
-        Uses NetworkService to check connectivity.
+        Uses NetworkManager to check connectivity.
         If ethernet or WiFi is available, skip WiFi setup and go to registration.
         """
         current_state = self.state_machine.current_state
@@ -272,8 +250,8 @@ class StreamSceneClient:
 
         main_logger.info("[Network] Checking initial network status...")
 
-        # Use NetworkService to check connectivity
-        status = self.network_service.check_initial_connectivity()
+        # Use NetworkManager to check connectivity
+        status = self.network.check_initial_connectivity()
 
         if status.connected:
             main_logger.info(f"[Network] {status.connection_type.upper()} connected: {status.ip_address}")
@@ -359,7 +337,7 @@ class StreamSceneClient:
         state_logger.info("Entering WIFI_SETUP state")
 
         # Check if we can skip WiFi setup (ethernet or saved credentials)
-        check_result = self.setup_service.check_network_and_credentials()
+        check_result = self.network.check_network_and_credentials()
 
         if check_result.should_skip_wifi_setup:
             if check_result.connection_type == "ethernet":
@@ -391,7 +369,7 @@ class StreamSceneClient:
         display_logger.info("WiFi setup message displayed")
 
         # Run WiFi setup flow
-        credentials = self.setup_service.run_wifi_setup_flow(timeout=1800)
+        credentials = self.network.run_wifi_setup_flow(timeout=1800)
 
         if credentials:
             wifi_logger.info(f"Successfully obtained credentials for SSID: {credentials['ssid']}")
@@ -428,8 +406,8 @@ class StreamSceneClient:
         self.display.show(image)
         display_logger.info("Connecting message displayed")
 
-        # Connect to WiFi (service handles timeout and error handling)
-        success, ip_address = self.setup_service.connect_to_wifi(
+        # Connect to WiFi
+        success, ip_address, error_reason = self.network.connect_to_wifi(
             ssid=ssid,
             password=password,
             timeout=30
@@ -442,7 +420,7 @@ class StreamSceneClient:
                 "ip_address": ip_address
             })
         else:
-            wifi_logger.error(f"Failed to connect to {ssid}")
+            wifi_logger.error(f"Failed to connect to {ssid} (reason: {error_reason})")
             state_logger.error("WiFi connection failed, returning to WIFI_SETUP")
             self.state_machine.transition_to(DeviceState.WIFI_SETUP)
 
@@ -491,7 +469,7 @@ class StreamSceneClient:
             return
 
         # Get registration URL from service
-        registration_url = self.setup_service.get_registration_url()
+        registration_url = self.network.get_registration_url()
         registration_logger.info(f"Registration URL: {registration_url}")
 
         # Display QR code
@@ -513,7 +491,7 @@ class StreamSceneClient:
         # indistinguishable from a working device. Expiry simply re-enters this
         # state, which re-checks connectivity and resumes polling.
         registration_logger.info("Starting registration polling (10 minute cycle, 10 second interval)")
-        success = self.setup_service.run_registration_flow(
+        success = self.network.run_registration_flow(
             api_client=self.api_client,
             poll_interval=10,
             timeout=600
@@ -608,13 +586,13 @@ class StreamSceneClient:
         """
         Attempt to recover network connection without changing device state.
 
-        Delegates to NetworkService for actual recovery logic.
+        Delegates to NetworkManager for actual recovery logic.
         Stays in READY state to preserve registration.
 
         Returns:
             Tuple of (success: bool, error_reason: Optional[str])
         """
-        return self.network_service.attempt_recovery()
+        return self.network.attempt_recovery()
 
     def _handle_ready(self):
         """Handle READY state - normal operation with smart refresh. Stay in READY even if offline."""
@@ -718,7 +696,7 @@ class StreamSceneClient:
                 # Check if ethernet is down after first failure - immediate WiFi failover
                 if self.consecutive_failures >= 1:
                     # Check if ethernet is down
-                    if not self.network_service.is_ethernet_up():
+                    if not self.network.is_ethernet_up():
                         api_logger.info("Ethernet is DOWN - attempting immediate WiFi failover")
                         success, error_reason = self._attempt_network_recovery()
 
@@ -737,7 +715,7 @@ class StreamSceneClient:
                             # Handle wrong WiFi credentials - transition to WiFi setup
                             if error_reason == "wrong_credentials":
                                 api_logger.error("Wrong WiFi credentials detected - clearing credentials and entering WiFi setup mode")
-                                self.setup_manager.clear_saved_credentials()
+                                self.network.clear_saved_credentials()
 
                                 # Render message before state transition
                                 display_logger.info("Rendering WiFi credentials error message")
@@ -860,9 +838,9 @@ class StreamSceneClient:
 
         try:
             # Stop any active hotspot
-            if self.network_manager.is_in_ap_mode():
+            if self.network.is_in_ap_mode():
                 network_logger.info("Stopping active hotspot")
-                self.network_manager.stop_hotspot()
+                self.network.stop_hotspot()
                 network_logger.info("Hotspot stopped successfully")
 
             # Put display to sleep
