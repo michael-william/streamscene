@@ -327,6 +327,7 @@ apt-get install -y -qq \
     liblcms2-dev \
     libopenjp2-7 \
     dhcpcd5 \
+    isc-dhcp-client \
     rfkill
 
 echo "Disabling dhcpcd daemon (client invokes it per-interface on demand)..."

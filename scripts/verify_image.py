@@ -96,7 +96,7 @@ def network_tooling():
     # explicitly.
     import shutil
 
-    required = ["dhcpcd", "wpa_supplicant", "wpa_cli", "hostapd", "dnsmasq", "rfkill"]
+    required = ["dhclient", "wpa_supplicant", "wpa_cli", "hostapd", "dnsmasq", "rfkill"]
     found, missing = [], []
     for name in required:
         path = shutil.which(name, path="/usr/sbin:/sbin:/usr/bin:/bin")

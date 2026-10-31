@@ -21,6 +21,25 @@ import os
 sys.path.append(str(Path(__file__).parent.parent))
 from logging_config import wifi_logger as logger
 
+DHCLIENT_PIDFILE = "/run/dhclient.wlan0.pid"
+
+
+def release_dhcp_lease() -> None:
+    """Release wlan0's lease and stop any dhclient still holding it.
+
+    dhclient stays running after a lease to renew it. A leftover instance
+    would re-add its address on renewal, so it must go before the hotspot
+    takes wlan0 (hotspot.py calls this too) and before a new attempt.
+    `-r` only reaches the instance named in the pidfile; pkill catches one
+    orphaned by a timeout.
+    """
+    for cmd in (["sudo", "dhclient", "-r", "-pf", DHCLIENT_PIDFILE, "wlan0"],
+                ["sudo", "pkill", "dhclient"]):
+        try:
+            subprocess.run(cmd, check=False, capture_output=True, timeout=10)
+        except subprocess.TimeoutExpired:
+            logger.warning("%s did not return within 10s", " ".join(cmd[1:]))
+
 WIFI_CONFIG_FILE = Path.home() / "streamscene-client" / "wifi_credentials.json"
 WPA_SUPPLICANT_CONF = "/etc/wpa_supplicant/wpa_supplicant.conf"
 
@@ -268,58 +287,37 @@ def connect_to_wifi(ssid: str, password: str, timeout: int = 45) -> Tuple[bool, 
             # Timeout - log final state for diagnostics
             logger.warning(f"WiFi association timeout after {association_timeout}s (final state: {last_state})")
 
-        # Step 3: Request DHCP lease using dhcpcd (Raspberry Pi OS default)
-        logger.debug("Requesting DHCP lease with dhcpcd...")
-
-        # dhcpcd forks into the background even under -1/--oneshot, so a
-        # previous attempt that got killed by this function's own subprocess
-        # timeout (see the -1 -4 call below) can leave an orphaned dhcpcd
-        # process still holding wlan0 - confirmed from device logs:
-        # "dhcpcd already running on pid 1260" caused every attempt after the
-        # first timeout to fail immediately. -k alone only releases the
-        # lease, it does not reliably reach a process that already detached;
-        # pkill first to guarantee a clean slate.
-        subprocess.run(
-            ["sudo", "pkill", "-9", "dhcpcd"],
-            check=False,
-            capture_output=True,
-            timeout=5
-        )
-        subprocess.run(
-            ["sudo", "dhcpcd", "-k", "wlan0"],
-            check=False,
-            capture_output=True,
-            timeout=5
-        )
-        time.sleep(1)
-
-        # Request a fresh lease. -n/--rebind asks dhcpcd to rebind an
-        # EXISTING lease; after -k just released it, there is nothing to
-        # rebind and this was silently a no-op. -1/--oneshot requests a new
-        # lease and exits once it has one (or fails) - the actual primitive
-        # needed here.
+        # Step 3: Request a DHCP lease with dhclient.
         #
-        # -4 forces IPv4 only. Without it, dhcpcd also tries to configure
-        # IPv6 (waiting for a Router Advertisement for SLAAC) before -1 will
-        # return - confirmed from device logs: wpa_supplicant reached
-        # wpa_state=COMPLETED in ~2s every time, but `dhcpcd -1 wlan0` then
-        # hung for the full 30s and was killed by this call's own timeout,
-        # every attempt. This network apparently doesn't answer IPv6 RA, so
-        # dhcpcd never returned even after it already had a v4 lease.
+        # NOT dhcpcd: Debian bookworm's dhcpcd 9.4.1 seccomp sandbox has no
+        # rule for getrandom (syscall 384) on 32-bit ARM, so the kernel kills
+        # its unprivileged manager with SIGSYS right after "IAID ..." - before
+        # it ever sends a DHCPDISCOVER. Symptom: wpa_state=COMPLETED in ~2s,
+        # then `dhcpcd -1` hangs until our timeout, every attempt, logging only
+        # "ps_ctl_listen: read: Success". Confirmed on a Pi Zero 2 W via
+        # `audit: type=1326 ... comm="dhcpcd" sig=31 syscall=384`. There is no
+        # runtime switch to disable dhcpcd's privsep/seccomp, and no fixed
+        # package in the bookworm/raspbian repos.
+        logger.debug("Requesting DHCP lease with dhclient...")
+        release_dhcp_lease()
+
+        # -1: try once and exit non-zero if no lease; on success dhclient
+        # backgrounds itself to renew. -4: IPv4 only.
         try:
             result = subprocess.run(
-                ["sudo", "dhcpcd", "-1", "-4", "wlan0"],
+                ["sudo", "dhclient", "-1", "-4", "-pf", DHCLIENT_PIDFILE, "wlan0"],
                 check=False,
                 capture_output=True,
                 timeout=30
             )
             if result.returncode != 0:
                 logger.warning(
-                    "dhcpcd -1 -4 exited %s: %s", result.returncode,
-                    result.stderr.decode(errors="replace").strip()
+                    "dhclient -1 -4 exited %s: %s", result.returncode,
+                    result.stderr.decode(errors="replace").strip()[-500:]
                 )
         except subprocess.TimeoutExpired:
-            logger.error("dhcpcd -1 -4 wlan0 did not return within 30s")
+            logger.error("dhclient -1 -4 wlan0 did not return within 30s")
+            release_dhcp_lease()
 
         # Step 4: Wait for connection
         logger.debug(f"Waiting for connection (timeout: {timeout}s)...")
@@ -621,12 +619,7 @@ def disconnect_wifi() -> bool:
             capture_output=True
         )
 
-        # Release DHCP lease
-        subprocess.run(
-            ["sudo", "dhcpcd", "-k", "wlan0"],
-            check=False,
-            capture_output=True
-        )
+        release_dhcp_lease()
 
         logger.info("✓ Disconnected from WiFi")
         return True

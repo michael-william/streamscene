@@ -14,6 +14,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
 from logging_config import hotspot_logger, log_subprocess_output
+from .wifi_client import release_dhcp_lease
 
 # Configuration file paths
 HOSTAPD_CONF = "/etc/hostapd/hostapd.conf"
@@ -145,6 +146,11 @@ def create_hotspot(ssid: str, password: str = "streamscene") -> bool:
             timeout=5
         )
         log_subprocess_output(hotspot_logger, result, "pkill wpa_supplicant")
+
+        # A dhclient left from client mode keeps renewing its lease and would
+        # put its address back on wlan0 over the static 192.168.4.1.
+        hotspot_logger.info("Releasing any wlan0 DHCP lease")
+        release_dhcp_lease()
         time.sleep(1)
 
         # Step 2: Bring down wlan0
