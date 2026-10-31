@@ -182,12 +182,27 @@ download_base_image() {
 mount_image() {
     log_step "Mounting image..."
 
+    # The stock root partition has just enough room for a normal build; the
+    # debug tooling (Tailscale etc.) does not fit. Grow it by 1G for --debug
+    # only. Pi OS still expands root to the whole card on first boot.
+    if [ "$DEBUG_IMAGE" -eq 1 ]; then
+        log_info "Growing root partition by 1G for debug tooling..."
+        truncate -s +1G "$BASE_IMAGE"
+        parted -s "$BASE_IMAGE" resizepart 2 100%
+    fi
+
     # Set up loop device
     LOOP_DEVICE=$(sudo losetup -f --show --partscan "$BASE_IMAGE")
     log_info "Loop device: $LOOP_DEVICE"
 
     # Wait for partitions to appear
     sleep 2
+
+    if [ "$DEBUG_IMAGE" -eq 1 ]; then
+        # e2fsck exits 1 when it fixed something, which is fine here.
+        sudo e2fsck -fy "${LOOP_DEVICE}p2" > /dev/null || [ $? -le 1 ]
+        sudo resize2fs "${LOOP_DEVICE}p2" > /dev/null
+    fi
 
     # Create mount point
     mkdir -p "$WORK_DIR/mount"
