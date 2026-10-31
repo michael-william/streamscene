@@ -522,6 +522,13 @@ install_configurations() {
     sudo mkdir -p "$MOUNT_DIR/var/log/streamscene"
     sudo chown 1000:1000 "$MOUNT_DIR/var/log/streamscene"
 
+    # OTA state lives in /var/lib/streamscene/ota (client/config.py). The
+    # client runs as pi and cannot create it under root-owned /var/lib, so
+    # every update check and state save failed with EACCES.
+    log_info "Creating OTA state directory..."
+    sudo mkdir -p "$MOUNT_DIR/var/lib/streamscene"
+    sudo chown 1000:1000 "$MOUNT_DIR/var/lib/streamscene"
+
     log_info "System configurations installed"
 }
 

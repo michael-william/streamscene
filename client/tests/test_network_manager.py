@@ -91,6 +91,25 @@ class TestEthernetDisabled(unittest.TestCase):
         self.assertFalse(result.should_skip_wifi_setup)
 
 
+class TestIsWifiConnected(unittest.TestCase):
+    def setUp(self):
+        self.nm = NetworkManager(device_uuid="test-device-uuid")
+
+    @patch("setup.network.get_ip_address", return_value="192.168.1.207")
+    @patch("setup.network.is_connected", return_value=True)
+    def test_connected_with_ip(self, _c, _ip):
+        self.assertTrue(self.nm.is_wifi_connected())
+
+    @patch("setup.network.is_connected", return_value=False)
+    def test_not_associated(self, _c):
+        self.assertFalse(self.nm.is_wifi_connected())
+
+    @patch("setup.network.get_ip_address", return_value=None)
+    @patch("setup.network.is_connected", return_value=True)
+    def test_associated_without_ip(self, _c, _ip):
+        self.assertFalse(self.nm.is_wifi_connected())
+
+
 class TestNetworkManagerConnect(unittest.TestCase):
     """connect_to_wifi - the path that used to be spread across 4 layers."""
 

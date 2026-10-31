@@ -253,9 +253,23 @@ class StreamSceneClient:
         """
         current_state = self.state_machine.current_state
 
-        # Only check network if currently in WIFI_SETUP or CONNECTING state
+        # Past setup (e.g. rebooted in READY): nothing here used to bring WiFi
+        # back up - the device only reconnected after a content fetch failed
+        # and triggered failover. Reconnect with the saved credentials now.
         if current_state not in [DeviceState.WIFI_SETUP, DeviceState.CONNECTING]:
-            main_logger.debug("[Network] Skipping initial network check (not in setup state)")
+            if (
+                not self.network.is_ethernet_available()
+                and not self.network.is_wifi_connected()
+                and self.network.has_saved_credentials()
+            ):
+                main_logger.info(
+                    f"[Network] Resuming in {current_state.value} with no network - reconnecting saved WiFi"
+                )
+                success, error_reason = self._attempt_network_recovery()
+                if not success:
+                    main_logger.warning(
+                        f"[Network] Startup WiFi reconnect failed ({error_reason}); READY will retry"
+                    )
             return
 
         main_logger.info("[Network] Checking initial network status...")
@@ -715,9 +729,13 @@ class StreamSceneClient:
 
                 # Check if ethernet is down after first failure - immediate WiFi failover
                 if self.consecutive_failures >= 1:
-                    # Check if ethernet is down
-                    if not self.network.is_ethernet_up():
-                        api_logger.info("Ethernet is DOWN - attempting immediate WiFi failover")
+                    # Reconnect only when there is actually no link. With WiFi
+                    # still connected the failure is the server or the internet,
+                    # and tearing WiFi down and back up (as this used to on every
+                    # failure when eth0 is absent, i.e. on every shipped device)
+                    # only adds an outage.
+                    if not self.network.is_ethernet_up() and not self.network.is_wifi_connected():
+                        api_logger.info("No ethernet and WiFi is down - attempting immediate WiFi failover")
                         success, error_reason = self._attempt_network_recovery()
 
                         if success:
@@ -765,10 +783,10 @@ class StreamSceneClient:
                             image = self.renderer.render_error(error_message)
                             self._show(image)
                     else:
-                        # Ethernet still up - wait for 2nd failure before showing error
+                        # A link is up - wait for 2nd failure before showing error
                         if self.consecutive_failures >= 2:
-                            # Network issue but ethernet is up - show generic error
-                            display_logger.info("Rendering error message (ethernet up, likely server issue)")
+                            # Link is up, so likely a server/internet issue
+                            display_logger.info("Rendering error message (link up, likely server issue)")
                             image = self.renderer.render_error("Unable to fetch content. Check network connection.")
                             self._show(image)
 

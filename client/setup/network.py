@@ -150,6 +150,10 @@ class NetworkManager:
             return NetworkStatus(False, None, None, None, None)
         return NetworkStatus(True, "wifi", ip_address, "wlan0", self.get_saved_ssid())
 
+    def is_wifi_connected(self) -> bool:
+        """wlan0 is associated and has a client IP."""
+        return self._check_wifi().connected
+
     def check_initial_connectivity(self) -> NetworkStatus:
         """Ethernet first, then WiFi with saved credentials, else disconnected."""
         logger.info("[Network] Checking initial network connectivity...")
