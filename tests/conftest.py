@@ -57,6 +57,7 @@ def sample_stream(session, sample_user) -> models.Stream:
     stream = models.Stream(
         owner_id=sample_user.id,
         name="Test Stream",
+        slug="test-stream",  # NOT NULL since slugs were added
         description="A test stream",
         is_public=False,
         allow_text=True,

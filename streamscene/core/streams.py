@@ -1019,8 +1019,32 @@ def register_device(
         )
         session.add(device)
 
+    # A device with no stream can only show "No stream configured", so start
+    # it on the stream the user already uses elsewhere (their most recently
+    # registered device with a stream), else their newest own stream.
+    if device.current_stream_id is None:
+        device.current_stream_id = _default_stream_id(session, user_id, device_uuid)
+
     session.flush()
     return device, api_key
+
+
+def _default_stream_id(session: Session, user_id: UUID, device_uuid: UUID) -> Optional[UUID]:
+    """Stream a newly registered device should start on, or None."""
+    other = (
+        session.query(Device)
+        .filter(
+            Device.user_id == user_id,
+            Device.device_uuid != device_uuid,
+            Device.current_stream_id.isnot(None),
+        )
+        .order_by(desc(Device.registered_at))
+        .first()
+    )
+    if other:
+        return other.current_stream_id
+    own = get_user_streams(session, user_id)
+    return own[0].id if own else None
 
 
 def get_device_content(session: Session, device_id: UUID, rotation_index: int = 0) -> Optional[dict]:

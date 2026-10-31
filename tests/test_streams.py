@@ -459,3 +459,40 @@ def test_can_user_post_to_stream_not_subscribed(session, sample_user2, sample_st
         session, sample_user2.id, sample_stream.id
     )
     assert can_post is False
+
+
+# ============================================================================
+# DEVICE REGISTRATION: DEFAULT STREAM
+# ============================================================================
+
+
+def test_register_device_defaults_to_users_stream(session, sample_user, sample_stream):
+    """A new device starts on the user's stream instead of "No stream configured"."""
+    import uuid
+
+    device, _ = streams.register_device(session, uuid.uuid4(), sample_user.id)
+
+    assert device.current_stream_id == sample_stream.id
+
+
+def test_register_device_copies_stream_from_users_other_device(session, sample_user, sample_stream):
+    """Prefer the stream the user already shows on another device over their newest stream."""
+    import uuid
+
+    first, _ = streams.register_device(session, uuid.uuid4(), sample_user.id)
+    newer = streams.create_stream(session, owner_id=sample_user.id, name="Newer Stream")
+    session.flush()
+
+    second, _ = streams.register_device(session, uuid.uuid4(), sample_user.id)
+
+    assert first.current_stream_id == sample_stream.id
+    assert second.current_stream_id == sample_stream.id
+    assert second.current_stream_id != newer.id
+
+
+def test_register_device_without_streams_has_none(session, sample_user):
+    import uuid
+
+    device, _ = streams.register_device(session, uuid.uuid4(), sample_user.id)
+
+    assert device.current_stream_id is None
