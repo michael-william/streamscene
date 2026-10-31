@@ -88,6 +88,18 @@ class StreamSceneAPIClient:
 
         return session
 
+    def set_api_key(self, api_key: str) -> None:
+        """Start authenticating with a newly obtained API key.
+
+        The session is built once at startup, in setup mode with no key. After
+        registration the key must be put on that session too; otherwise every
+        authenticated call goes out without X-Device-Api-Key and the server
+        answers 422 (missing header).
+        """
+        self.api_key = api_key
+        self.session.headers["X-Device-Api-Key"] = api_key
+        print("[API Client] API key: present (set after registration)")
+
     def fetch_content(self, rotation_index: Optional[int] = None) -> Optional[Dict[str, Any]]:
         """
         Fetch current content to display from the API.

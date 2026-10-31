@@ -564,6 +564,7 @@ class StreamSceneClient:
             # For now, transition to ready and let it fail if key is missing
             registration_logger.warning("Proceeding without API key - may need manual intervention")
         else:
+            self.api_client.set_api_key(api_key)
             registration_logger.info("API key loaded successfully")
 
         # Display success message

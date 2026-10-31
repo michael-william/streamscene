@@ -37,6 +37,14 @@ ExecStartPre=/usr/bin/sudo /usr/sbin/rfkill unblock all
 # Start the client
 ExecStart=/home/pi/streamscene-client/venv/bin/python3 main.py
 
+# wpa_supplicant and dhclient run inside this service, so stopping or
+# restarting it SIGKILLs them (KillMode=mixed) and dhclient never removes its
+# address. wlan0 then keeps its IP and a preferred default route on a link that
+# is no longer associated, and every packet - including replies on eth0 -
+# goes into a dead interface. Clear wlan0 so the next start reconnects
+# cleanly. "+" runs this as root despite User=pi.
+ExecStopPost=+/usr/sbin/ip addr flush dev wlan0
+
 # Restart policy - always restart on failure
 Restart=always
 RestartSec=10s
