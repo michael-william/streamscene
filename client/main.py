@@ -63,6 +63,9 @@ from logging_config import (
     ota_logger,
 )
 
+# Sentinel for "the panel is not showing fetched content" (see _show).
+_NOT_CONTENT = object()
+
 
 class StreamSceneClient:
     """Main client application with state machine."""
@@ -123,7 +126,11 @@ class StreamSceneClient:
         self.last_heartbeat = 0
 
         # Content tracking for smart refresh
-        self.last_displayed_post_id = None
+        # What the panel shows: a post_id, or _NOT_CONTENT for anything else
+        # (nothing yet, QR, messages, errors). Content with post_id None - e.g.
+        # the server's "No stream configured" - must still be drawn the first
+        # time, and again after any other screen replaced it.
+        self.last_displayed_post_id = _NOT_CONTENT
         self.rotation_index = 0
 
         main_logger.info("Initialization complete")
@@ -368,7 +375,7 @@ class StreamSceneClient:
             "WiFi Setup",
             "Connect to the WiFi hotspot:\n\nStreamScene-XXXX\n\nPassword: streamscene\n\nA setup page will open automatically."
         )
-        self.display.show(image)
+        self._show(image)
         display_logger.info("WiFi setup message displayed")
 
         # Run WiFi setup flow
@@ -406,7 +413,7 @@ class StreamSceneClient:
             "Connecting to WiFi",
             f"Connecting to:\n{ssid}\n\nPlease wait..."
         )
-        self.display.show(image)
+        self._show(image)
         display_logger.info("Connecting message displayed")
 
         # Connect to WiFi
@@ -482,7 +489,7 @@ class StreamSceneClient:
             title="Scan to Register",
             instructions="1. Scan QR code with phone\n2. Log in to StreamScene\n3. Choose a nickname\n4. Click Register"
         )
-        self.display.show(image)
+        self._show(image)
         display_logger.info("QR code displayed")
 
         # Poll for registration (service handles polling logic)
@@ -546,7 +553,7 @@ class StreamSceneClient:
                     "WiFi network to set up again."
                 ),
             )
-            self.display.show(image)
+            self._show(image)
         except Exception as e:
             display_logger.warning("Could not render offline notice: %s", e)
 
@@ -574,7 +581,7 @@ class StreamSceneClient:
             "Your device is now registered.\n\nStarting normal operation...",
             color="green"
         )
-        self.display.show(image)
+        self._show(image)
         display_logger.info("Success message displayed")
 
         registration_logger.info("Showing success message for 5 seconds")
@@ -597,6 +604,15 @@ class StreamSceneClient:
             Tuple of (success: bool, error_reason: Optional[str])
         """
         return self.network.attempt_recovery()
+
+    def _show(self, image, post_id=_NOT_CONTENT):
+        """Draw to the panel and remember what is on it.
+
+        Non-content screens omit post_id and record _NOT_CONTENT, so the next
+        content fetch redraws even if its post_id (possibly None) is unchanged.
+        """
+        self.display.show(image)
+        self.last_displayed_post_id = post_id
 
     def _handle_ready(self):
         """Handle READY state - normal operation with smart refresh. Stay in READY even if offline."""
@@ -668,20 +684,20 @@ class StreamSceneClient:
                         image = self.api_client.fetch_content_image(rotation_index=self.rotation_index)
                         if image:
                             display_logger.info("Displaying server-rendered image on E Ink display")
-                            self.display.show(image)
+                            self._show(image, post_id=current_post_id)
                         else:
                             display_logger.warning("Failed to download rendered image, falling back to local rendering")
                             image = self.renderer.render_content(content)
-                            self.display.show(image)
+                            self._show(image, post_id=current_post_id)
                     else:
                         # Fallback to local rendering for legacy content
                         display_logger.info("Rendering fetched content to image (local)")
                         image = self.renderer.render_content(content)
                         display_logger.info("Displaying image on E Ink display")
-                        self.display.show(image)
+                        self._show(image, post_id=current_post_id)
 
                     # Update tracking
-                    self.last_displayed_post_id = current_post_id
+                    # (self._show recorded current_post_id as what is on screen)
 
                     # Increment rotation index for next cycle (wraps automatically on server)
                     if rotation_enabled:
@@ -726,7 +742,7 @@ class StreamSceneClient:
                                 image = self.renderer.render_error(
                                     "Wrong WiFi password.\n\nEntering WiFi setup mode..."
                                 )
-                                self.display.show(image)
+                                self._show(image)
                                 time.sleep(5)  # Give user time to see message
 
                                 # Transition to WiFi setup
@@ -747,14 +763,14 @@ class StreamSceneClient:
                                 error_message = "WiFi connection timeout.\n\nCheck network signal."
 
                             image = self.renderer.render_error(error_message)
-                            self.display.show(image)
+                            self._show(image)
                     else:
                         # Ethernet still up - wait for 2nd failure before showing error
                         if self.consecutive_failures >= 2:
                             # Network issue but ethernet is up - show generic error
                             display_logger.info("Rendering error message (ethernet up, likely server issue)")
                             image = self.renderer.render_error("Unable to fetch content. Check network connection.")
-                            self.display.show(image)
+                            self._show(image)
 
             # Send heartbeat if needed
             if time.time() - self.last_heartbeat >= HEARTBEAT_INTERVAL:
@@ -800,7 +816,7 @@ class StreamSceneClient:
         image = self.renderer.render_error(
             f"Error: {error}\n\nAttempting recovery..."
         )
-        self.display.show(image)
+        self._show(image)
         display_logger.info("Error message displayed")
 
         # Wait before attempting recovery
