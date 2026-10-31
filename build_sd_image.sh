@@ -29,9 +29,26 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLIENT_DIR="$SCRIPT_DIR/client"
 CONFIG_DIR="$SCRIPT_DIR/config"
 VERSION="1.2.1"
+DEBUG_DIR="$SCRIPT_DIR/debug"
+
+# --debug: bench-debug image (see debug/README.md). Adds a root SSH key, a
+# Tailscale auth key and live journal forwarding. NEVER distribute.
+#   DEBUG_SSH_PUBKEY   file with the public key(s) allowed to SSH in as root
+#   DEBUG_TS_AUTHKEY   file holding an ephemeral, tagged Tailscale auth key
+DEBUG_IMAGE=0
+if [ "${1:-}" = "--debug" ]; then
+    DEBUG_IMAGE=1
+elif [ -n "${1:-}" ]; then
+    echo "Usage: sudo $0 [--debug]" >&2
+    exit 2
+fi
+BUILD_REV="${BUILD_REV:-$(git -C "$SCRIPT_DIR" rev-parse --short HEAD 2>/dev/null || echo nogit)}"
+
 # A dev image (WiFi pre-seeded) is named differently so it cannot be confused
 # with a distributable one - it contains a plaintext WiFi password.
-if [ -n "${DEV_WIFI_SSID:-}" ]; then
+if [ "$DEBUG_IMAGE" -eq 1 ]; then
+    OUTPUT_IMAGE="streamscene-client-${VERSION}-DEBUG-${BUILD_REV}-$(date +%Y%m%d-%H%M)-DO-NOT-DISTRIBUTE.img"
+elif [ -n "${DEV_WIFI_SSID:-}" ]; then
     OUTPUT_IMAGE="streamscene-client-${VERSION}-DEV-DO-NOT-DISTRIBUTE.img"
 else
     OUTPUT_IMAGE="streamscene-client-${VERSION}.img"
@@ -124,6 +141,19 @@ check_requirements() {
     if [ "$AVAILABLE_SPACE" -lt 8388608 ]; then
         log_error "Insufficient disk space in /tmp (need at least 8GB)"
         exit 1
+    fi
+
+    if [ "$DEBUG_IMAGE" -eq 1 ]; then
+        for var in DEBUG_SSH_PUBKEY DEBUG_TS_AUTHKEY; do
+            if [ ! -s "${!var:-}" ]; then
+                log_error "--debug needs $var pointing at a non-empty file"
+                exit 1
+            fi
+        done
+        if [ ! -d "$DEBUG_DIR" ]; then
+            log_error "--debug needs $DEBUG_DIR"
+            exit 1
+        fi
     fi
 
     log_info "All requirements met"
@@ -512,6 +542,122 @@ install_systemd_services() {
     log_info "Systemd services installed and enabled"
 }
 
+install_debug_tooling() {
+    log_step "Installing DEBUG tooling (this image must never be distributed)..."
+
+    MOUNT_DIR="$WORK_DIR/mount"
+    local R="$MOUNT_DIR"
+    local WANTS="$R/etc/systemd/system/multi-user.target.wants"
+
+    # Packages: Tailscale (its own apt repo) and journal-upload.
+    sudo mount -t proc  proc  "$R/proc"
+    sudo mount -t sysfs sysfs "$R/sys"
+    sudo mount --bind /dev     "$R/dev"
+    sudo mount --bind /dev/pts "$R/dev/pts"
+    if [ "$(uname -m)" = "x86_64" ]; then
+        sudo cp /usr/bin/qemu-arm-static "$R/usr/bin/"
+    fi
+    cat > "$WORK_DIR/install_debug.sh" << 'EOF'
+#!/bin/bash
+set -e
+export DEBIAN_FRONTEND=noninteractive
+curl -fsSL https://pkgs.tailscale.com/stable/raspbian/bookworm.noarmor.gpg \
+    -o /usr/share/keyrings/tailscale-archive-keyring.gpg
+curl -fsSL https://pkgs.tailscale.com/stable/raspbian/bookworm.tailscale-keyring.list \
+    -o /etc/apt/sources.list.d/tailscale.list
+apt-get update -qq
+apt-get install -y -qq tailscale systemd-journal-remote
+apt-get clean
+EOF
+    sudo install -m 0755 "$WORK_DIR/install_debug.sh" "$R/tmp/install_debug.sh"
+    DEBUG_STATUS=0
+    sudo chroot "$R" /tmp/install_debug.sh || DEBUG_STATUS=$?
+    sudo rm -f "$R/tmp/install_debug.sh"
+    sudo umount "$R/dev/pts" "$R/dev" "$R/sys" "$R/proc" 2>/dev/null || true
+    if [ "$(uname -m)" = "x86_64" ]; then
+        sudo rm -f "$R/usr/bin/qemu-arm-static"
+    fi
+    if [ $DEBUG_STATUS -ne 0 ]; then
+        log_error "Debug package installation failed (exit $DEBUG_STATUS) - aborting."
+        exit 1
+    fi
+
+    # Root SSH, key only.
+    log_info "Installing root SSH key..."
+    sudo install -d -m 0700 "$R/root/.ssh"
+    sudo install -m 0600 "$DEBUG_SSH_PUBKEY" "$R/root/.ssh/authorized_keys"
+
+    # eth0 owned by systemd-networkd, out of reach of the client's dhcpcd/hotspot
+    # handling. wait-online is masked: with the dongle unplugged it would stall
+    # boot for two minutes.
+    log_info "Handing eth0 to systemd-networkd..."
+    sudo install -m 0644 "$DEBUG_DIR/eth0.network" "$R/etc/systemd/network/10-streamscene-eth0.network"
+    sudo install -d "$R/etc/systemd/networkd.conf.d"
+    sudo install -m 0644 "$DEBUG_DIR/networkd-foreign.conf" "$R/etc/systemd/networkd.conf.d/streamscene-debug.conf"
+    sudo ln -sf /lib/systemd/system/systemd-networkd.service "$WANTS/systemd-networkd.service"
+    sudo ln -sf /dev/null "$R/etc/systemd/system/systemd-networkd-wait-online.service"
+    # Without resolved, networkd does not write resolv.conf. Static fallback so
+    # Tailscale and journal-upload resolve while only eth0 is up; dhcpcd
+    # overwrites it once wlan0 gets a lease.
+    sudo rm -f "$R/etc/resolv.conf"
+    printf 'nameserver 192.168.1.1\nnameserver 1.1.1.1\n' | sudo tee "$R/etc/resolv.conf" > /dev/null
+
+    log_info "Persistent journal + live upload to CT118..."
+    sudo install -d "$R/var/log/journal" "$R/etc/systemd/journald.conf.d" \
+        "$R/etc/systemd/journal-upload.conf.d" "$R/etc/systemd/system/systemd-journal-upload.service.d"
+    sudo install -m 0644 "$DEBUG_DIR/journald-persistent.conf" "$R/etc/systemd/journald.conf.d/streamscene-debug.conf"
+    sudo install -m 0644 "$DEBUG_DIR/journal-upload.conf" "$R/etc/systemd/journal-upload.conf.d/streamscene-debug.conf"
+    sudo install -m 0644 "$DEBUG_DIR/journal-upload-restart.conf" \
+        "$R/etc/systemd/system/systemd-journal-upload.service.d/restart.conf"
+    sudo ln -sf /lib/systemd/system/systemd-journal-upload.service "$WANTS/systemd-journal-upload.service"
+
+    log_info "Tailscale..."
+    sudo install -d -m 0700 "$R/etc/streamscene-debug"
+    sudo install -m 0600 "$DEBUG_TS_AUTHKEY" "$R/etc/streamscene-debug/ts-authkey"
+    sudo install -m 0644 "$DEBUG_DIR/streamscene-tailscale-up.service" "$R/etc/systemd/system/"
+    sudo ln -sf /lib/systemd/system/tailscaled.service "$WANTS/tailscaled.service"
+    sudo ln -sf /etc/systemd/system/streamscene-tailscale-up.service "$WANTS/streamscene-tailscale-up.service"
+
+    log_info "Heartbeat + reset-to-firstboot..."
+    sudo install -m 0755 "$DEBUG_DIR/streamscene-heartbeat.sh" "$R/usr/local/sbin/streamscene-heartbeat"
+    sudo install -m 0755 "$DEBUG_DIR/reset-to-firstboot" "$R/usr/local/sbin/reset-to-firstboot"
+    sudo install -m 0644 "$DEBUG_DIR/streamscene-heartbeat.service" "$DEBUG_DIR/streamscene-heartbeat.timer" \
+        "$R/etc/systemd/system/"
+    sudo install -d "$R/etc/systemd/system/timers.target.wants"
+    sudo ln -sf /etc/systemd/system/streamscene-heartbeat.timer \
+        "$R/etc/systemd/system/timers.target.wants/streamscene-heartbeat.timer"
+    # first_boot.sh deletes itself; keep copies so `reset-to-firstboot --full` can re-arm it.
+    sudo install -d "$R/usr/local/share/streamscene-debug"
+    sudo install -m 0644 "$CLIENT_DIR/first_boot.sh" "$CLIENT_DIR/streamscene-firstboot.service" \
+        "$R/usr/local/share/streamscene-debug/"
+
+    echo "streamscene-debug" | sudo tee "$R/etc/hostname" > /dev/null
+    sudo sed -i 's/^127\.0\.1\.1.*/127.0.1.1\tstreamscene-debug/' "$R/etc/hosts"
+    echo "debug image built from $BUILD_REV on $(date -Is)" | sudo tee "$R/etc/streamscene-debug/BUILD" > /dev/null
+
+    for f in usr/bin/tailscale usr/lib/systemd/systemd-journal-upload root/.ssh/authorized_keys \
+             etc/streamscene-debug/ts-authkey etc/systemd/network/10-streamscene-eth0.network; do
+        if [ ! -e "$R/$f" ]; then
+            log_error "Debug tooling missing /$f - aborting."
+            exit 1
+        fi
+    done
+    log_info "Debug tooling installed"
+}
+
+# A normal build must not contain anything from --debug.
+assert_no_debug_artifacts() {
+    local R="$WORK_DIR/mount"
+    for f in etc/streamscene-debug root/.ssh/authorized_keys usr/local/sbin/reset-to-firstboot \
+             etc/systemd/network/10-streamscene-eth0.network etc/systemd/journal-upload.conf.d; do
+        if [ -e "$R/$f" ]; then
+            log_error "Distribution image contains debug artifact /$f - aborting."
+            exit 1
+        fi
+    done
+    log_info "No debug artifacts present"
+}
+
 finalize_image() {
     log_step "Finalizing image..."
 
@@ -567,6 +713,11 @@ main() {
     install_client
     install_configurations
     install_systemd_services
+    if [ "$DEBUG_IMAGE" -eq 1 ]; then
+        install_debug_tooling
+    else
+        assert_no_debug_artifacts
+    fi
     finalize_image
     create_checksum
 
@@ -596,6 +747,12 @@ main() {
     echo "5. Device will connect to WiFi and display QR code"
     echo "6. Scan QR code to register device"
     echo ""
+    if [ "$DEBUG_IMAGE" -eq 1 ]; then
+        echo -e "${RED}DEBUG IMAGE - DO NOT DISTRIBUTE${NC} (root SSH key, Tailscale key, journal forwarding)"
+        echo "  ssh root@streamscene-debug   (tailnet)  or root@<eth0 DHCP IP>"
+        echo "  logs on CT118: journalctl -D /var/log/journal/remote -t streamscene-heartbeat"
+        echo ""
+    fi
 }
 
 main

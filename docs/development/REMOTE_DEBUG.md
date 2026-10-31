@@ -12,6 +12,30 @@ For the two other environments see the table in
 
 ---
 
+## At home: the bench debug image
+
+For the home bench (Pi on a USB-ethernet dongle on the LAN) there is a built
+debug image: `sudo ./build_sd_image.sh --debug` (wrapper on the Proxmox host:
+`/root/streamscene-build/build_debug.sh`, which publishes the `.img.xz` to the
+NAS share `Tailgate/StreamScene-images/` for Raspberry Pi Imager). It keeps you
+on the device through every phase, hotspot included:
+
+- **eth0 is owned by systemd-networkd**, not the client. Shipped images mask
+  NetworkManager and the dhcpcd daemon and the WiFi code runs
+  `pkill -9 dhcpcd`, so on a normal image the dongle gets one lease at most and
+  then drops off the network. That is why the bench Pi kept vanishing.
+- **root SSH by key**, plus **Tailscale** (`ssh root@streamscene-debug`).
+- **Logs**: persistent journal (`journalctl -b -1`) and live upload to CT118
+  (`journalctl -D /var/log/journal/remote ...`), with a 30s
+  `streamscene-heartbeat` line giving IPs, mode and client state.
+- **`reset-to-firstboot [--full]`** re-runs onboarding without reflashing.
+
+No WiFi is pre-seeded, so the real hotspot + captive portal flow runs while you
+watch over eth0. Details and file list: `debug/README.md`. A normal build
+aborts if any debug artifact is present.
+
+---
+
 ## The problem
 
 The distribution flow (hotspot → captive portal → QR) is designed so a

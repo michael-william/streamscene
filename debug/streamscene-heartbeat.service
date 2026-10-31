@@ -1,0 +1,7 @@
+[Unit]
+Description=StreamScene debug heartbeat
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/streamscene-heartbeat
+SyslogIdentifier=streamscene-heartbeat

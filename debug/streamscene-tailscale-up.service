@@ -1,0 +1,14 @@
+[Unit]
+Description=StreamScene debug: join tailnet
+After=tailscaled.service
+Wants=tailscaled.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/tailscale up --auth-key=file:/etc/streamscene-debug/ts-authkey --hostname=streamscene-debug
+Restart=on-failure
+RestartSec=15s
+
+[Install]
+WantedBy=multi-user.target
