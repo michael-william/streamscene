@@ -617,6 +617,12 @@ EOF
     sudo rm -f "$R/etc/resolv.conf"
     printf 'nameserver 192.168.1.1\nnameserver 1.1.1.1\n' | sudo tee "$R/etc/resolv.conf" > /dev/null
 
+    # ...and the client must not count eth0 as its network, so the real
+    # hotspot/captive-portal flow runs while the bench stays reachable.
+    sudo install -d "$R/etc/systemd/system/streamscene-client.service.d"
+    sudo install -m 0644 "$DEBUG_DIR/client-ignore-eth0.conf" \
+        "$R/etc/systemd/system/streamscene-client.service.d/debug-ignore-eth0.conf"
+
     log_info "Persistent journal + live upload to CT118..."
     sudo install -d "$R/var/log/journal" "$R/etc/systemd/journald.conf.d" \
         "$R/etc/systemd/journal-upload.conf.d" "$R/etc/systemd/system/systemd-journal-upload.service.d"

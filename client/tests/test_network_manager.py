@@ -54,6 +54,43 @@ class TestNetworkManagerConnectivity(unittest.TestCase):
         self.assertEqual(result.credentials["ssid"], "TestNet")
 
 
+class TestEthernetDisabled(unittest.TestCase):
+    """STREAMSCENE_ETHERNET_ENABLED=false: eth0 with an IP must be ignored."""
+
+    ETH0_UP = MagicMock(
+        returncode=0,
+        stdout="2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> state UP\n"
+               "    inet 192.168.1.52/24 metric 2000 scope global eth0\n",
+    )
+
+    def setUp(self):
+        self.nm = NetworkManager(device_uuid="test-device-uuid")
+
+    @patch("setup.network.subprocess.run")
+    def test_enabled_sees_eth0(self, run):
+        run.return_value = self.ETH0_UP
+        self.assertTrue(self.nm.is_ethernet_available())
+        self.assertEqual(self.nm.get_ethernet_ip(), "192.168.1.52")
+        self.assertTrue(self.nm.is_ethernet_up())
+
+    @patch("setup.network.ETHERNET_ENABLED", False)
+    @patch("setup.network.subprocess.run")
+    def test_disabled_ignores_eth0(self, run):
+        run.return_value = self.ETH0_UP
+        self.assertFalse(self.nm.is_ethernet_available())
+        self.assertIsNone(self.nm.get_ethernet_ip())
+        self.assertFalse(self.nm.is_ethernet_up())
+        run.assert_not_called()
+
+    @patch("setup.network.ETHERNET_ENABLED", False)
+    @patch("setup.network.load_credentials", return_value=None)
+    @patch("setup.network.subprocess.run")
+    def test_disabled_goes_to_wifi_setup(self, run, _creds):
+        run.return_value = self.ETH0_UP
+        result = self.nm.check_network_and_credentials()
+        self.assertFalse(result.should_skip_wifi_setup)
+
+
 class TestNetworkManagerConnect(unittest.TestCase):
     """connect_to_wifi - the path that used to be spread across 4 layers."""
 

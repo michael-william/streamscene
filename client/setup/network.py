@@ -17,6 +17,7 @@ hotspot.py, portal_server.py and registration.py - this module only
 coordinates them.
 """
 
+import os
 import subprocess
 import sys
 import time
@@ -40,6 +41,12 @@ from .wifi_client import (
 # this module's detail lands in streamscene-wifi.log.
 sys.path.append(str(Path(__file__).parent.parent))
 from logging_config import network_logger as logger
+
+# Same switch as config.ETHERNET_ENABLED (read here directly so this module does
+# not pull in config's device-identity loading). When false the client treats
+# eth0 as absent: the debug image uses this so the hotspot/captive-portal flow
+# runs while the bench keeps a USB-ethernet link that systemd-networkd owns.
+ETHERNET_ENABLED = os.getenv("STREAMSCENE_ETHERNET_ENABLED", "true").lower() == "true"
 
 
 @dataclass
@@ -82,6 +89,8 @@ class NetworkManager:
 
     def is_ethernet_available(self) -> bool:
         """Check if eth0 has a non-localhost IPv4 address."""
+        if not ETHERNET_ENABLED:
+            return False
         try:
             result = subprocess.run(
                 ["ip", "-4", "addr", "show", "eth0"], capture_output=True, text=True, timeout=5
@@ -94,6 +103,8 @@ class NetworkManager:
             return False
 
     def get_ethernet_ip(self) -> Optional[str]:
+        if not ETHERNET_ENABLED:
+            return None
         try:
             result = subprocess.run(
                 ["ip", "-4", "addr", "show", "eth0"], capture_output=True, text=True, timeout=5
@@ -110,6 +121,8 @@ class NetworkManager:
 
     def is_ethernet_up(self) -> bool:
         """Check link state (carrier) on eth0, independent of IP assignment."""
+        if not ETHERNET_ENABLED:
+            return False
         try:
             result = subprocess.run(
                 ["ip", "link", "show", "eth0"], capture_output=True, text=True, timeout=5

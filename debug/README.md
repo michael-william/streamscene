@@ -10,6 +10,7 @@ What each file gives you:
 | File | Purpose |
 |---|---|
 | `eth0.network` | systemd-networkd owns the USB-ethernet dongle (`eth0`/`enx*`). The client's `pkill -9 dhcpcd` and the hotspot code cannot touch it, so the bench link survives hotspot mode, WiFi joins and client restarts. |
+| `client-ignore-eth0.conf` | Sets `STREAMSCENE_ETHERNET_ENABLED=false` for the client, so it ignores eth0 and runs the real hotspot/captive-portal flow. |
 | `networkd-foreign.conf` | Stops networkd deleting the routes dhcpcd/hostapd put on `wlan0`. |
 | `journald-persistent.conf` | Journal survives reboots: `journalctl -b -1` shows the boot that died. |
 | `journal-upload.conf` + `journal-upload-restart.conf` | Streams the journal live to CT118 (`systemd-journal-remote` on :19532), retrying forever. |
