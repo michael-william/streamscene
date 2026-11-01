@@ -24,8 +24,10 @@ def check(label, fn):
     try:
         print("  {}: {}".format(label, fn()))
     except Exception as exc:  # noqa: BLE001 - report, don't raise, so all checks run
-        failures.append("{}: {}".format(label, exc))
-        print("  {}: FAILED - {}".format(label, exc))
+        failures.append("{}: {!r}".format(label, exc))
+        print("  {}: FAILED - {!r}".format(label, exc))
+        import traceback
+        traceback.print_exc()
 
 
 def runtime_packages():
@@ -42,6 +44,29 @@ def gpio_packages():
     return "spidev {} | gpiozero {} | lgpio {}".format(
         version("spidev"), version("gpiozero"), version("lgpio")
     )
+
+
+def inky_packages():
+    # Importing inky.eeprom / inky.auto is side-effect free (no GPIO claimed
+    # until a display class is constructed), so a real import works here.
+    import numpy, smbus2, gpiod, gpiodevice  # noqa: F401
+    import inky.auto, inky.eeprom, inky.inky_e673  # noqa: F401
+    return "inky {} | numpy {} | gpiod {}".format(
+        version("inky"), version("numpy"), version("gpiod")
+    )
+
+
+def boot_config():
+    cfg = Path("/boot/firmware/config.txt").read_text().splitlines()
+    active = {l.strip() for l in cfg if l.strip() and not l.strip().startswith("#")}
+    need = ["dtparam=spi=on", "dtparam=i2c_arm=on", "dtoverlay=spi0-0cs"]
+    missing = [n for n in need if n not in active]
+    if missing:
+        raise RuntimeError("config.txt missing: {}".format(", ".join(missing)))
+    mod = Path("/etc/modules-load.d/streamscene-i2c.conf")
+    if not mod.exists() or "i2c-dev" not in mod.read_text():
+        raise RuntimeError("i2c-dev not loaded at boot - /dev/i2c-1 will not exist")
+    return ", ".join(need) + ", i2c-dev"
 
 
 def vendored_driver():
@@ -125,7 +150,9 @@ def wifi_seeding():
 
 check("venv OK", runtime_packages)
 check("gpio OK", gpio_packages)
+check("inky OK", inky_packages)
 check("driver OK", vendored_driver)
+check("boot OK", boot_config)
 check("client OK", client_entrypoint)
 check("network OK", network_tooling)
 check("wifi", wifi_seeding)

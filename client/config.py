@@ -196,6 +196,10 @@ if not API_KEY:
 # Use "eink" when running on Raspberry Pi with E Ink display
 DISPLAY_MODE = os.getenv("STREAMSCENE_DISPLAY_MODE", "headless")
 
+# Which E Ink panel driver "eink" mode uses: "auto" (detect a Pimoroni Inky by
+# its I2C ID EEPROM, else Waveshare), or force "waveshare" / "inky".
+DISPLAY_DRIVER = os.getenv("STREAMSCENE_DISPLAY_DRIVER", "auto").strip().lower()
+
 # Output directory for headless mode
 OUTPUT_DIR = Path(__file__).parent / "output"
 OUTPUT_DIR.mkdir(exist_ok=True)
@@ -204,7 +208,9 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 DISPLAY_WIDTH = 800
 DISPLAY_HEIGHT = 480
 
-# 7-color E Ink palette (Waveshare 7.3" E variant - epd7in3e)
+# Reference colours. Both supported panels (Waveshare 7.3" E / epd7in3e and
+# Pimoroni Inky Impression 7.3" Spectra / E673) are Spectra 6; the drivers
+# do their own palette quantisation.
 # Waveshare driver handles palette conversion - these are RGB reference colors
 COLORS = {
     "BLACK": (0, 0, 0),
@@ -328,8 +334,8 @@ def validate_config(require_api_key: bool = False):
     if POLL_INTERVAL < 60:
         errors.append(f"POLL_INTERVAL must be at least 60 seconds (got {POLL_INTERVAL})")
 
-    if DISPLAY_MODE not in ["headless", "eink"]:
-        errors.append(f"DISPLAY_MODE must be 'headless' or 'eink' (got {DISPLAY_MODE})")
+    if DISPLAY_MODE not in ["headless", "eink", "waveshare", "inky"]:
+        errors.append(f"DISPLAY_MODE must be 'headless', 'eink', 'waveshare' or 'inky' (got {DISPLAY_MODE})")
 
     if not ETHERNET_ENABLED:
         warnings.append("Ethernet detection is disabled - device will only use WiFi")
@@ -351,7 +357,7 @@ if __name__ == "__main__":
         print("✓ Configuration valid")
         print(f"  API: {API_BASE_URL}")
         print(f"  Device ID: {DEVICE_ID}")
-        print(f"  Display Mode: {DISPLAY_MODE}")
+        print(f"  Display Mode: {DISPLAY_MODE} (driver: {DISPLAY_DRIVER})")
         print(f"  Poll Interval: {POLL_INTERVAL}s")
     except ValueError as e:
         print(f"✗ {e}")

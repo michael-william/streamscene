@@ -4,6 +4,7 @@ Handles backup, installation, and rollback of OTA updates.
 """
 
 import os
+import stat
 import shutil
 import subprocess
 import sys
@@ -45,6 +46,25 @@ class InstallError(OTAInstallerError):
 class RollbackError(OTAInstallerError):
     """Error during rollback."""
     pass
+
+
+def _ignore_special_files(directory, names):
+    """copytree ignore hook: skip FIFOs, sockets and device nodes.
+
+    lgpio (via gpiozero) keeps a notification FIFO, .lgd-nfy0, in the
+    service's working directory - the install dir. copytree cannot copy a
+    FIFO, so every backup of a device that had touched GPIO failed and no OTA
+    could install. Runtime-only files; nothing to restore.
+    """
+    skip = []
+    for name in names:
+        try:
+            mode = os.lstat(os.path.join(directory, name)).st_mode
+        except OSError:
+            continue
+        if stat.S_ISFIFO(mode) or stat.S_ISSOCK(mode) or stat.S_ISCHR(mode) or stat.S_ISBLK(mode):
+            skip.append(name)
+    return skip
 
 
 class OTAInstaller:
@@ -126,6 +146,7 @@ class OTAInstaller:
                 backup_path,
                 symlinks=True,
                 ignore_dangling_symlinks=True,
+                ignore=_ignore_special_files,
             )
 
             # Verify backup was created
