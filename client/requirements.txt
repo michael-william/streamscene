@@ -15,6 +15,10 @@ spidev>=3.6
 gpiozero>=2.0
 lgpio>=0.2.2.0
 
+# Pimoroni Inky Impression driver (second supported panel). 2.1+ knows the
+# Spectra 6 / E673 boards; pulls in numpy, smbus2, gpiod, gpiodevice.
+inky>=2.6.0,<3
+
 # HTTP client for API communication
 requests>=2.31.0
 

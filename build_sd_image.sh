@@ -28,7 +28,7 @@ set -u  # Exit on undefined variable
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLIENT_DIR="$SCRIPT_DIR/client"
 CONFIG_DIR="$SCRIPT_DIR/config"
-VERSION="1.3.0"
+VERSION="1.4.0"
 DEBUG_DIR="$SCRIPT_DIR/debug"
 
 # --debug: bench-debug image (see debug/README.md). Adds a root SSH key, a
@@ -261,6 +261,26 @@ configure_system() {
     else
         echo "dtparam=spi=on" | sudo tee -a "$BOOT_CONFIG" > /dev/null
         log_info "SPI enabled (appended dtparam)"
+    fi
+
+    # Pimoroni Inky Impression support (second panel):
+    #  - I2C, so the client can read the Inky's ID EEPROM (0x50) and tell the
+    #    two panels apart at runtime;
+    #  - spi0-0cs, because the inky library drives chip-select on GPIO8 itself.
+    #    The vendored Waveshare driver was changed to do the same (and falls
+    #    back to hardware CS when GPIO8 is still owned by the kernel).
+    if grep -qE '^\s*dtparam=i2c_arm=on' "$BOOT_CONFIG"; then
+        log_info "I2C already enabled"
+    elif grep -qE '^\s*#\s*dtparam=i2c_arm=on' "$BOOT_CONFIG"; then
+        sudo sed -i 's|^\s*#\s*dtparam=i2c_arm=on.*|dtparam=i2c_arm=on|' "$BOOT_CONFIG"
+        log_info "I2C enabled (uncommented existing dtparam)"
+    else
+        echo "dtparam=i2c_arm=on" | sudo tee -a "$BOOT_CONFIG" > /dev/null
+        log_info "I2C enabled (appended dtparam)"
+    fi
+    if ! grep -qE '^\s*dtoverlay=spi0-0cs' "$BOOT_CONFIG"; then
+        echo "dtoverlay=spi0-0cs" | sudo tee -a "$BOOT_CONFIG" > /dev/null
+        log_info "spi0-0cs overlay added (software chip-select for both panels)"
     fi
 
     # Set default password for pi user

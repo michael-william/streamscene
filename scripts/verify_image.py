@@ -44,6 +44,26 @@ def gpio_packages():
     )
 
 
+def inky_packages():
+    # Importing inky.eeprom / inky.auto is side-effect free (no GPIO claimed
+    # until a display class is constructed), so a real import works here.
+    import numpy, smbus2, gpiod, gpiodevice  # noqa: F401
+    import inky.auto, inky.eeprom, inky.inky_e673  # noqa: F401
+    return "inky {} | numpy {} | gpiod {}".format(
+        version("inky"), version("numpy"), version("gpiod")
+    )
+
+
+def boot_config():
+    cfg = Path("/boot/firmware/config.txt").read_text().splitlines()
+    active = {l.strip() for l in cfg if l.strip() and not l.strip().startswith("#")}
+    need = ["dtparam=spi=on", "dtparam=i2c_arm=on", "dtoverlay=spi0-0cs"]
+    missing = [n for n in need if n not in active]
+    if missing:
+        raise RuntimeError("config.txt missing: {}".format(", ".join(missing)))
+    return ", ".join(need)
+
+
 def vendored_driver():
     # NOTE: the driver is deliberately NOT imported here.
     # waveshare_epd/epdconfig.py performs platform detection at module import
@@ -125,7 +145,9 @@ def wifi_seeding():
 
 check("venv OK", runtime_packages)
 check("gpio OK", gpio_packages)
+check("inky OK", inky_packages)
 check("driver OK", vendored_driver)
+check("boot OK", boot_config)
 check("client OK", client_entrypoint)
 check("network OK", network_tooling)
 check("wifi", wifi_seeding)

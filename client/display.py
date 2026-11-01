@@ -317,15 +317,88 @@ class EInkDisplay(DisplayAdapter):
 # ============================================================================
 
 
+class InkyDisplay(DisplayAdapter):
+    """
+    Pimoroni Inky Impression adapter (e.g. 7.3" Spectra, E673 panel).
+
+    The board carries an ID EEPROM on I2C, so the exact model is read with
+    inky.auto. Requires dtparam=i2c_arm=on and dtoverlay=spi0-0cs (the
+    library drives chip-select on GPIO8 itself).
+    """
+
+    # inky's quantisation saturation: 0.5 is its default; Spectra panels look
+    # washed out below that.
+    SATURATION = float(__import__("os").getenv("STREAMSCENE_INKY_SATURATION", "0.5"))
+
+    def __init__(self):
+        try:
+            from inky.auto import auto
+        except ImportError as e:
+            raise ImportError(f"inky library not installed: {e}")
+
+        self.inky = auto()
+        self.model = type(self.inky).__module__.rsplit(".", 1)[-1]
+        display_logger.info(
+            f"Inky display initialised: {self.model} {self.inky.width}x{self.inky.height}"
+        )
+        print(f"[Display] Inky {self.model} {self.inky.width}x{self.inky.height} ready")
+
+    def show(self, image: Image.Image) -> None:
+        print("[Display] Updating Inky display (takes ~30 seconds)...")
+        size = (self.inky.width, self.inky.height)
+        if image.size != size:
+            image = image.resize(size, Image.Resampling.LANCZOS)
+        if image.mode != "RGB":
+            image = image.convert("RGB")
+        self.inky.set_image(image, saturation=self.SATURATION)
+        self.inky.show()
+        print("[Display] Inky display updated")
+
+    def clear(self) -> None:
+        print("[Display] Clearing Inky display...")
+        self.inky.set_image(Image.new("RGB", (self.inky.width, self.inky.height), "white"))
+        self.inky.show()
+
+    def sleep(self) -> None:
+        # The Inky driver powers the panel off after each refresh; nothing to do.
+        pass
+
+
+def detect_eink_driver() -> str:
+    """
+    Decide which E Ink driver to use.
+
+    STREAMSCENE_DISPLAY_DRIVER=waveshare|inky forces one. Otherwise ("auto"),
+    a Pimoroni Inky is recognised by its ID EEPROM at I2C 0x50; anything else
+    is assumed to be the Waveshare HAT, which has no ID chip.
+    """
+    forced = config.DISPLAY_DRIVER
+    if forced in ("waveshare", "inky"):
+        display_logger.info(f"Display driver forced: {forced}")
+        return forced
+    if forced != "auto":
+        display_logger.warning(f"Unknown STREAMSCENE_DISPLAY_DRIVER={forced!r}, auto-detecting")
+
+    try:
+        from inky.eeprom import read_eeprom
+        ee = read_eeprom()
+    except Exception as e:  # no I2C bus, inky missing, ...
+        display_logger.info(f"Inky EEPROM probe failed ({e}); assuming Waveshare")
+        return "waveshare"
+    if ee is None:
+        display_logger.info("No Inky EEPROM on I2C; assuming Waveshare")
+        return "waveshare"
+    display_logger.info(f"Inky EEPROM found: {ee.get_variant()}")
+    return "inky"
+
+
 def get_display(mode: Optional[str] = None) -> DisplayAdapter:
     """
     Factory function to get appropriate display adapter.
 
     Args:
-        mode: Display mode ("headless" or "eink"), defaults to config.DISPLAY_MODE
-
-    Returns:
-        DisplayAdapter: Configured display adapter
+        mode: "headless", "eink" (auto-detect panel), "waveshare" or "inky";
+              defaults to config.DISPLAY_MODE
 
     Raises:
         ValueError: If mode is invalid
@@ -334,7 +407,12 @@ def get_display(mode: Optional[str] = None) -> DisplayAdapter:
 
     if mode == "headless":
         return HeadlessDisplay()
-    elif mode == "eink":
+    if mode == "eink":
+        mode = detect_eink_driver()
+    if mode == "waveshare":
         return EInkDisplay()
-    else:
-        raise ValueError(f"Invalid display mode: {mode}. Must be 'headless' or 'eink'")
+    if mode == "inky":
+        return InkyDisplay()
+    raise ValueError(
+        f"Invalid display mode: {mode}. Must be 'headless', 'eink', 'waveshare' or 'inky'"
+    )

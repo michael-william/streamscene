@@ -55,7 +55,18 @@ class RaspberryPi:
         self.SPI = spidev.SpiDev()
         self.GPIO_RST_PIN    = gpiozero.LED(self.RST_PIN)
         self.GPIO_DC_PIN     = gpiozero.LED(self.DC_PIN)
-        # self.GPIO_CS_PIN     = gpiozero.LED(self.CS_PIN)
+        # StreamScene: chip-select. The image boots with dtoverlay=spi0-0cs
+        # (needed by the Pimoroni Inky, which drives CS itself), which frees
+        # GPIO8 from the SPI controller - then we must drive CS ourselves.
+        # Devices still on an older config.txt (OTA-updated from <=1.3.0)
+        # have the kernel holding GPIO8 as CE0; claiming it fails and we
+        # keep using hardware chip-select as before.
+        try:
+            self.GPIO_CS_PIN = gpiozero.LED(self.CS_PIN, initial_value=True)
+            logger.info("waveshare: driving CS on GPIO%d (spi0-0cs)", self.CS_PIN)
+        except Exception as exc:  # GPIOPinInUse / lgpio 'GPIO busy'
+            self.GPIO_CS_PIN = None
+            logger.info("waveshare: GPIO%d unavailable (%s); using hardware CS", self.CS_PIN, exc)
         self.GPIO_PWR_PIN    = gpiozero.LED(self.PWR_PIN)
         self.GPIO_BUSY_PIN   = gpiozero.Button(self.BUSY_PIN, pull_up = False)
 
@@ -72,11 +83,12 @@ class RaspberryPi:
                 self.GPIO_DC_PIN.on()
             else:
                 self.GPIO_DC_PIN.off()
-        # elif pin == self.CS_PIN:
-        #     if value:
-        #         self.GPIO_CS_PIN.on()
-        #     else:
-        #         self.GPIO_CS_PIN.off()
+        elif pin == self.CS_PIN:
+            if self.GPIO_CS_PIN is not None:
+                if value:
+                    self.GPIO_CS_PIN.on()
+                else:
+                    self.GPIO_CS_PIN.off()
         elif pin == self.PWR_PIN:
             if value:
                 self.GPIO_PWR_PIN.on()
@@ -143,6 +155,8 @@ class RaspberryPi:
             self.SPI.open(0, 0)
             self.SPI.max_speed_hz = 4000000
             self.SPI.mode = 0b00
+            if self.GPIO_CS_PIN is not None:
+                self.SPI.no_cs = True
         return 0
 
     def module_exit(self, cleanup=False):
@@ -157,7 +171,8 @@ class RaspberryPi:
         if cleanup:
             self.GPIO_RST_PIN.close()
             self.GPIO_DC_PIN.close()
-            # self.GPIO_CS_PIN.close()
+            if self.GPIO_CS_PIN is not None:
+                self.GPIO_CS_PIN.close()
             self.GPIO_PWR_PIN.close()
             self.GPIO_BUSY_PIN.close()
 
