@@ -20,6 +20,7 @@ coordinates them.
 import os
 import subprocess
 import sys
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -79,8 +80,13 @@ class NetworkManager:
     "dns_error", or None on success.
     """
 
-    def __init__(self, device_uuid: str, hotspot_password: str = "streamscene"):
+    def __init__(self, device_uuid: str, hotspot_password: str = "streamscene",
+                 stop_event: Optional[threading.Event] = None):
         self.device_uuid = device_uuid
+        # Set on SIGTERM: the long polling loops below wait on it instead of
+        # sleeping, so a service stop ends them at once rather than after
+        # systemd's TimeoutStopSec.
+        self.stop_event = stop_event or threading.Event()
         self.hotspot_password = hotspot_password
         self.hotspot_ssid = generate_ssid(device_uuid)
         logger.info(f"[Network] Initialized for device {device_uuid}, hotspot SSID {self.hotspot_ssid}")
@@ -330,7 +336,9 @@ class NetworkManager:
                 credentials = portal.get_credentials()
                 logger.info(f"[Network] Received credentials for network: {credentials.get('ssid')}")
                 break
-            time.sleep(2)
+            if self.stop_event.wait(2):
+                logger.info("[Network] Stop requested, abandoning WiFi setup")
+                break
 
         if not credentials:
             logger.warning(f"[Network] Timeout waiting for credentials after {timeout}s")
@@ -395,7 +403,9 @@ class NetworkManager:
                 elapsed = time.time() - start_time
                 logger.info(f"[Network] Device registered after {elapsed:.1f}s ({poll_count} checks)")
                 return True
-            time.sleep(poll_interval)
+            if self.stop_event.wait(poll_interval):
+                logger.info("[Network] Stop requested, abandoning registration polling")
+                return False
 
         elapsed = time.time() - start_time
         logger.error(f"[Network] Registration timeout after {elapsed:.1f}s ({poll_count} checks)")

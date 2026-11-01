@@ -30,6 +30,7 @@ import os
 import sys
 import time
 import signal
+import threading
 import subprocess
 from typing import Optional
 from pathlib import Path
@@ -93,7 +94,9 @@ class StreamSceneClient:
         state_logger.info(f"Starting in state: {self.state_machine.current_state.value}")
 
         # Network (connectivity, hotspot/portal setup flow, registration polling)
-        self.network = NetworkManager(device_uuid=DEVICE_ID)
+        # Set by _signal_handler; every wait in the loop uses _sleep() on it
+        self._stop = threading.Event()
+        self.network = NetworkManager(device_uuid=DEVICE_ID, stop_event=self._stop)
         main_logger.info("Network manager initialized")
 
         # API client (may not be usable until device is registered)
@@ -350,7 +353,7 @@ class StreamSceneClient:
                     "error": str(e),
                     "previous_state": str(current_state)
                 })
-                time.sleep(10)  # Brief pause before error handling
+                self._sleep(10)  # Brief pause before error handling
 
         main_logger.info("Shutting down...")
         self._cleanup()
@@ -394,6 +397,8 @@ class StreamSceneClient:
 
         # Run WiFi setup flow
         credentials = self.network.run_wifi_setup_flow(timeout=1800)
+        if self._stop.is_set():
+            return  # shutting down, not a setup failure
 
         if credentials:
             wifi_logger.info(f"Successfully obtained credentials for SSID: {credentials['ssid']}")
@@ -489,7 +494,7 @@ class StreamSceneClient:
                 })
             # Give the panel a rest: an E Ink refresh is ~30s and has a finite
             # lifetime, so do not let a recovery path redraw it in a tight loop.
-            time.sleep(30)
+            self._sleep(30)
             return
 
         # Get registration URL from service
@@ -520,6 +525,8 @@ class StreamSceneClient:
             poll_interval=10,
             timeout=600
         )
+        if self._stop.is_set():
+            return  # shutting down, not a registration failure
 
         if success:
             registration_logger.info("Device successfully registered!")
@@ -599,7 +606,7 @@ class StreamSceneClient:
         display_logger.info("Success message displayed")
 
         registration_logger.info("Showing success message for 5 seconds")
-        time.sleep(5)  # Show success message for 5 seconds
+        self._sleep(5)  # Show success message for 5 seconds
 
         # Mark setup as complete and transition to ready
         state_logger.info("Setup complete, transitioning to READY state")
@@ -761,7 +768,7 @@ class StreamSceneClient:
                                     "Wrong WiFi password.\n\nEntering WiFi setup mode..."
                                 )
                                 self._show(image)
-                                time.sleep(5)  # Give user time to see message
+                                self._sleep(5)  # Give user time to see message
 
                                 # Transition to WiFi setup
                                 state_logger.info("Transitioning to WIFI_SETUP state due to wrong credentials")
@@ -807,14 +814,14 @@ class StreamSceneClient:
                 poll_interval = 60  # Always check every minute in static mode
                 main_logger.info(f"Sleeping for {poll_interval}s (static mode)")
 
-            time.sleep(poll_interval)
+            self._sleep(poll_interval)
 
         except Exception as e:
             api_logger.error(f"Error during content fetch/display: {e}", exc_info=True)
             # Don't transition to error state for transient failures
             # Just log and retry on next loop
             main_logger.info("Retrying in 60s")
-            time.sleep(60)
+            self._sleep(60)
 
     def _handle_error(self):
         """Handle ERROR state - display error and attempt recovery with enhanced logging."""
@@ -839,7 +846,7 @@ class StreamSceneClient:
 
         # Wait before attempting recovery
         main_logger.info("Waiting 10 seconds before attempting recovery")
-        time.sleep(10)
+        self._sleep(10)
 
         # Recovery logic based on error reason or error message
         if reason == "network_lost" or "wifi" in error.lower() or "network" in error.lower():
@@ -865,10 +872,19 @@ class StreamSceneClient:
 
             self.state_machine.transition_to(DeviceState.READY)
 
+    def _sleep(self, seconds) -> bool:
+        """Sleep, but return early (True) as soon as shutdown is requested.
+
+        time.sleep() here kept the client deaf to SIGTERM for up to a poll
+        interval, so systemd killed it at TimeoutStopSec and _cleanup never ran.
+        """
+        return self._stop.wait(seconds)
+
     def _signal_handler(self, signum, frame):
         """Handle shutdown signals gracefully."""
         main_logger.info(f"Received signal {signum}, initiating graceful shutdown")
         self.running = False
+        self._stop.set()
 
     def _cleanup(self):
         """Clean up resources."""

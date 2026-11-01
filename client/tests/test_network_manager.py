@@ -7,6 +7,8 @@ delegates to (wifi_client, hotspot, registration) instead.
 """
 
 import sys
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
@@ -172,6 +174,34 @@ class TestNetworkManagerCredentials(unittest.TestCase):
     def test_has_saved_credentials_false(self, _load):
         self.assertFalse(self.nm.has_saved_credentials())
         self.assertIsNone(self.nm.get_saved_ssid())
+
+
+class TestStopEvent(unittest.TestCase):
+    """A set stop_event (SIGTERM) must end the long polling loops at once."""
+
+    @patch("setup.network.check_registration", return_value=False)
+    def test_registration_flow_stops_immediately(self, _check):
+        stop = threading.Event()
+        nm = NetworkManager(device_uuid="test-device-uuid", stop_event=stop)
+        threading.Timer(0.2, stop.set).start()
+        t0 = time.monotonic()
+        self.assertFalse(nm.run_registration_flow(api_client=MagicMock(), poll_interval=60, timeout=600))
+        self.assertLess(time.monotonic() - t0, 2)
+
+    @patch("setup.network.time.sleep")
+    @patch.object(NetworkManager, "_cleanup_ap_services")
+    @patch("setup.network.CaptivePortalServer")
+    @patch("setup.network.is_hotspot_active", return_value=True)
+    @patch.object(NetworkManager, "switch_to_ap_mode", return_value=True)
+    def test_wifi_setup_flow_stops_immediately(self, _ap, _active, portal_cls, _cleanup, _sleep):
+        portal_cls.return_value.has_credentials.return_value = False
+        stop = threading.Event()
+        stop.set()
+        nm = NetworkManager(device_uuid="test-device-uuid", stop_event=stop)
+        t0 = time.monotonic()
+        self.assertIsNone(nm.run_wifi_setup_flow(timeout=1800))
+        self.assertLess(time.monotonic() - t0, 2)
+        portal_cls.return_value.stop.assert_called_once()
 
 
 if __name__ == "__main__":
