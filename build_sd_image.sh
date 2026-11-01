@@ -28,7 +28,7 @@ set -u  # Exit on undefined variable
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLIENT_DIR="$SCRIPT_DIR/client"
 CONFIG_DIR="$SCRIPT_DIR/config"
-VERSION="1.2.1"
+VERSION="1.3.0"
 DEBUG_DIR="$SCRIPT_DIR/debug"
 
 # --debug: bench-debug image (see debug/README.md). Adds a root SSH key, a
