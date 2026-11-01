@@ -1,9 +1,10 @@
 """Device-related API endpoints."""
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Body, Depends, HTTPException, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
+from typing import Optional
 from uuid import UUID
 from pathlib import Path
 import os
@@ -13,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 from streamscene.api.dependencies import get_db, verify_device_api_key
 from streamscene.api.schemas import (
+    DeviceHeartbeatRequest,
     DeviceRegisterRequest,
     DeviceRegisterResponse,
     DeviceContentResponse,
@@ -276,11 +278,12 @@ async def get_device_content_image(
 @router.post("/{device_id}/heartbeat", response_model=DeviceHeartbeatResponse)
 async def device_heartbeat(
     device_id: UUID,
+    payload: Optional[DeviceHeartbeatRequest] = Body(None),
     verified_device_id: str = Depends(verify_device_api_key),
     db: Session = Depends(get_db),
 ):
     """
-    Update device's last_seen timestamp.
+    Update device's last_seen timestamp, and current_version if reported.
 
     Devices should call this endpoint periodically to indicate they are online.
 
@@ -309,7 +312,8 @@ async def device_heartbeat(
         raise HTTPException(status_code=403, detail="Device ID mismatch")
 
     # Update heartbeat using database id
-    success = stream_ops.update_device_heartbeat(db, device.id)
+    version = payload.version if payload else None
+    success = stream_ops.update_device_heartbeat(db, device.id, version=version)
     if not success:
         raise HTTPException(status_code=404, detail="Device not found")
 
