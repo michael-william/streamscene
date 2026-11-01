@@ -40,9 +40,9 @@ pi ALL=(ALL) NOPASSWD: /usr/sbin/rfkill unblock *
 
 # Allow pi user to manage WiFi client without password
 pi ALL=(ALL) NOPASSWD: /usr/sbin/wpa_cli *
-pi ALL=(ALL) NOPASSWD: /usr/sbin/dhcpcd *
+pi ALL=(ALL) NOPASSWD: /usr/sbin/dhclient *
 pi ALL=(ALL) NOPASSWD: /usr/bin/pkill wpa_supplicant
-pi ALL=(ALL) NOPASSWD: /usr/bin/pkill dhcpcd
+pi ALL=(ALL) NOPASSWD: /usr/bin/pkill dhclient
 pi ALL=(ALL) NOPASSWD: /usr/sbin/wpa_supplicant *
 
 # Allow pi user to manage configuration files without password

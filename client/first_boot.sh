@@ -55,11 +55,12 @@ sudo systemctl stop NetworkManager 2>/dev/null || true
 echo "NetworkManager disabled"
 echo ""
 
-# Step 5: Set Python capabilities for port 80 binding
-echo "[5/9] Setting Python capabilities for captive portal..."
-sudo setcap 'cap_net_bind_service=+ep' /usr/bin/python3.11 2>/dev/null || \
-sudo setcap 'cap_net_bind_service=+ep' /usr/bin/python3 || true
-echo "Python capabilities configured"
+# Step 5: (removed) setcap on the system Python
+# Port 80 binding is granted by AmbientCapabilities=CAP_NET_BIND_SERVICE on
+# streamscene-client.service instead. Patching the interpreter gave every
+# Python process on the device the same privilege and was silently reverted by
+# any apt upgrade of python3.
+echo "[5/9] Port 80 binding handled by systemd AmbientCapabilities - nothing to do"
 echo ""
 
 # Step 6: Create log directory with correct permissions
@@ -93,14 +94,12 @@ echo ""
 
 echo ""
 
-# Verify service is running
-echo "[7/7] Verifying service status..."
-if sudo systemctl is-active --quiet "$CLIENT_SERVICE"; then
-    echo "✓ StreamScene client service is running!"
-else
-    echo "✗ Warning: Service may not have started correctly"
-    echo "Check status with: sudo systemctl status $CLIENT_SERVICE"
-fi
+# NOTE: do not check is-active here.
+# This unit is ordered Before=streamscene-client.service, so the client has not
+# started yet by definition. The old check always reported
+# "Service may not have started correctly" on a perfectly healthy first boot,
+# which sent people debugging a non-problem.
+echo "[7/7] Service enabled; it starts after this unit completes."
 echo ""
 
 # Display registration info
@@ -109,7 +108,7 @@ echo "First Boot Provisioning Complete!"
 echo "=================================================="
 echo "Device UUID: $DEVICE_UUID"
 echo "Device ID file: $DEVICE_ID_FILE"
-echo "Service status: $(systemctl is-active $CLIENT_SERVICE)"
+echo "Service: enabled (starts once this unit finishes)"
 echo ""
 echo "The device will now:"
 echo "1. Create a WiFi hotspot (if no credentials saved)"
@@ -125,6 +124,7 @@ echo ""
 # Self-delete this script
 echo "Removing first boot script (one-time execution)..."
 sudo rm -f /etc/systemd/system/streamscene-firstboot.service
+sudo rm -f /etc/systemd/system/multi-user.target.wants/streamscene-firstboot.service
 sudo systemctl daemon-reload
 rm -f "$0"
 

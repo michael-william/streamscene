@@ -7,7 +7,7 @@ import reflex as rx
 
 from streamscene.core.database import get_db_session
 from streamscene.core.auth import get_or_create_user
-from .base_state import BaseState
+from .base_state import BaseState, is_valid_uuid
 
 
 class CallbackState(BaseState):
@@ -114,6 +114,13 @@ class CallbackState(BaseState):
 
                 # Store user ID in cookie (automatically synced to browser)
                 self.user_id = str(user.id)
+
+            # Came from scanning a device QR while logged out: finish that
+            # registration instead of dropping the user on the dashboard.
+            pending = self.pending_setup_device
+            self.pending_setup_device = ""
+            if is_valid_uuid(pending):
+                return rx.redirect(f"/setup?device_uuid={pending}")
 
             # Redirect to dashboard (authenticated home page)
             return rx.redirect("/dashboard")

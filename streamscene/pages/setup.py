@@ -6,7 +6,7 @@ import reflex as rx
 from streamscene.core.database import get_db_session
 from streamscene.core import streams as stream_ops
 from streamscene.components.layout import authenticated_layout
-from .base_state import BaseState
+from .base_state import BaseState, is_valid_uuid
 
 
 class SetupState(BaseState):
@@ -33,11 +33,6 @@ class SetupState(BaseState):
         """Load device UUID from query parameters."""
         print("[Setup] on_load() called")
 
-        # Check authentication
-        if not self.user_id:
-            print("[Setup] No user_id, redirecting to /")
-            return rx.redirect("/")
-
         # Get device_uuid from query params (new API)
         device_uuid = self.router.url.query_parameters.get("device_uuid", "") if self.router.url.query_parameters else ""
 
@@ -45,6 +40,18 @@ class SetupState(BaseState):
         if not device_uuid:
             query_params = self.router.session.client_query_params
             device_uuid = query_params.get("device_uuid", [""])[0] if query_params else ""
+
+        # Not logged in: remember the scanned device so the OAuth callback can
+        # bring the user back here. Previously this redirected to "/" and the
+        # callback went to /dashboard, silently dropping the device - the user
+        # ended up on the dashboard thinking registration had worked.
+        if not self.user_id:
+            if is_valid_uuid(device_uuid):
+                print(f"[Setup] Not logged in; remembering device {device_uuid} across login")
+                self.pending_setup_device = device_uuid
+                return rx.redirect("/login")
+            print("[Setup] No user_id, redirecting to /")
+            return rx.redirect("/")
 
         print(f"[Setup] Device UUID from params: {device_uuid}")
 

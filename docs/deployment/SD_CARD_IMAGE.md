@@ -1,8 +1,18 @@
 # StreamScene SD Card Image Guide
 
+> **This is the image reference.** For the end-to-end process of producing and
+> handing out a device - including what the recipient does - follow
+> [DISTRIBUTION.md](DISTRIBUTION.md). This document covers what is inside the
+> image and how to work with it.
+
 ## Overview
 
 The StreamScene SD card image is a pre-configured Raspberry Pi OS image with all client software, dependencies, and configurations pre-installed. Simply flash to an SD card, insert into a Raspberry Pi Zero 2 WH, and power on.
+
+The base is **Raspberry Pi OS Lite Bookworm, 32-bit (armhf)**, pinned to a
+specific snapshot in `build_sd_image.sh`. The boot partition is mounted at
+`/boot/firmware` (Bookworm layout), which is where `streamscene-device.txt`
+lives - not `/boot`.
 
 ## Building the Image
 
@@ -27,9 +37,15 @@ sudo apt-get install -y \
 
 ### Build Process
 
-1. **Navigate to project directory:**
+> **The build must run on the Proxmox host, not in CT118.** CT118 has the
+> required tools but no `/dev/loop*` devices, so it cannot loop-mount the
+> image. macOS cannot build at all (no loop devices, no ext4, no foreign-arch
+> chroot). See DISTRIBUTION.md for staging a clean build tree.
+
+1. **Navigate to the build tree** (staged from CT118, *not* the stale
+   `/root/streamscene` checkout on the host):
    ```bash
-   cd /root/streamscene
+   cd /root/streamscene-build
    ```
 
 2. **Run build script:**
@@ -37,31 +53,66 @@ sudo apt-get install -y \
    sudo ./build_sd_image.sh
    ```
 
-3. **Wait for completion** (15-30 minutes depending on internet speed)
+3. **Wait for completion** (roughly 3-6 minutes on the host; longer on a
+   slow connection, since the base image is downloaded once)
 
 4. **Output:**
-   - Image file: `streamscene-client-1.0.0.img`
-   - Checksum: `streamscene-client-1.0.0.img.sha256`
+   - Image file: `streamscene-client-<version>.img`
+   - Checksum: `streamscene-client-<version>.img.sha256`
+
+5. **Confirm it verified.** A good build ends with
+   `image verification passed`. The build aborts rather than emit a broken
+   image; anything else means do not flash the output.
 
 ### What the Build Script Does
 
-1. Downloads Raspberry Pi OS Lite (latest Bookworm)
+1. Downloads Raspberry Pi OS Lite Bookworm (armhf, pinned snapshot)
 2. Mounts image and configures system:
-   - Enables SSH
+   - Enables SSH (boot flag file **and** systemd symlink)
    - Sets default password (`pi` / `streamscene`)
    - Configures mDNS (`streamscene.local`)
+   - **Enables SPI** (`dtparam=spi=on`) - required by the Waveshare HAT
+   - **Deliberately does not write a device UUID** (see below)
 3. Installs dependencies via chroot:
    - `hostapd` - WiFi access point
    - `dnsmasq` - DHCP/DNS server
    - `python3-venv` - Virtual environment support
-4. Copies StreamScene client code to `/home/pi/streamscene-client`
+4. Copies StreamScene client code to `/home/pi/streamscene-client`,
+   including the vendored `waveshare_epd/` display driver, and builds the venv
 5. Installs system configurations:
    - Sudoers file (passwordless network commands)
    - Logrotate configuration
 6. Installs systemd services:
-   - `streamscene-client.service` - Main client service
+   - `streamscene-client.service` - Main client service, with the dev-only
+     `STREAMSCENE_ALLOW_ETHERNET` flag stripped from the shipped copy
    - `streamscene-firstboot.service` - First-boot provisioning
-7. Creates final image with SHA256 checksum
+7. **Verifies the image** with `scripts/verify_image.py`, run inside the image
+   using its own venv - aborts the build on any failure
+8. Creates final image with SHA256 checksum
+
+### Why no UUID is written at build time
+
+A UUID written during the build is baked into the image, so **every card
+flashed from it would claim the same device identity** on the server. The
+image therefore ships with no `streamscene-device.txt`;
+`streamscene-firstboot.service` generates a unique one on each device's first
+boot. Do not reinstate a build-time UUID.
+
+For the same reason, never clone a card that has already booted - clone from
+the original `.img`.
+
+### The display driver is vendored, not installed
+
+`waveshare-epd` **is not on PyPI**. Listing it in `client/requirements.txt`
+makes pip abort the entire transaction, which silently leaves the venv with no
+pillow, requests or qrcode either - and the build used to report success
+anyway. The driver is copied into the repo at `client/waveshare_epd/` instead;
+see that directory's `VENDOR.md` for provenance and update procedure.
+
+Note that `waveshare_epd/epdconfig.py` performs platform detection at *import*
+time by grepping `/proc/cpuinfo` for "Raspberry". It can therefore only be
+imported on real Pi hardware - never in the build chroot, and not on the
+Proxmox host. The build verifies the driver statically instead.
 
 ## Flashing the Image
 

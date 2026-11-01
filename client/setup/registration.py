@@ -4,11 +4,16 @@ Device Registration
 Handles device registration status checking by polling the server.
 """
 
-import logging
+import sys
 import time
+from pathlib import Path
 from typing import Optional
 
-logger = logging.getLogger(__name__)
+# Bare logging.getLogger(__name__) has no file handler here (same issue
+# wifi_client.py had) - route through the pre-configured registration_logger
+# so poll detail lands in streamscene-registration.log.
+sys.path.append(str(Path(__file__).parent.parent))
+from logging_config import registration_logger as logger
 
 
 def check_registration(api_client) -> bool:
@@ -25,14 +30,17 @@ def check_registration(api_client) -> bool:
     Returns:
         True if device is registered, False otherwise
     """
-    logger.debug("[Registration] Checking registration status...")
+    logger.info("[Registration] Checking registration status...")
 
     try:
         # Check registration status (unauthenticated endpoint)
         status = api_client.check_registration_status()
 
         if not status:
-            logger.debug("[Registration] Failed to get registration status from server")
+            logger.warning(
+                "[Registration] No response from registration-status endpoint - "
+                "device may be offline or the server unreachable"
+            )
             return False
 
         is_registered = status.get("is_registered", False)
@@ -53,11 +61,13 @@ def check_registration(api_client) -> bool:
 
             return True
         else:
-            logger.debug("[Registration] Device not registered yet")
+            logger.info("[Registration] Not registered yet (waiting for someone to scan the QR)")
             return False
 
     except Exception as e:
-        logger.debug(f"[Registration] Registration check failed: {e}")
+        # Was debug: a failing poll is the single most likely reason a device
+        # sits on the QR screen forever, and at debug level it is invisible.
+        logger.warning("[Registration] Registration check failed: %s", e)
         return False
 
 

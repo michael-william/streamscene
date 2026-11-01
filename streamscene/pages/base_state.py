@@ -1,6 +1,18 @@
 """Base state with shared authentication for all pages."""
 
+from uuid import UUID
+
 import reflex as rx
+
+
+def is_valid_uuid(value: str) -> bool:
+    """True if value is a UUID. Guards device IDs taken from URLs and cookies
+    before they are stored or put back into a redirect."""
+    try:
+        UUID(value)
+        return True
+    except (ValueError, TypeError, AttributeError):
+        return False
 
 
 class BaseState(rx.State):
@@ -11,6 +23,9 @@ class BaseState(rx.State):
     """
 
     user_id: str = rx.Cookie("")  # Single source of truth for authentication
+    # Device UUID from a scanned QR, kept while the user logs in so the OAuth
+    # callback can send them back to /setup for it. Short-lived.
+    pending_setup_device: str = rx.Cookie("", max_age=1800)
 
     @rx.var
     def is_authenticated(self) -> bool:

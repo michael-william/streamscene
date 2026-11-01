@@ -14,6 +14,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
 from logging_config import hotspot_logger, log_subprocess_output
+from .wifi_client import release_dhcp_lease
 
 # Configuration file paths
 HOSTAPD_CONF = "/etc/hostapd/hostapd.conf"
@@ -145,6 +146,11 @@ def create_hotspot(ssid: str, password: str = "streamscene") -> bool:
             timeout=5
         )
         log_subprocess_output(hotspot_logger, result, "pkill wpa_supplicant")
+
+        # A dhclient left from client mode keeps renewing its lease and would
+        # put its address back on wlan0 over the static 192.168.4.1.
+        hotspot_logger.info("Releasing any wlan0 DHCP lease")
+        release_dhcp_lease()
         time.sleep(1)
 
         # Step 2: Bring down wlan0
@@ -309,24 +315,12 @@ def create_hotspot(ssid: str, password: str = "streamscene") -> bool:
             return False
         hotspot_logger.info("dnsmasq is running and active")
 
-        # Step 8: Configure iptables to redirect port 80 → 8080 for captive portal
-        hotspot_logger.info("Step 8: Configuring iptables redirect for captive portal")
-        hotspot_logger.info("Redirecting port 80 → 8080 for automatic captive portal detection")
-
-        try:
-            # Redirect incoming TCP port 80 to 8080
-            result = subprocess.run(
-                ["sudo", "iptables", "-t", "nat", "-A", "PREROUTING", "-i", "wlan0",
-                 "-p", "tcp", "--dport", "80", "-j", "REDIRECT", "--to-port", "8080"],
-                check=True,
-                capture_output=True,
-                timeout=5
-            )
-            log_subprocess_output(hotspot_logger, result, "iptables port 80→8080 redirect")
-            hotspot_logger.info("Captive portal auto-redirect configured successfully")
-        except subprocess.CalledProcessError as e:
-            hotspot_logger.warning(f"iptables redirect failed (portal still accessible on :8080): {e}")
-            # Non-fatal error - portal still works on port 8080
+        # Step 8: (removed) iptables 80->8080 redirect
+        # The portal now binds port 80 directly via CAP_NET_BIND_SERVICE on the
+        # systemd unit. The old REDIRECT rule could never apply: iptables is not
+        # installed on Pi OS Bookworm (nft only) and was absent from
+        # sudoers.streamscene, so it failed silently and left nothing listening
+        # on port 80 - which is the only port captive portal detection probes.
 
         hotspot_logger.info("=" * 60)
         hotspot_logger.info(f"Hotspot created successfully!")
@@ -387,15 +381,7 @@ def stop_hotspot() -> bool:
         )
         log_subprocess_output(hotspot_logger, result, "systemctl stop dnsmasq")
 
-        # Clean up iptables redirect rule
-        hotspot_logger.info("Removing iptables port redirect rule")
-        result = subprocess.run(
-            ["sudo", "iptables", "-t", "nat", "-F", "PREROUTING"],
-            check=False,
-            capture_output=True,
-            timeout=5
-        )
-        log_subprocess_output(hotspot_logger, result, "iptables flush PREROUTING chain")
+        # No iptables rule to clean up - the portal binds port 80 directly.
 
         # Step 2: Bring down wlan0
         hotspot_logger.info("Step 2: Bringing down wlan0 interface")
@@ -425,13 +411,33 @@ def stop_hotspot() -> bool:
         log_subprocess_output(hotspot_logger, result, "ip link set wlan0 up")
 
         # Step 5: Restart wpa_supplicant (client mode)
-        hotspot_logger.info("Step 5: Restarting wpa_supplicant for client mode")
+        #
+        # Unmask FIRST. create_hotspot() masks wpa_supplicant so it cannot grab
+        # wlan0 while the radio is in AP mode, but nothing used to undo that -
+        # so 'systemctl start' failed with "Unit wpa_supplicant.service is
+        # masked", client mode never came up, and the device could never join
+        # WiFi again after the hotspot had run once. The masking is asymmetric
+        # by nature: whoever masks must unmask.
+        hotspot_logger.info("Step 5: Unmasking wpa_supplicant before client mode")
+        result = subprocess.run(
+            ["sudo", "systemctl", "unmask", "wpa_supplicant"],
+            check=False,
+            capture_output=True
+        )
+        log_subprocess_output(hotspot_logger, result, "systemctl unmask wpa_supplicant")
+
+        hotspot_logger.info("Step 5b: Restarting wpa_supplicant for client mode")
         result = subprocess.run(
             ["sudo", "systemctl", "start", "wpa_supplicant"],
             check=False,
             capture_output=True
         )
         log_subprocess_output(hotspot_logger, result, "systemctl start wpa_supplicant")
+        if result.returncode != 0:
+            hotspot_logger.error(
+                "wpa_supplicant failed to start - the device cannot join WiFi in "
+                "this state: %s", result.stderr.decode(errors="replace").strip()
+            )
 
         hotspot_logger.info("Waiting 2 seconds for services to stabilize")
         time.sleep(2)

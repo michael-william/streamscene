@@ -9,12 +9,17 @@ from urllib.parse import parse_qs, urlparse
 from pathlib import Path
 import json
 import os
-import logging
+import sys
 import threading
 
 from .wifi_client import scan_networks
 
-logger = logging.getLogger(__name__)
+# Bare logging.getLogger(__name__) has no file handler here (same issue
+# wifi_client.py had) - route through the pre-configured wifi_logger so
+# captive portal request/credential-submission detail lands in
+# streamscene-wifi.log.
+sys.path.append(str(Path(__file__).parent.parent))
+from logging_config import wifi_logger as logger
 
 # Where to save WiFi credentials
 WIFI_CONFIG_FILE = Path.home() / "streamscene-client" / "wifi_credentials.json"

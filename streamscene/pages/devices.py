@@ -386,7 +386,13 @@ def device_card(device: DeviceInfo) -> rx.Component:
                 rx.cond(
                     device.is_online,
                     rx.badge("Online", color_scheme="green", size="2"),
-                    rx.badge("Offline", color_scheme="gray", size="2"),
+                    # Never seen = just registered (or never powered on);
+                    # "Offline" there reads like something broke.
+                    rx.cond(
+                        device.last_seen,
+                        rx.badge("Offline", color_scheme="gray", size="2"),
+                        rx.badge("Waiting for first check-in", color_scheme="blue", size="2"),
+                    ),
                 ),
                 justify="between",
                 width="100%",

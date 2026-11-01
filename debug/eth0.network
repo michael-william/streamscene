@@ -1,0 +1,16 @@
+# Debug image only - see debug/README.md.
+# The USB-ethernet dongle is the bench debug link. It must stay up regardless
+# of what the client does to wlan0 (hotspot, wpa_supplicant, `pkill -9 dhcpcd`).
+[Match]
+Name=eth0 enx*
+
+[Network]
+DHCP=ipv4
+# If DHCP never answers, still come up on 169.254.x.x so a direct cable works.
+LinkLocalAddressing=ipv4
+IPv6AcceptRA=no
+
+[DHCPv4]
+# Higher metric than dhcpcd gives wlan0, so device traffic still exercises WiFi
+# once it is configured; eth0 is only the side door.
+RouteMetric=2000

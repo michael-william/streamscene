@@ -24,6 +24,8 @@ from .wifi_client import (
     disconnect_wifi
 )
 
+from .network import NetworkManager, NetworkStatus, NetworkCheckResult
+
 __all__ = [
     # Hotspot management
     'create_hotspot',
@@ -43,4 +45,9 @@ __all__ = [
     'get_ip_address',
     'test_internet_connectivity',
     'disconnect_wifi',
+
+    # Network orchestration
+    'NetworkManager',
+    'NetworkStatus',
+    'NetworkCheckResult',
 ]

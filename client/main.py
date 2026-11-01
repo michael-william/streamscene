@@ -21,12 +21,16 @@ Environment Variables (optional):
     STREAMSCENE_DEVICE_ID - Device UUID (default: read from /boot/firmware/streamscene-device.txt)
     STREAMSCENE_API_KEY - API key (default: saved after registration)
     STREAMSCENE_DISPLAY_MODE - "eink" or "headless" (default: headless)
+    STREAMSCENE_LOG_LEVEL - "DEBUG", "INFO", "WARNING", etc. (default: INFO).
+        DEBUG surfaces wpa_supplicant state transitions, subprocess commands,
+        and other step-by-step detail that's otherwise silent.
 """
 
 import os
 import sys
 import time
 import signal
+import threading
 import subprocess
 from typing import Optional
 from pathlib import Path
@@ -44,9 +48,8 @@ from api_client import StreamSceneAPIClient
 from display import get_display
 from renderer import ContentRenderer
 from states import StateMachine, DeviceState
-from setup.network_manager import NetworkManager
-from setup.setup_manager import SetupManager
-from services import NetworkService, ConfigurationService, SetupService
+from setup.network import NetworkManager
+from services import ConfigurationService, OTAService
 
 # Import centralized logging configuration
 from logging_config import (
@@ -58,7 +61,11 @@ from logging_config import (
     network_logger,
     wifi_logger,
     registration_logger,
+    ota_logger,
 )
+
+# Sentinel for "the panel is not showing fetched content" (see _show).
+_NOT_CONTENT = object()
 
 
 class StreamSceneClient:
@@ -86,20 +93,11 @@ class StreamSceneClient:
         self.state_machine = StateMachine(device_uuid=DEVICE_ID)
         state_logger.info(f"Starting in state: {self.state_machine.current_state.value}")
 
-        # Setup components (WiFi, registration)
-        self.network_manager = NetworkManager(device_uuid=DEVICE_ID)
+        # Network (connectivity, hotspot/portal setup flow, registration polling)
+        # Set by _signal_handler; every wait in the loop uses _sleep() on it
+        self._stop = threading.Event()
+        self.network = NetworkManager(device_uuid=DEVICE_ID, stop_event=self._stop)
         main_logger.info("Network manager initialized")
-
-        self.setup_manager = SetupManager(device_uuid=DEVICE_ID, network_manager=self.network_manager)
-        main_logger.info("Setup manager initialized")
-
-        # Network service (business logic for network management)
-        self.network_service = NetworkService(
-            network_manager=self.network_manager,
-            setup_manager=self.setup_manager
-        )
-        self.network_service.initialize()
-        main_logger.info("Network service initialized")
 
         # API client (may not be usable until device is registered)
         self.api_client = StreamSceneAPIClient()
@@ -112,15 +110,13 @@ class StreamSceneClient:
         self.config_service.initialize()
         main_logger.info("Configuration service initialized")
 
-        # Setup service (business logic for WiFi setup and registration)
-        self.setup_service = SetupService(
-            device_uuid=DEVICE_ID,
-            setup_manager=self.setup_manager,
-            network_manager=self.network_manager,
-            config_service=self.config_service
+        # OTA service (handles over-the-air updates)
+        self.ota_service = OTAService(
+            api_client=self.api_client,
+            config_service=self.config_service,
         )
-        self.setup_service.initialize()
-        main_logger.info("Setup service initialized")
+        self.ota_service.initialize()
+        ota_logger.info("OTA service initialized")
 
         # Display and rendering
         self.renderer = ContentRenderer()
@@ -133,7 +129,11 @@ class StreamSceneClient:
         self.last_heartbeat = 0
 
         # Content tracking for smart refresh
-        self.last_displayed_post_id = None
+        # What the panel shows: a post_id, or _NOT_CONTENT for anything else
+        # (nothing yet, QR, messages, errors). Content with post_id None - e.g.
+        # the server's "No stream configured" - must still be drawn the first
+        # time, and again after any other screen replaced it.
+        self.last_displayed_post_id = _NOT_CONTENT
         self.rotation_index = 0
 
         main_logger.info("Initialization complete")
@@ -143,6 +143,76 @@ class StreamSceneClient:
 
         # Check initial network status and skip WiFi setup if ethernet is available
         self._check_initial_network_status()
+
+        # Check for pending OTA update verification (after reboot)
+        self._check_ota_pending_verification()
+
+    def _check_ota_pending_verification(self):
+        """
+        Check for pending OTA update verification after reboot.
+
+        If an update was installed before the last reboot, verify it succeeded
+        and report status to server. Rollback if verification fails.
+        """
+        pending = self.ota_service.check_pending_verification()
+        if not pending:
+            return
+
+        ota_logger.info(f"Pending update verification: v{pending.get('update_version')}")
+
+        if self.ota_service.verify_boot_success():
+            ota_logger.info("Boot verification passed, completing update")
+            self.ota_service.complete_pending_verification()
+        else:
+            ota_logger.warning("Boot verification failed, rolling back")
+            self.ota_service.rollback_pending_update("Boot verification failed")
+
+    def _check_mandatory_updates(self):
+        """
+        Check for and install mandatory updates.
+
+        Called before normal operation. Mandatory updates must be installed
+        immediately before displaying any content.
+
+        Returns:
+            True if device should continue to normal operation
+            False if reboot is needed after mandatory update
+        """
+        if not API_KEY and not load_api_key():
+            # Not registered yet, can't check for updates
+            return True
+
+        ota_logger.info("Checking for mandatory updates...")
+        result = self.ota_service.handle_mandatory_update()
+
+        if result.needs_reboot:
+            ota_logger.info(f"Mandatory update v{result.version} installed, rebooting...")
+            self.ota_service.trigger_reboot()
+            return False
+
+        if result.update_installed:
+            ota_logger.warning(f"Mandatory update failed: {result.error}")
+
+        return True
+
+    def _check_ota_updates(self):
+        """
+        Check for OTA updates periodically.
+
+        Called during normal operation (READY state).
+        Non-mandatory updates are installed with reboot.
+        """
+        if not self.ota_service.should_check_for_updates():
+            return
+
+        ota_logger.info("Periodic OTA update check...")
+        result = self.ota_service.run_update_cycle()
+
+        if result.needs_reboot:
+            ota_logger.info(f"Update v{result.version} installed, rebooting...")
+            self.ota_service.trigger_reboot()
+        elif result.error:
+            ota_logger.warning(f"Update check failed: {result.error}")
 
     def _fetch_initial_config(self):
         """
@@ -181,20 +251,34 @@ class StreamSceneClient:
         """
         Check network status at startup and skip WiFi setup if network is available.
 
-        Uses NetworkService to check connectivity.
+        Uses NetworkManager to check connectivity.
         If ethernet or WiFi is available, skip WiFi setup and go to registration.
         """
         current_state = self.state_machine.current_state
 
-        # Only check network if currently in WIFI_SETUP or CONNECTING state
+        # Past setup (e.g. rebooted in READY): nothing here used to bring WiFi
+        # back up - the device only reconnected after a content fetch failed
+        # and triggered failover. Reconnect with the saved credentials now.
         if current_state not in [DeviceState.WIFI_SETUP, DeviceState.CONNECTING]:
-            main_logger.debug("[Network] Skipping initial network check (not in setup state)")
+            if (
+                not self.network.is_ethernet_available()
+                and not self.network.is_wifi_connected()
+                and self.network.has_saved_credentials()
+            ):
+                main_logger.info(
+                    f"[Network] Resuming in {current_state.value} with no network - reconnecting saved WiFi"
+                )
+                success, error_reason = self._attempt_network_recovery()
+                if not success:
+                    main_logger.warning(
+                        f"[Network] Startup WiFi reconnect failed ({error_reason}); READY will retry"
+                    )
             return
 
         main_logger.info("[Network] Checking initial network status...")
 
-        # Use NetworkService to check connectivity
-        status = self.network_service.check_initial_connectivity()
+        # Use NetworkManager to check connectivity
+        status = self.network.check_initial_connectivity()
 
         if status.connected:
             main_logger.info(f"[Network] {status.connection_type.upper()} connected: {status.ip_address}")
@@ -269,7 +353,7 @@ class StreamSceneClient:
                     "error": str(e),
                     "previous_state": str(current_state)
                 })
-                time.sleep(10)  # Brief pause before error handling
+                self._sleep(10)  # Brief pause before error handling
 
         main_logger.info("Shutting down...")
         self._cleanup()
@@ -280,7 +364,7 @@ class StreamSceneClient:
         state_logger.info("Entering WIFI_SETUP state")
 
         # Check if we can skip WiFi setup (ethernet or saved credentials)
-        check_result = self.setup_service.check_network_and_credentials()
+        check_result = self.network.check_network_and_credentials()
 
         if check_result.should_skip_wifi_setup:
             if check_result.connection_type == "ethernet":
@@ -308,11 +392,13 @@ class StreamSceneClient:
             "WiFi Setup",
             "Connect to the WiFi hotspot:\n\nStreamScene-XXXX\n\nPassword: streamscene\n\nA setup page will open automatically."
         )
-        self.display.show(image)
+        self._show(image)
         display_logger.info("WiFi setup message displayed")
 
         # Run WiFi setup flow
-        credentials = self.setup_service.run_wifi_setup_flow(timeout=1800)
+        credentials = self.network.run_wifi_setup_flow(timeout=1800)
+        if self._stop.is_set():
+            return  # shutting down, not a setup failure
 
         if credentials:
             wifi_logger.info(f"Successfully obtained credentials for SSID: {credentials['ssid']}")
@@ -346,11 +432,11 @@ class StreamSceneClient:
             "Connecting to WiFi",
             f"Connecting to:\n{ssid}\n\nPlease wait..."
         )
-        self.display.show(image)
+        self._show(image)
         display_logger.info("Connecting message displayed")
 
-        # Connect to WiFi (service handles timeout and error handling)
-        success, ip_address = self.setup_service.connect_to_wifi(
+        # Connect to WiFi
+        success, ip_address, error_reason = self.network.connect_to_wifi(
             ssid=ssid,
             password=password,
             timeout=30
@@ -363,17 +449,56 @@ class StreamSceneClient:
                 "ip_address": ip_address
             })
         else:
-            wifi_logger.error(f"Failed to connect to {ssid}")
+            wifi_logger.error(f"Failed to connect to {ssid} (reason: {error_reason})")
             state_logger.error("WiFi connection failed, returning to WIFI_SETUP")
             self.state_machine.transition_to(DeviceState.WIFI_SETUP)
 
     def _handle_awaiting_registration(self):
-        """Handle AWAITING_REGISTRATION state - show QR code and poll."""
+        """Handle AWAITING_REGISTRATION state - show QR code and poll.
+
+        Registration cannot proceed without a working network path to the API.
+        Verify that first: showing a QR code while offline tells the user
+        everything is fine when nothing is, and there is no other channel on an
+        E Ink device to correct that impression.
+        """
         state_logger.info("Entering AWAITING_REGISTRATION state")
         registration_logger.info("Waiting for device registration")
 
+        from setup.wifi_client import is_connected, is_online
+
+        if not (is_connected() and is_online()):
+            registration_logger.warning(
+                "Cannot register while offline - returning to WIFI_SETUP so the "
+                "hotspot comes back and the device stays reachable"
+            )
+            # Set aside the saved credentials first. WIFI_SETUP skips the
+            # hotspot entirely when credentials exist, so falling back with them
+            # still in place just retries the same failing network forever and
+            # never opens a hotspot - leaving no way to reach the device at all.
+            self._quarantine_wifi_credentials()
+            self._show_offline_notice()
+            # Check the result. transition_to() returns False for a transition
+            # the state machine does not allow, and ignoring that silently
+            # re-enters this state on the next loop - an invisible spin that
+            # redraws the panel every ~20s and never reaches the hotspot code.
+            if not self.state_machine.transition_to(DeviceState.WIFI_SETUP, {
+                "reason": "no network in AWAITING_REGISTRATION"
+            }):
+                state_logger.error(
+                    "Transition AWAITING_REGISTRATION -> WIFI_SETUP was rejected "
+                    "by the state machine; falling back to ERROR to recover "
+                    "rather than spinning in place"
+                )
+                self.state_machine.transition_to(DeviceState.ERROR, {
+                    "error": "Offline while awaiting registration"
+                })
+            # Give the panel a rest: an E Ink refresh is ~30s and has a finite
+            # lifetime, so do not let a recovery path redraw it in a tight loop.
+            self._sleep(30)
+            return
+
         # Get registration URL from service
-        registration_url = self.setup_service.get_registration_url()
+        registration_url = self.network.get_registration_url()
         registration_logger.info(f"Registration URL: {registration_url}")
 
         # Display QR code
@@ -383,27 +508,75 @@ class StreamSceneClient:
             title="Scan to Register",
             instructions="1. Scan QR code with phone\n2. Log in to StreamScene\n3. Choose a nickname\n4. Click Register"
         )
-        self.display.show(image)
+        self._show(image)
         display_logger.info("QR code displayed")
 
         # Poll for registration (service handles polling logic)
-        registration_logger.info("Starting registration polling (30 minute timeout, 10 second interval)")
-        success = self.setup_service.run_registration_flow(
+        #
+        # The timeout is deliberately short relative to how long someone may
+        # take to register. Do NOT treat expiry as a fatal error: a user who
+        # plugs the frame in and registers an hour later is a normal case, and
+        # dropping to ERROR leaves a QR code on screen with no poll behind it -
+        # indistinguishable from a working device. Expiry simply re-enters this
+        # state, which re-checks connectivity and resumes polling.
+        registration_logger.info("Starting registration polling (10 minute cycle, 10 second interval)")
+        success = self.network.run_registration_flow(
             api_client=self.api_client,
             poll_interval=10,
-            timeout=1800
+            timeout=600
         )
+        if self._stop.is_set():
+            return  # shutting down, not a registration failure
 
         if success:
             registration_logger.info("Device successfully registered!")
             state_logger.info("Transitioning to REGISTERED state")
             self.state_machine.transition_to(DeviceState.REGISTERED)
         else:
-            registration_logger.error("Registration timeout")
-            state_logger.error("Registration failed, transitioning to ERROR state")
-            self.state_machine.transition_to(DeviceState.ERROR, {
-                "error": "Registration timeout - please try again"
+            registration_logger.info(
+                "No registration yet after this polling cycle - re-checking "
+                "connectivity and continuing to wait"
+            )
+            self.state_machine.transition_to(DeviceState.AWAITING_REGISTRATION, {
+                "reason": "registration poll cycle elapsed, retrying"
             })
+
+    def _quarantine_wifi_credentials(self):
+        """Move saved WiFi credentials aside so WIFI_SETUP opens the hotspot.
+
+        Kept (not deleted) as wifi_credentials.json.failed for diagnosis.
+        """
+        from setup.wifi_client import WIFI_CONFIG_FILE
+
+        try:
+            if WIFI_CONFIG_FILE.exists():
+                failed = WIFI_CONFIG_FILE.with_suffix(".json.failed")
+                WIFI_CONFIG_FILE.replace(failed)
+                wifi_logger.warning(
+                    "Saved WiFi credentials did not yield a working connection; "
+                    "moved to %s so setup can capture new ones", failed
+                )
+        except Exception as e:
+            wifi_logger.error("Could not quarantine WiFi credentials: %s", e)
+
+    def _show_offline_notice(self):
+        """Tell the user on the panel that the device cannot reach the server.
+
+        Without this the display keeps showing whatever was drawn last, which
+        during setup is a QR code implying success.
+        """
+        try:
+            image = self.renderer.render_message(
+                title="No Network",
+                message=(
+                    "Could not reach StreamScene.\n\n"
+                    "Reconnect to the StreamScene-XXXX\n"
+                    "WiFi network to set up again."
+                ),
+            )
+            self._show(image)
+        except Exception as e:
+            display_logger.warning("Could not render offline notice: %s", e)
 
     def _handle_registered(self):
         """Handle REGISTERED state - device just got registered."""
@@ -419,6 +592,7 @@ class StreamSceneClient:
             # For now, transition to ready and let it fail if key is missing
             registration_logger.warning("Proceeding without API key - may need manual intervention")
         else:
+            self.api_client.set_api_key(api_key)
             registration_logger.info("API key loaded successfully")
 
         # Display success message
@@ -428,11 +602,11 @@ class StreamSceneClient:
             "Your device is now registered.\n\nStarting normal operation...",
             color="green"
         )
-        self.display.show(image)
+        self._show(image)
         display_logger.info("Success message displayed")
 
         registration_logger.info("Showing success message for 5 seconds")
-        time.sleep(5)  # Show success message for 5 seconds
+        self._sleep(5)  # Show success message for 5 seconds
 
         # Mark setup as complete and transition to ready
         state_logger.info("Setup complete, transitioning to READY state")
@@ -444,13 +618,22 @@ class StreamSceneClient:
         """
         Attempt to recover network connection without changing device state.
 
-        Delegates to NetworkService for actual recovery logic.
+        Delegates to NetworkManager for actual recovery logic.
         Stays in READY state to preserve registration.
 
         Returns:
             Tuple of (success: bool, error_reason: Optional[str])
         """
-        return self.network_service.attempt_recovery()
+        return self.network.attempt_recovery()
+
+    def _show(self, image, post_id=_NOT_CONTENT):
+        """Draw to the panel and remember what is on it.
+
+        Non-content screens omit post_id and record _NOT_CONTENT, so the next
+        content fetch redraws even if its post_id (possibly None) is unchanged.
+        """
+        self.display.show(image)
+        self.last_displayed_post_id = post_id
 
     def _handle_ready(self):
         """Handle READY state - normal operation with smart refresh. Stay in READY even if offline."""
@@ -465,12 +648,22 @@ class StreamSceneClient:
             })
             return
 
+        # Check for mandatory updates on first entry to READY state
+        if not hasattr(self, '_mandatory_update_checked'):
+            self._mandatory_update_checked = True
+            if not self._check_mandatory_updates():
+                # Reboot triggered for mandatory update
+                return
+
         # Track consecutive failures for network recovery
         if not hasattr(self, 'consecutive_failures'):
             self.consecutive_failures = 0
 
         # Refresh config periodically (every 2 minutes max)
         self._refresh_config_if_needed()
+
+        # Check for OTA updates periodically (every hour by default)
+        self._check_ota_updates()
 
         try:
             # Determine operation mode from config
@@ -512,20 +705,20 @@ class StreamSceneClient:
                         image = self.api_client.fetch_content_image(rotation_index=self.rotation_index)
                         if image:
                             display_logger.info("Displaying server-rendered image on E Ink display")
-                            self.display.show(image)
+                            self._show(image, post_id=current_post_id)
                         else:
                             display_logger.warning("Failed to download rendered image, falling back to local rendering")
                             image = self.renderer.render_content(content)
-                            self.display.show(image)
+                            self._show(image, post_id=current_post_id)
                     else:
                         # Fallback to local rendering for legacy content
                         display_logger.info("Rendering fetched content to image (local)")
                         image = self.renderer.render_content(content)
                         display_logger.info("Displaying image on E Ink display")
-                        self.display.show(image)
+                        self._show(image, post_id=current_post_id)
 
                     # Update tracking
-                    self.last_displayed_post_id = current_post_id
+                    # (self._show recorded current_post_id as what is on screen)
 
                     # Increment rotation index for next cycle (wraps automatically on server)
                     if rotation_enabled:
@@ -543,9 +736,13 @@ class StreamSceneClient:
 
                 # Check if ethernet is down after first failure - immediate WiFi failover
                 if self.consecutive_failures >= 1:
-                    # Check if ethernet is down
-                    if not self.network_service.is_ethernet_up():
-                        api_logger.info("Ethernet is DOWN - attempting immediate WiFi failover")
+                    # Reconnect only when there is actually no link. With WiFi
+                    # still connected the failure is the server or the internet,
+                    # and tearing WiFi down and back up (as this used to on every
+                    # failure when eth0 is absent, i.e. on every shipped device)
+                    # only adds an outage.
+                    if not self.network.is_ethernet_up() and not self.network.is_wifi_connected():
+                        api_logger.info("No ethernet and WiFi is down - attempting immediate WiFi failover")
                         success, error_reason = self._attempt_network_recovery()
 
                         if success:
@@ -563,15 +760,15 @@ class StreamSceneClient:
                             # Handle wrong WiFi credentials - transition to WiFi setup
                             if error_reason == "wrong_credentials":
                                 api_logger.error("Wrong WiFi credentials detected - clearing credentials and entering WiFi setup mode")
-                                self.setup_manager.clear_saved_credentials()
+                                self.network.clear_saved_credentials()
 
                                 # Render message before state transition
                                 display_logger.info("Rendering WiFi credentials error message")
                                 image = self.renderer.render_error(
                                     "Wrong WiFi password.\n\nEntering WiFi setup mode..."
                                 )
-                                self.display.show(image)
-                                time.sleep(5)  # Give user time to see message
+                                self._show(image)
+                                self._sleep(5)  # Give user time to see message
 
                                 # Transition to WiFi setup
                                 state_logger.info("Transitioning to WIFI_SETUP state due to wrong credentials")
@@ -591,14 +788,14 @@ class StreamSceneClient:
                                 error_message = "WiFi connection timeout.\n\nCheck network signal."
 
                             image = self.renderer.render_error(error_message)
-                            self.display.show(image)
+                            self._show(image)
                     else:
-                        # Ethernet still up - wait for 2nd failure before showing error
+                        # A link is up - wait for 2nd failure before showing error
                         if self.consecutive_failures >= 2:
-                            # Network issue but ethernet is up - show generic error
-                            display_logger.info("Rendering error message (ethernet up, likely server issue)")
+                            # Link is up, so likely a server/internet issue
+                            display_logger.info("Rendering error message (link up, likely server issue)")
                             image = self.renderer.render_error("Unable to fetch content. Check network connection.")
-                            self.display.show(image)
+                            self._show(image)
 
             # Send heartbeat if needed
             if time.time() - self.last_heartbeat >= HEARTBEAT_INTERVAL:
@@ -617,14 +814,14 @@ class StreamSceneClient:
                 poll_interval = 60  # Always check every minute in static mode
                 main_logger.info(f"Sleeping for {poll_interval}s (static mode)")
 
-            time.sleep(poll_interval)
+            self._sleep(poll_interval)
 
         except Exception as e:
             api_logger.error(f"Error during content fetch/display: {e}", exc_info=True)
             # Don't transition to error state for transient failures
             # Just log and retry on next loop
             main_logger.info("Retrying in 60s")
-            time.sleep(60)
+            self._sleep(60)
 
     def _handle_error(self):
         """Handle ERROR state - display error and attempt recovery with enhanced logging."""
@@ -644,12 +841,12 @@ class StreamSceneClient:
         image = self.renderer.render_error(
             f"Error: {error}\n\nAttempting recovery..."
         )
-        self.display.show(image)
+        self._show(image)
         display_logger.info("Error message displayed")
 
         # Wait before attempting recovery
         main_logger.info("Waiting 10 seconds before attempting recovery")
-        time.sleep(10)
+        self._sleep(10)
 
         # Recovery logic based on error reason or error message
         if reason == "network_lost" or "wifi" in error.lower() or "network" in error.lower():
@@ -675,10 +872,19 @@ class StreamSceneClient:
 
             self.state_machine.transition_to(DeviceState.READY)
 
+    def _sleep(self, seconds) -> bool:
+        """Sleep, but return early (True) as soon as shutdown is requested.
+
+        time.sleep() here kept the client deaf to SIGTERM for up to a poll
+        interval, so systemd killed it at TimeoutStopSec and _cleanup never ran.
+        """
+        return self._stop.wait(seconds)
+
     def _signal_handler(self, signum, frame):
         """Handle shutdown signals gracefully."""
         main_logger.info(f"Received signal {signum}, initiating graceful shutdown")
         self.running = False
+        self._stop.set()
 
     def _cleanup(self):
         """Clean up resources."""
@@ -686,9 +892,9 @@ class StreamSceneClient:
 
         try:
             # Stop any active hotspot
-            if self.network_manager.is_in_ap_mode():
+            if self.network.is_in_ap_mode():
                 network_logger.info("Stopping active hotspot")
-                self.network_manager.stop_hotspot()
+                self.network.stop_hotspot()
                 network_logger.info("Hotspot stopped successfully")
 
             # Put display to sleep

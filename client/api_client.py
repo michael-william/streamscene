@@ -88,6 +88,18 @@ class StreamSceneAPIClient:
 
         return session
 
+    def set_api_key(self, api_key: str) -> None:
+        """Start authenticating with a newly obtained API key.
+
+        The session is built once at startup, in setup mode with no key. After
+        registration the key must be put on that session too; otherwise every
+        authenticated call goes out without X-Device-Api-Key and the server
+        answers 422 (missing header).
+        """
+        self.api_key = api_key
+        self.session.headers["X-Device-Api-Key"] = api_key
+        print("[API Client] API key: present (set after registration)")
+
     def fetch_content(self, rotation_index: Optional[int] = None) -> Optional[Dict[str, Any]]:
         """
         Fetch current content to display from the API.
@@ -305,6 +317,154 @@ class StreamSceneAPIClient:
         except requests.exceptions.RequestException as e:
             print(f"[API Client] Error checking registration status: {e}")
             return None
+
+    # =========================================================================
+    # OTA Update Methods
+    # =========================================================================
+
+    def check_for_updates(self) -> Optional[Dict[str, Any]]:
+        """
+        Check for available OTA updates.
+
+        Returns:
+            Dict with update info:
+            {
+                "update_available": bool,
+                "version": str (if available),
+                "update_id": str (if available),
+                "is_mandatory": bool,
+                "package_size": int,
+                "package_hash": str,
+                "changelog": str,
+                "current_version": str
+            }
+            Returns None if request fails.
+        """
+        url = f"{self.base_url}/api/devices/{self.device_id}/updates/check"
+
+        try:
+            print(f"[API Client] Checking for updates...")
+            response = self.session.get(url, timeout=config.REQUEST_TIMEOUT)
+            response.raise_for_status()
+
+            data = response.json()
+            if data.get("update_available"):
+                print(f"[API Client] Update available: v{data.get('version')}")
+            else:
+                print(f"[API Client] No update available (current: v{data.get('current_version')})")
+
+            return data
+
+        except requests.exceptions.RequestException as e:
+            print(f"[API Client] Error checking for updates: {e}")
+            return None
+
+    def download_update(
+        self,
+        version: str,
+        progress_callback: Optional[callable] = None,
+    ) -> Optional[bytes]:
+        """
+        Download an OTA update package.
+
+        Args:
+            version: Version to download
+            progress_callback: Optional callback(bytes_downloaded, total_bytes)
+
+        Returns:
+            Package data as bytes, or None if download fails
+        """
+        url = f"{self.base_url}/api/devices/{self.device_id}/updates/{version}/download"
+
+        try:
+            print(f"[API Client] Downloading update v{version}...")
+
+            # Use stream=True for progress tracking
+            response = self.session.get(
+                url,
+                timeout=config.REQUEST_TIMEOUT * 10,  # Longer timeout for download
+                stream=True,
+            )
+            response.raise_for_status()
+
+            # Get total size from Content-Length header
+            total_size = int(response.headers.get('Content-Length', 0))
+
+            # Download in chunks
+            chunks = []
+            downloaded = 0
+
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    chunks.append(chunk)
+                    downloaded += len(chunk)
+
+                    if progress_callback and total_size > 0:
+                        progress_callback(downloaded, total_size)
+
+            data = b''.join(chunks)
+            print(f"[API Client] Download complete: {len(data)} bytes")
+
+            return data
+
+        except requests.exceptions.RequestException as e:
+            print(f"[API Client] Error downloading update: {e}")
+            return None
+
+    def report_update_status(
+        self,
+        update_id: str,
+        status: str,
+        download_progress: Optional[int] = None,
+        error_message: Optional[str] = None,
+        rollback_reason: Optional[str] = None,
+    ) -> bool:
+        """
+        Report OTA update installation status to server.
+
+        Args:
+            update_id: Update ID from check_for_updates()
+            status: One of: downloading, installing, completed, failed, rolled_back
+            download_progress: Download progress 0-100 (for downloading status)
+            error_message: Error message (for failed status)
+            rollback_reason: Rollback reason (for rolled_back status)
+
+        Returns:
+            True if report sent successfully
+        """
+        url = f"{self.base_url}/api/devices/{self.device_id}/updates/report"
+
+        payload = {
+            "update_id": update_id,
+            "status": status,
+        }
+
+        if download_progress is not None:
+            payload["download_progress"] = download_progress
+
+        if error_message:
+            payload["error_message"] = error_message
+
+        if rollback_reason:
+            payload["rollback_reason"] = rollback_reason
+
+        try:
+            print(f"[API Client] Reporting update status: {status}")
+            response = self.session.post(
+                url,
+                json=payload,
+                timeout=config.REQUEST_TIMEOUT,
+            )
+            response.raise_for_status()
+
+            data = response.json()
+            print(f"[API Client] Status reported: {data.get('message', 'OK')}")
+
+            return True
+
+        except requests.exceptions.RequestException as e:
+            print(f"[API Client] Error reporting update status: {e}")
+            return False
 
 
 if __name__ == "__main__":

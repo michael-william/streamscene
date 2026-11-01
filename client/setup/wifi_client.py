@@ -5,16 +5,48 @@ This module handles connecting the Raspberry Pi to a WiFi network in client mode
 
 import subprocess
 import json
+import sys
 import time
 from typing import Optional, Dict, Tuple
 from pathlib import Path
 import logging
 import os
 
-logger = logging.getLogger(__name__)
+# logging.getLogger(__name__) has no file handler of its own - only
+# hotspot.py wires into the pre-configured component loggers, so every
+# wpa_supplicant state transition, DHCP step and exception this module
+# logs was going nowhere (not even journald, which doesn't persist on
+# this image). Route through the same wifi_logger main.py uses so this
+# module's detail actually lands in streamscene-wifi.log.
+sys.path.append(str(Path(__file__).parent.parent))
+from logging_config import wifi_logger as logger
+
+DHCLIENT_PIDFILE = "/run/dhclient.wlan0.pid"
+
+
+def release_dhcp_lease() -> None:
+    """Release wlan0's lease and stop any dhclient still holding it.
+
+    dhclient stays running after a lease to renew it. A leftover instance
+    would re-add its address on renewal, so it must go before the hotspot
+    takes wlan0 (hotspot.py calls this too) and before a new attempt.
+    `-r` only reaches the instance named in the pidfile; pkill catches one
+    orphaned by a timeout.
+    """
+    for cmd in (["sudo", "dhclient", "-r", "-pf", DHCLIENT_PIDFILE, "wlan0"],
+                ["sudo", "pkill", "dhclient"]):
+        try:
+            subprocess.run(cmd, check=False, capture_output=True, timeout=10)
+        except subprocess.TimeoutExpired:
+            logger.warning("%s did not return within 10s", " ".join(cmd[1:]))
 
 WIFI_CONFIG_FILE = Path.home() / "streamscene-client" / "wifi_credentials.json"
 WPA_SUPPLICANT_CONF = "/etc/wpa_supplicant/wpa_supplicant.conf"
+
+# The static address wlan0 carries while running as an access point.
+# Must match the address hotspot.py assigns. Defined here rather than imported
+# from hotspot to avoid a circular import through setup/__init__.py.
+HOTSPOT_IP = "192.168.4.1"
 
 
 def parse_wpa_status(status_output: str) -> Dict[str, str]:
@@ -255,26 +287,37 @@ def connect_to_wifi(ssid: str, password: str, timeout: int = 45) -> Tuple[bool, 
             # Timeout - log final state for diagnostics
             logger.warning(f"WiFi association timeout after {association_timeout}s (final state: {last_state})")
 
-        # Step 3: Request DHCP lease using dhcpcd (Raspberry Pi OS default)
-        logger.debug("Requesting DHCP lease with dhcpcd...")
+        # Step 3: Request a DHCP lease with dhclient.
+        #
+        # NOT dhcpcd: Debian bookworm's dhcpcd 9.4.1 seccomp sandbox has no
+        # rule for getrandom (syscall 384) on 32-bit ARM, so the kernel kills
+        # its unprivileged manager with SIGSYS right after "IAID ..." - before
+        # it ever sends a DHCPDISCOVER. Symptom: wpa_state=COMPLETED in ~2s,
+        # then `dhcpcd -1` hangs until our timeout, every attempt, logging only
+        # "ps_ctl_listen: read: Success". Confirmed on a Pi Zero 2 W via
+        # `audit: type=1326 ... comm="dhcpcd" sig=31 syscall=384`. There is no
+        # runtime switch to disable dhcpcd's privsep/seccomp, and no fixed
+        # package in the bookworm/raspbian repos.
+        logger.debug("Requesting DHCP lease with dhclient...")
+        release_dhcp_lease()
 
-        # Release any existing lease
-        subprocess.run(
-            ["sudo", "dhcpcd", "-k", "wlan0"],
-            check=False,
-            capture_output=True,
-            timeout=5
-        )
-        time.sleep(1)
-
-        # Request new lease (dhcpcd daemon manages this automatically)
-        # Since wpa_supplicant already associated, dhcpcd should get lease quickly
-        subprocess.run(
-            ["sudo", "dhcpcd", "-n", "wlan0"],
-            check=False,
-            capture_output=True,
-            timeout=30
-        )
+        # -1: try once and exit non-zero if no lease; on success dhclient
+        # backgrounds itself to renew. -4: IPv4 only.
+        try:
+            result = subprocess.run(
+                ["sudo", "dhclient", "-1", "-4", "-pf", DHCLIENT_PIDFILE, "wlan0"],
+                check=False,
+                capture_output=True,
+                timeout=30
+            )
+            if result.returncode != 0:
+                logger.warning(
+                    "dhclient -1 -4 exited %s: %s", result.returncode,
+                    result.stderr.decode(errors="replace").strip()[-500:]
+                )
+        except subprocess.TimeoutExpired:
+            logger.error("dhclient -1 -4 wlan0 did not return within 30s")
+            release_dhcp_lease()
 
         # Step 4: Wait for connection
         logger.debug(f"Waiting for connection (timeout: {timeout}s)...")
@@ -315,7 +358,12 @@ def is_connected() -> bool:
         True if connected to a network
     """
     try:
-        # Method 1: Check wpa_cli status (most reliable)
+        # wpa_state=COMPLETED means link-layer association succeeded - it says
+        # nothing about DHCP. Treating it alone as "connected" is what let a
+        # device with no IP address log "Successfully connected! IP address:
+        # None" in the same breath: this used to return True here before ever
+        # checking for an address. Kept only as a debug signal now; the real
+        # answer comes from Method 2 below, which requires an actual IP.
         result = subprocess.run(
             ["sudo", "wpa_cli", "-i", "wlan0", "status"],
             capture_output=True,
@@ -323,13 +371,18 @@ def is_connected() -> bool:
             timeout=5
         )
 
-        if result.returncode == 0:
-            # Check for wpa_state=COMPLETED
-            if "wpa_state=COMPLETED" in result.stdout:
-                logger.debug("WiFi connected (wpa_state=COMPLETED)")
-                return True
+        if result.returncode == 0 and "wpa_state=COMPLETED" in result.stdout:
+            logger.debug("wpa_state=COMPLETED (association only - checking for an IP next)")
 
-        # Method 2: Check if wlan0 has an IP address (also reliable)
+        # Method 2: Check if wlan0 has an IP address (the only reliable signal
+        # that the connection is actually usable)
+        #
+        # IMPORTANT: the hotspot's own static address (HOTSPOT_IP) is 'scope
+        # global' too. Accepting any global address here reported "connected"
+        # while the radio was still running as an access point connected to
+        # nothing - the device then advanced to registration and polled a
+        # server it could not reach, showing a QR code as if all was well.
+        # Never treat the hotspot address as connectivity.
         result = subprocess.run(
             ["ip", "addr", "show", "wlan0"],
             capture_output=True,
@@ -338,17 +391,53 @@ def is_connected() -> bool:
         )
 
         if result.returncode == 0:
-            # Look for inet (IPv4 address) - not localhost
+            # Look for inet (IPv4 address) - not localhost, not the hotspot IP
             lines = result.stdout.split('\n')
             for line in lines:
                 if "inet " in line and "scope global" in line:
-                    logger.debug("WiFi connected (has global IP address)")
+                    addr = line.strip().split()[1].split('/')[0]
+                    if addr == HOTSPOT_IP:
+                        logger.warning(
+                            "wlan0 holds the hotspot address %s - this is AP mode, "
+                            "not a client connection", HOTSPOT_IP
+                        )
+                        continue
+                    logger.info("WiFi connected (global IP address %s)", addr)
                     return True
 
+        logger.info("WiFi not connected (no wpa_state=COMPLETED, no client IP)")
         return False
 
     except Exception as e:
-        logger.debug(f"Error checking connection: {e}")
+        logger.warning("Error checking connection: %s", e)
+        return False
+
+
+def is_online(host: str = "1.1.1.1", port: int = 53, timeout: int = 3) -> bool:
+    """
+    Check whether the device can actually reach the network.
+
+    is_connected() only reports link state - an associated interface with an
+    address. That is not the same as being able to reach the server, and the
+    difference is invisible on an E Ink display. Use this before advancing to
+    any state that depends on talking to the API.
+
+    Args:
+        host: Address to probe (default: Cloudflare DNS)
+        port: TCP port to probe (default: 53)
+        timeout: Seconds to wait
+
+    Returns:
+        True if a TCP connection can be established
+    """
+    import socket
+
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            logger.info("Network reachable (%s:%s)", host, port)
+            return True
+    except OSError as e:
+        logger.warning("Network unreachable (%s:%s): %s", host, port, e)
         return False
 
 
@@ -530,12 +619,7 @@ def disconnect_wifi() -> bool:
             capture_output=True
         )
 
-        # Release DHCP lease
-        subprocess.run(
-            ["sudo", "dhcpcd", "-k", "wlan0"],
-            check=False,
-            capture_output=True
-        )
+        release_dhcp_lease()
 
         logger.info("✓ Disconnected from WiFi")
         return True

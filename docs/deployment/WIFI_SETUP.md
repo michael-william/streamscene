@@ -1,5 +1,26 @@
 # WiFi Setup Deployment Guide
 
+> ## ⚠️ Development and testing only
+>
+> **This is not the distribution process.** It describes Environment A - a Pi
+> on your bench, reachable over a USB-ethernet adapter, with packages installed
+> by hand and client code rsynced over. Devices you hand to other people have
+> no ethernet and none of these manual steps.
+>
+> - To build and hand out a device → **[DISTRIBUTION.md](DISTRIBUTION.md)**
+> - For image internals → [SD_CARD_IMAGE.md](SD_CARD_IMAGE.md)
+> - To debug a device at someone else's house →
+>   [../development/REMOTE_DEBUG.md](../development/REMOTE_DEBUG.md)
+>
+> Following this guide when you meant to produce a distributable card is the
+> single most common way to end up with a device that does nothing.
+>
+> **Two details below are stale** and kept only because the surrounding manual
+> procedure still works on a bench Pi:
+> - The device UUID path is `/boot/firmware/streamscene-device.txt` on Bookworm,
+>   not `/boot/streamscene-device.txt`.
+> - The production image is **32-bit (armhf)**, not 64-bit.
+
 This guide explains how to deploy and test the WiFi hotspot and captive portal functionality on your Raspberry Pi Zero 2 WH.
 
 ## Prerequisites

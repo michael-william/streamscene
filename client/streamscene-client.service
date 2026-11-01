@@ -19,12 +19,31 @@ Environment="PYTHONUNBUFFERED=1"
 # DEV/TESTING ONLY: Uncomment to enable ethernet detection (production uses WiFi only)
 #Environment="STREAMSCENE_ALLOW_ETHERNET=true"
 
+# Allow binding port 80 for the captive portal without running as root.
+# This replaces both the iptables 80->8080 REDIRECT (which needed an iptables
+# binary that is not installed and a sudoers rule that does not exist) and the
+# setcap on /usr/bin/python3 in first_boot.sh (which granted every Python
+# process on the device the same privilege and was wiped by apt upgrades).
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+# Do NOT add CapabilityBoundingSet=CAP_NET_BIND_SERVICE here.
+# It drops CAP_SETUID/CAP_SETGID for the whole service, which breaks every
+# sudo call the client makes (sudo is setuid-root) - including the
+# ExecStartPre below, so the unit never starts at all.
+
 # Unblock WiFi on every boot (ensure WiFi adapter is available)
 ExecStartPre=/usr/bin/sudo /usr/sbin/rfkill unblock wifi
 ExecStartPre=/usr/bin/sudo /usr/sbin/rfkill unblock all
 
 # Start the client
 ExecStart=/home/pi/streamscene-client/venv/bin/python3 main.py
+
+# wpa_supplicant and dhclient run inside this service, so stopping or
+# restarting it SIGKILLs them (KillMode=mixed) and dhclient never removes its
+# address. wlan0 then keeps its IP and a preferred default route on a link that
+# is no longer associated, and every packet - including replies on eth0 -
+# goes into a dead interface. Clear wlan0 so the next start reconnects
+# cleanly. "+" runs this as root despite User=pi.
+ExecStopPost=+/usr/sbin/ip addr flush dev wlan0
 
 # Restart policy - always restart on failure
 Restart=always

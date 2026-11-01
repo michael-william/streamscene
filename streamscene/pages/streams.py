@@ -21,6 +21,7 @@ class StreamsState(BaseState):
     # Separate stream lists for better organization
     owned_streams: List[dict] = []
     subscribed_streams: List[dict] = []
+    public_streams: List[dict] = []
 
     # Form fields
     new_stream_name: str = ""
@@ -46,6 +47,12 @@ class StreamsState(BaseState):
     # Delete stream field
     delete_stream_id: str = ""
     delete_stream_name: str = ""
+
+    # Unsubscribe dialog state
+    is_unsubscribe_dialog_open: bool = False
+    unsubscribe_stream_id: str = ""
+    unsubscribe_stream_name: str = ""
+    is_unsubscribing: bool = False
 
     # Loading states
     is_loading: bool = False
@@ -166,10 +173,129 @@ class StreamsState(BaseState):
             traceback.print_exc()
             self.error_message = f"Error loading subscribed streams: {str(e)}"
 
+    def load_public_streams(self):
+        """Load public streams for discovery."""
+        print(f"[LOAD_PUBLIC] Called")
+
+        if not self.user_id:
+            return
+
+        try:
+            # Get IDs of streams we already know about to exclude them
+            known_ids = {s["id"] for s in self.owned_streams} | {s["id"] for s in self.subscribed_streams}
+
+            from streamscene.core.models import Stream
+
+            with get_db_session() as session:
+                # Fetch all public streams
+                public_streams = session.query(Stream).filter(Stream.is_public == True).all()
+
+                # Filter out known streams and convert to dict
+                self.public_streams = [
+                    {
+                        "id": str(stream.id),
+                        "name": stream.name,
+                        "slug": stream.slug,
+                        "description": stream.description or "",
+                        "is_public": True,
+                        "owner_name": (stream.owner.display_name or stream.owner.name or "Unknown") if stream.owner else "Unknown",
+                    }
+                    for stream in public_streams
+                    if str(stream.id) not in known_ids
+                ]
+
+                print(f"[LOAD_PUBLIC] Loaded {len(self.public_streams)} new public streams")
+                yield
+
+        except Exception as e:
+            print(f"[LOAD_PUBLIC] Error: {e}")
+            self.error_message = f"Error loading public streams: {str(e)}"
+
+    def subscribe_to_stream(self, stream_id: str):
+        """Subscribe to a public stream."""
+        if not self.user_id:
+            self.error_message = "You must be logged in to subscribe"
+            return
+
+        try:
+            user_uuid = UUID(self.user_id)
+            stream_uuid = UUID(stream_id)
+        except ValueError:
+            self.error_message = "Invalid ID"
+            return
+
+        self.error_message = ""
+        yield
+
+        try:
+            with get_db_session() as session:
+                stream_ops.subscribe_to_stream(session, user_uuid, stream_uuid)
+                session.commit()
+
+            self.success_message = "Subscribed successfully!"
+            yield from self.load_all_streams()
+            yield from self.auto_dismiss_success()
+
+        except Exception as e:
+            self.error_message = f"Error subscribing: {str(e)}"
+
+    def open_unsubscribe_dialog(self, stream_id: str):
+        """Open the unsubscribe confirmation dialog."""
+        # Find the stream in subscribed_streams list
+        stream = None
+        for s in self.subscribed_streams:
+            if s["id"] == stream_id:
+                stream = s
+                break
+
+        if not stream:
+            self.error_message = "Stream not found"
+            return
+
+        self.unsubscribe_stream_id = stream_id
+        self.unsubscribe_stream_name = stream["name"]
+        self.is_unsubscribe_dialog_open = True
+        self.error_message = ""
+
+    def close_unsubscribe_dialog(self):
+        """Close the unsubscribe confirmation dialog."""
+        self.is_unsubscribe_dialog_open = False
+        self.unsubscribe_stream_id = ""
+        self.unsubscribe_stream_name = ""
+
+    def unsubscribe_from_stream(self):
+        """Unsubscribe from a stream."""
+        if not self.user_id or not self.unsubscribe_stream_id:
+            return
+
+        self.is_unsubscribing = True
+        self.error_message = ""
+        yield
+
+        try:
+            user_uuid = UUID(self.user_id)
+            stream_uuid = UUID(self.unsubscribe_stream_id)
+
+            with get_db_session() as session:
+                stream_ops.unsubscribe_from_stream(session, user_uuid, stream_uuid)
+                session.commit()
+
+            self.success_message = f"Unsubscribed from '{self.unsubscribe_stream_name}'"
+            self.close_unsubscribe_dialog()
+            yield from self.load_all_streams()
+            yield from self.auto_dismiss_success()
+
+        except Exception as e:
+            self.error_message = f"Error unsubscribing: {str(e)}"
+        finally:
+            self.is_unsubscribing = False
+            yield
+
     def load_all_streams(self):
         """Load both owned and subscribed streams."""
         yield from self.load_owned_streams()
         yield from self.load_subscribed_streams()
+        yield from self.load_public_streams()
 
     @rx.var
     def filtered_owned_streams(self) -> List[dict]:
@@ -200,6 +326,18 @@ class StreamsState(BaseState):
         query = self.search_query.lower()
         return [
             stream for stream in self.subscribed_streams
+            if query in stream["name"].lower() or query in stream["description"].lower()
+        ]
+
+    @rx.var
+    def filtered_public_streams(self) -> List[dict]:
+        """Filter public streams based on search query."""
+        if not self.search_query:
+            return self.public_streams
+
+        query = self.search_query.lower()
+        return [
+            stream for stream in self.public_streams
             if query in stream["name"].lower() or query in stream["description"].lower()
         ]
 
@@ -546,7 +684,7 @@ def subscribed_stream_card(stream: dict) -> rx.Component:
                     size="2",
                     color_scheme="red",
                     variant="ghost",
-                    disabled=True,  # TODO: Implement unsubscribe
+                    on_click=StreamsState.open_unsubscribe_dialog(stream["id"]),
                 ),
                 spacing="2",
                 wrap="wrap",
@@ -555,6 +693,134 @@ def subscribed_stream_card(stream: dict) -> rx.Component:
             width="100%",
         ),
         width="100%",
+    )
+
+
+def public_stream_card(stream: dict) -> rx.Component:
+    """Card component for public stream (mobile view)."""
+    return rx.card(
+        rx.vstack(
+            rx.hstack(
+                rx.text(stream["name"], weight="bold", size="4"),
+                rx.spacer(),
+                rx.text(stream["owner_name"], size="2", color="gray"),
+                width="100%",
+                align="center",
+            ),
+            rx.text(stream["description"], color="gray", size="2"),
+            rx.hstack(
+                rx.link(
+                    rx.button(
+                        "View Posts",
+                        size="2",
+                        variant="soft",
+                    ),
+                    href=f"/stream-posts?id={stream['id']}",
+                ),
+                rx.button(
+                    "Subscribe",
+                    on_click=StreamsState.subscribe_to_stream(stream["id"]),
+                    size="2",
+                    variant="solid",
+                    color_scheme="blue",
+                ),
+                spacing="2",
+                wrap="wrap",
+            ),
+            spacing="3",
+            width="100%",
+        ),
+        width="100%",
+    )
+
+
+def public_streams_table() -> rx.Component:
+    """Table showing public streams."""
+    return rx.vstack(
+        rx.heading("Discover Public Streams", size="6", margin_bottom="3"),
+        rx.cond(
+            StreamsState.filtered_public_streams.length() > 0,
+            rx.fragment(
+                # Mobile: Card list
+                rx.vstack(
+                    rx.foreach(
+                        StreamsState.filtered_public_streams,
+                        public_stream_card,
+                    ),
+                    spacing="3",
+                    width="100%",
+                    display=["flex", "flex", "none"],  # Mobile/tablet only
+                ),
+                # Desktop: Table
+                rx.card(
+                    rx.box(
+                        rx.table.root(
+                            rx.table.header(
+                                rx.table.row(
+                                    rx.table.column_header_cell("Name"),
+                                    rx.table.column_header_cell("Owner"),
+                                    rx.table.column_header_cell("Description"),
+                                    rx.table.column_header_cell("Actions"),
+                                ),
+                            ),
+                            rx.table.body(
+                                rx.foreach(
+                                    StreamsState.filtered_public_streams,
+                                    lambda stream: rx.table.row(
+                                        rx.table.cell(
+                                            rx.text(stream["name"], weight="medium")
+                                        ),
+                                        rx.table.cell(
+                                            rx.text(stream["owner_name"], size="2")
+                                        ),
+                                        rx.table.cell(
+                                            rx.text(stream["description"], color="gray", size="2")
+                                        ),
+                                        rx.table.cell(
+                                            rx.hstack(
+                                                rx.link(
+                                                    rx.button(
+                                                        "View Posts",
+                                                        size="2",
+                                                        variant="soft",
+                                                    ),
+                                                    href=f"/stream-posts?id={stream['id']}",
+                                                ),
+                                                rx.button(
+                                                    "Subscribe",
+                                                    on_click=StreamsState.subscribe_to_stream(stream["id"]),
+                                                    size="2",
+                                                    variant="solid",
+                                                    color_scheme="blue",
+                                                ),
+                                                spacing="2",
+                                            )
+                                        ),
+                                    ),
+                                ),
+                            ),
+                            variant="surface",
+                            size="3",
+                            width="100%",
+                        ),
+                        overflow_x="auto",
+                        width="100%",
+                    ),
+                    size="2",
+                    width="100%",
+                    display=["none", "none", "block"],  # Desktop only
+                ),
+            ),
+            rx.text(
+                "No other public streams found.",
+                size="2",
+                color="gray",
+                font_style="italic",
+            ),
+        ),
+        spacing="3",
+        width="100%",
+        align="start",
     )
 
 
@@ -730,7 +996,7 @@ def subscribed_streams_table() -> rx.Component:
                                                     size="2",
                                                     color_scheme="red",
                                                     variant="ghost",
-                                                    disabled=True,  # TODO: Implement unsubscribe
+                                                    on_click=StreamsState.open_unsubscribe_dialog(stream["id"]),
                                                 ),
                                                 spacing="2",
                                             )
@@ -983,6 +1249,63 @@ def delete_confirmation_dialog() -> rx.Component:
     )
 
 
+def unsubscribe_confirmation_dialog() -> rx.Component:
+    """Dialog for confirming unsubscription."""
+    return rx.alert_dialog.root(
+        rx.alert_dialog.content(
+            rx.alert_dialog.title("Unsubscribe from Stream"),
+            rx.alert_dialog.description(
+                rx.vstack(
+                    rx.text(
+                        f"Are you sure you want to unsubscribe from this stream?",
+                        size="3",
+                    ),
+                    rx.text(
+                        rx.text.strong(StreamsState.unsubscribe_stream_name),
+                        size="3",
+                    ),
+                    rx.text(
+                        "You will no longer see posts from this stream.",
+                        size="2",
+                        color="gray",
+                    ),
+                    spacing="2",
+                    align="start",
+                ),
+            ),
+            rx.hstack(
+                rx.alert_dialog.cancel(
+                    rx.button(
+                        "Cancel",
+                        variant="soft",
+                        color_scheme="gray",
+                        size="3",
+                        disabled=StreamsState.is_unsubscribing,
+                    )
+                ),
+                rx.alert_dialog.action(
+                    rx.button(
+                        rx.cond(
+                            StreamsState.is_unsubscribing,
+                            rx.spinner(size="3"),
+                            "Unsubscribe",
+                        ),
+                        on_click=StreamsState.unsubscribe_from_stream,
+                        color_scheme="red",
+                        size="3",
+                        disabled=StreamsState.is_unsubscribing,
+                    )
+                ),
+                spacing="3",
+                justify="end",
+                width="100%",
+            ),
+        ),
+        open=StreamsState.is_unsubscribe_dialog_open,
+        on_open_change=StreamsState.set_is_unsubscribe_dialog_open,
+    )
+
+
 def streams() -> rx.Component:
     """Main streams management page."""
     content = rx.container(
@@ -1023,6 +1346,7 @@ def streams() -> rx.Component:
                 search_and_add_bar(),
                 owned_streams_table(),
                 subscribed_streams_table(),
+                public_streams_table(),
                 spacing="8",
                 width="100%",
                 align="start",
@@ -1032,6 +1356,7 @@ def streams() -> rx.Component:
             create_stream_modal(),
             edit_stream_modal(),
             delete_confirmation_dialog(),
+            unsubscribe_confirmation_dialog(),
 
             spacing="6",
             padding="4",
