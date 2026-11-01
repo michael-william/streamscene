@@ -63,7 +63,10 @@ def boot_config():
     missing = [n for n in need if n not in active]
     if missing:
         raise RuntimeError("config.txt missing: {}".format(", ".join(missing)))
-    return ", ".join(need)
+    mod = Path("/etc/modules-load.d/streamscene-i2c.conf")
+    if not mod.exists() or "i2c-dev" not in mod.read_text():
+        raise RuntimeError("i2c-dev not loaded at boot - /dev/i2c-1 will not exist")
+    return ", ".join(need) + ", i2c-dev"
 
 
 def vendored_driver():

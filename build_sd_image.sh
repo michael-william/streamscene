@@ -278,6 +278,10 @@ configure_system() {
         echo "dtparam=i2c_arm=on" | sudo tee -a "$BOOT_CONFIG" > /dev/null
         log_info "I2C enabled (appended dtparam)"
     fi
+    # dtparam=i2c_arm=on only enables the controller; /dev/i2c-1 needs the
+    # i2c-dev module, which raspi-config would normally add. Without it the
+    # Inky EEPROM probe silently fails and the Waveshare driver hangs.
+    echo i2c-dev | sudo tee "$MOUNT_DIR/etc/modules-load.d/streamscene-i2c.conf" > /dev/null
     if ! grep -qE '^\s*dtoverlay=spi0-0cs' "$BOOT_CONFIG"; then
         echo "dtoverlay=spi0-0cs" | sudo tee -a "$BOOT_CONFIG" > /dev/null
         log_info "spi0-0cs overlay added (software chip-select for both panels)"

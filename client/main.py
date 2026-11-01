@@ -120,7 +120,14 @@ class StreamSceneClient:
 
         # Display and rendering
         self.renderer = ContentRenderer()
-        self.display = get_display()
+        # A broken/missing panel must not stop WiFi setup, registration,
+        # heartbeats or OTA - those are how a frame gets fixed remotely.
+        try:
+            self.display = get_display()
+        except Exception as e:
+            display_logger.error(f"Display init failed, continuing headless: {e}")
+            from display import HeadlessDisplay
+            self.display = HeadlessDisplay()
         display_logger.info("Display and renderer initialized")
 
         # Runtime state
