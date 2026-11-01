@@ -54,6 +54,17 @@ class DeviceConfigResponse(BaseModel):
     config: dict
 
 
+class DeviceHeartbeatRequest(BaseModel):
+    """Optional heartbeat body. Older clients send none."""
+
+    version: Optional[str] = Field(
+        None,
+        max_length=50,
+        pattern=r"^[0-9A-Za-z][0-9A-Za-z.+-]*$",
+        description="Installed client version (contents of client/VERSION)",
+    )
+
+
 class DeviceHeartbeatResponse(BaseModel):
     """Response for device heartbeat."""
 
