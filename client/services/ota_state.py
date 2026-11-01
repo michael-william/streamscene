@@ -170,7 +170,11 @@ class OTAStateManager:
         Returns:
             Fresh OTAStateData instance
         """
-        state = OTAStateData()
+        # Keep last_check_at: wiping it made should_check_for_updates() true on
+        # the very next loop, so a failing update was re-downloaded, backed up
+        # and rolled back every ~minute instead of once per OTA_CHECK_INTERVAL.
+        previous = self.load()
+        state = OTAStateData(last_check_at=previous.last_check_at)
         self.save(state)
         logger.info("OTA state reset to idle")
         return state

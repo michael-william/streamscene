@@ -724,3 +724,13 @@ def test_backup_skips_fifo(tmp_path):
     backup = inst.create_backup()
     assert (backup / "main.py").exists()
     assert not (backup / ".lgd-nfy0").exists()
+
+
+def test_reset_keeps_last_check(tmp_path):
+    """A failed update must not wipe the check timestamp (caused a retry every loop)."""
+    from services.ota_state import OTAStateManager
+    mgr = OTAStateManager(state_file=tmp_path / "state.json")
+    mgr.update_last_check()
+    assert mgr.should_check_for_updates() is False
+    mgr.reset()
+    assert mgr.should_check_for_updates() is False
