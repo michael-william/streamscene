@@ -709,3 +709,18 @@ class TestUpdateResult(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def test_backup_skips_fifo(tmp_path):
+    """lgpio leaves a FIFO (.lgd-nfy0) in the install dir; backup must not choke on it."""
+    import os
+    from services.ota_installer import OTAInstaller
+    install = tmp_path / "install"
+    install.mkdir()
+    (install / "VERSION").write_text("1.3.0\n")
+    (install / "main.py").write_text("print('hi')\n")
+    os.mkfifo(install / ".lgd-nfy0")
+    inst = OTAInstaller(install_dir=install, backup_dir=tmp_path / "backups")
+    backup = inst.create_backup()
+    assert (backup / "main.py").exists()
+    assert not (backup / ".lgd-nfy0").exists()
