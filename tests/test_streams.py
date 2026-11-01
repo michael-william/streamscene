@@ -496,3 +496,41 @@ def test_register_device_without_streams_has_none(session, sample_user):
     device, _ = streams.register_device(session, uuid.uuid4(), sample_user.id)
 
     assert device.current_stream_id is None
+
+
+def test_heartbeat_records_reported_version(session, sample_user):
+    """The device's reported version replaces the 1.0.0 column default."""
+    import uuid
+
+    device, _ = streams.register_device(session, uuid.uuid4(), sample_user.id)
+    assert device.current_version == "1.0.0"
+
+    assert streams.update_device_heartbeat(session, device.id, version="1.3.0")
+
+    assert device.current_version == "1.3.0"
+    assert device.last_seen is not None
+
+
+def test_heartbeat_without_version_keeps_stored_version(session, sample_user):
+    """Older clients send no body: last_seen updates, version is left alone."""
+    import uuid
+
+    device, _ = streams.register_device(session, uuid.uuid4(), sample_user.id)
+    streams.update_device_heartbeat(session, device.id, version="1.3.0")
+
+    assert streams.update_device_heartbeat(session, device.id)
+
+    assert device.current_version == "1.3.0"
+
+
+def test_heartbeat_request_rejects_junk_version():
+    """The version field is validated before it reaches the database."""
+    import pytest
+    from pydantic import ValidationError
+    from streamscene.api.schemas import DeviceHeartbeatRequest
+
+    assert DeviceHeartbeatRequest(version="1.3.0").version == "1.3.0"
+    assert DeviceHeartbeatRequest().version is None
+    for bad in ["", "1.3.0; drop table", "x" * 51, " 1.3.0"]:
+        with pytest.raises(ValidationError):
+            DeviceHeartbeatRequest(version=bad)

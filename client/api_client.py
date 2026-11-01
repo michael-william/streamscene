@@ -184,6 +184,9 @@ class StreamSceneAPIClient:
         """
         Send heartbeat to indicate device is online.
 
+        Also reports the installed client version (client/VERSION), which the
+        server stores as the device's current_version for OTA decisions.
+
         Returns:
             True if heartbeat sent successfully, False otherwise
         """
@@ -191,7 +194,11 @@ class StreamSceneAPIClient:
 
         try:
             print(f"[API Client] Sending heartbeat to {url}")
-            response = self.session.post(url, timeout=config.REQUEST_TIMEOUT)
+            response = self.session.post(
+                url,
+                json={"version": config.get_current_version()},
+                timeout=config.REQUEST_TIMEOUT,
+            )
             response.raise_for_status()
 
             data = response.json()

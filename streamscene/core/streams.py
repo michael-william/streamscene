@@ -1134,13 +1134,20 @@ def get_device_content(session: Session, device_id: UUID, rotation_index: int = 
     }
 
 
-def update_device_heartbeat(session: Session, device_id: UUID) -> bool:
+def update_device_heartbeat(
+    session: Session, device_id: UUID, version: Optional[str] = None
+) -> bool:
     """
-    Update device's last_seen timestamp.
+    Update device's last_seen timestamp, and current_version when reported.
+
+    Until devices reported it, current_version only changed after an OTA
+    install, so every device showed the column default (1.0.0) and OTA
+    compared against the wrong version.
 
     Args:
         session: Database session
         device_id: Device UUID
+        version: Installed client version reported by the device, if any
 
     Returns:
         bool: True if device was found and updated, False otherwise
@@ -1150,6 +1157,8 @@ def update_device_heartbeat(session: Session, device_id: UUID) -> bool:
         return False
 
     device.last_seen = utc_now()
+    if version:
+        device.current_version = version
     session.flush()
     return True
 
