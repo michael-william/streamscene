@@ -24,8 +24,10 @@ def check(label, fn):
     try:
         print("  {}: {}".format(label, fn()))
     except Exception as exc:  # noqa: BLE001 - report, don't raise, so all checks run
-        failures.append("{}: {}".format(label, exc))
-        print("  {}: FAILED - {}".format(label, exc))
+        failures.append("{}: {!r}".format(label, exc))
+        print("  {}: FAILED - {!r}".format(label, exc))
+        import traceback
+        traceback.print_exc()
 
 
 def runtime_packages():

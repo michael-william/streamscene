@@ -18,6 +18,7 @@ lgpio>=0.2.2.0
 # Pimoroni Inky Impression driver (second supported panel). 2.1+ knows the
 # Spectra 6 / E673 boards; pulls in numpy, smbus2, gpiod, gpiodevice.
 inky>=2.6.0,<3
+# (numpy from piwheels links libopenblas.so.0 - apt libopenblas0 in build_sd_image.sh)
 
 # HTTP client for API communication
 requests>=2.31.0
