@@ -85,6 +85,10 @@ class UpdateCheckResponse(BaseModel):
 
     update_available: bool = Field(..., description="Whether an update is available")
     version: Optional[str] = Field(None, description="Version of the available update")
+    # The client needs both: update_id for status reports, package_hash to
+    # verify the download. Omitting them made every OTA fail verification.
+    update_id: Optional[UUID] = Field(None, description="ID of the update (for status reports)")
+    package_hash: Optional[str] = Field(None, description="SHA256 of the update package")
     is_mandatory: bool = Field(False, description="Whether the update is mandatory")
     package_size: Optional[int] = Field(None, description="Size of update package in bytes")
     changelog: Optional[str] = Field(None, description="Update changelog")
